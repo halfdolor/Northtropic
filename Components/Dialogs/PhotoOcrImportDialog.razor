@@ -1,0 +1,430 @@
+@using Northtropic.Services
+@using Northtropic.Models
+@using Microsoft.AspNetCore.Components.Forms
+@using System.Text.Json
+@inject IQuestionImportService QuestionImportService
+@inject IUserSessionService UserSessionService
+@inject IQuestionManagementService QuestionManagementService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+            <div class="d-flex align-center gap-2">
+                <MudIcon Icon="@Icons.Material.Filled.AddAPhoto" Color="Color.Primary" Size="Size.Large" />
+                <div>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">照片 OCR 识别与智能试题录入</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">拍照/截屏上传试题，智能提取学科、题干、选项与解析</MudText>
+                </div>
+            </div>
+            <div class="d-flex align-center gap-2">
+                <MudChip T="string" Color="@(_currentOcrProvider == "PaddleOcr" ? Color.Success : (_currentOcrProvider == "BaiduOcr" ? Color.Info : Color.Secondary))" Size="Size.Small" Variant="Variant.Filled" Style="font-weight: 700;">
+                    @(_currentOcrProvider == "PaddleOcr" ? "⚡ 本地 PaddleOCR (0 Token · 纯离线)" : (_currentOcrProvider == "BaiduOcr" ? "🎯 百度云 OCR (0 Token)" : "🤖 Vision 大模型"))
+                </MudChip>
+            </div>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex flex-column gap-4 py-2">
+            <!-- 步骤 1：照片选择与上传工具栏 -->
+            <MudPaper Class="pa-4 glass-card" Style="background: var(--sub-card-bg);">
+                <div class="d-flex align-center justify-space-between flex-wrap gap-3">
+                    <div class="d-flex align-center gap-2 flex-wrap">
+                        <!-- 原生文件输入控件 (隐藏)，通过 label 触发 -->
+                        <InputFile id="photoOcrFileInput" OnChange="OnFileChange" accept="image/*" style="display: none;" />
+                        
+                        <label for="photoOcrFileInput" style="cursor: pointer; margin: 0;">
+                            <span class="mud-button-root mud-button mud-button-filled mud-button-filled-primary mud-ripple font-weight-bold d-inline-flex align-center gap-2 px-4 py-2" style="border-radius: 8px;">
+                                <MudIcon Icon="@Icons.Material.Filled.PhotoCamera" Size="Size.Small" />
+                                <span>选择/拍照上传试题图片</span>
+                            </span>
+                        </label>
+
+                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.ContentPaste" OnClick="PasteFromClipboardAsync">
+                            剪贴板粘贴
+                        </MudButton>
+
+                        <!-- OCR 引擎即时选择器 -->
+                        <MudSelect T="string" Value="@_currentOcrProvider" ValueChanged="OnOcrProviderChanged" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 210px; font-weight: 600;">
+                            <MudSelectItem Value='@("PaddleOcr")'>⚡ 本地 PaddleOCR (推荐 · 0 Token)</MudSelectItem>
+                            <MudSelectItem Value='@("BaiduOcr")'>🎯 百度智能云 OCR (0 Token)</MudSelectItem>
+                            <MudSelectItem Value='@("VisionLlm")'>🤖 多模态大模型视觉 (消耗 Token)</MudSelectItem>
+                        </MudSelect>
+
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary ml-2">
+                            @(_selectedFileName ?? "尚未选择图片")
+                        </MudText>
+                    </div>
+
+                    <!-- 样题体验快捷按钮组 -->
+                    <div class="d-flex align-center gap-2 flex-wrap">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary font-weight-bold">一键体验样题：</MudText>
+                        <MudChip T="string" Color="Color.Info" Size="Size.Small" OnClick='() => LoadDemoSampleAsync("physics")' Style="cursor: pointer;">
+                            🔭 物理折射题
+                        </MudChip>
+                        <MudChip T="string" Color="Color.Primary" Size="Size.Small" OnClick='() => LoadDemoSampleAsync("math")' Style="cursor: pointer;">
+                            📐 数学几何题
+                        </MudChip>
+                        <MudChip T="string" Color="Color.Success" Size="Size.Small" OnClick='() => LoadDemoSampleAsync("code")' Style="cursor: pointer;">
+                            💻 C# 算法题
+                        </MudChip>
+                        <MudChip T="string" Color="Color.Warning" Size="Size.Small" OnClick='() => LoadDemoSampleAsync("chem")' Style="cursor: pointer;">
+                            🧪 化学中和题
+                        </MudChip>
+                    </div>
+                </div>
+
+                @if (_imagePreviewUrl != null && !_isProcessingOcr)
+                {
+                    <div class="mt-3 pt-3 d-flex align-center justify-space-between flex-wrap gap-2" style="border-top: 1px solid var(--glass-card-border);">
+                        <div class="d-flex align-center gap-2">
+                            <MudText Typo="Typo.caption" Color="Color.Success">
+                                ✅ 图像就绪 (@(_imageBytes?.Length / 1024 ?? 0) KB)
+                            </MudText>
+                            @if (_isTokenSaved)
+                            {
+                                <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Outlined">
+                                    💰 百度 OCR：0 Token 消耗
+                                </MudChip>
+                            }
+                        </div>
+                        <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="StartOcrRecognitionAsync" Class="font-weight-bold">
+                            重新开始智能 OCR 识别提取
+                        </MudButton>
+                    </div>
+                }
+            </MudPaper>
+
+            <!-- OCR 识别处理中动效 -->
+            @if (_isProcessingOcr)
+            {
+                <div class="d-flex align-center justify-center gap-4 py-10 glass-card">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Secondary" Size="Size.Large" />
+                    <div>
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold" Color="Color.Secondary">
+                            @(_currentOcrProvider == "PaddleOcr" ? "⚡ 本地原生 PaddleOCR 离线推理中 (0 Token · MKL 加速)..." : (_currentOcrProvider == "BaiduOcr" ? "🎯 百度智能云 OCR 识别中 (0 Token)..." : "🤖 AI 多模态视觉大模型解析中..."))
+                        </MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            正在扫描文字行、提取题目题干、分割选项矩阵与生成解析...
+                        </MudText>
+                    </div>
+                </div>
+            }
+            else if (_recognizedQuestion != null)
+            {
+                <!-- 步骤 2：照片原图与识别结果对比校验面板 -->
+                <MudGrid>
+                    <!-- 左侧：图片原图预览与原始 OCR Log -->
+                    <MudItem xs="12" md="5">
+                        <MudPaper Class="pa-4 glass-card d-flex flex-column gap-3" Style="background: var(--sub-card-bg); height: 100%;">
+                            <div class="d-flex align-center justify-space-between">
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Info">
+                                    📸 上传试卷原图预览
+                                </MudText>
+                                <MudChip T="string" Color="Color.Default" Size="Size.Small">@_selectedFileName</MudChip>
+                            </div>
+                            
+                            <div class="text-center pa-2 rounded" style="background: rgba(0,0,0,0.2);">
+                                <img src="@_imagePreviewUrl" style="max-width: 100%; max-height: 320px; object-fit: contain; border-radius: 8px;" alt="试题原图" />
+                            </div>
+
+                            <MudExpansionPanels Style="background: transparent;">
+                                <MudExpansionPanel Text="查看原始 OCR 提取文本 Log">
+                                    <pre style="text-align: left; font-size: 0.75rem; color: #34d399; white-space: pre-wrap; max-height: 180px; overflow-y: auto;">@_rawOcrText</pre>
+                                </MudExpansionPanel>
+                            </MudExpansionPanels>
+                        </MudPaper>
+                    </MudItem>
+
+                    <!-- 右侧：结构化识别结果编辑确认栏 -->
+                    <MudItem xs="12" md="7">
+                        <MudPaper Class="pa-4 glass-card" Style="background: var(--sub-card-bg);">
+                            <div class="d-flex align-center justify-space-between mb-3 flex-wrap gap-2">
+                                <div class="d-flex align-center gap-2">
+                                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" />
+                                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold" Color="Color.Secondary">
+                                        OCR 提取校对与结构化调整
+                                    </MudText>
+                                </div>
+                                <div class="d-flex align-center gap-1">
+                                    @if (_isTokenSaved)
+                                    {
+                                        <MudChip T="string" Color="Color.Success" Size="Size.Small">0 Token</MudChip>
+                                    }
+                                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Filled">
+                                        @_recognizedQuestion.Type.ToString()
+                                    </MudChip>
+                                </div>
+                            </div>
+
+                            <MudGrid Class="mb-2">
+                                <MudItem xs="12" sm="4">
+                                    <MudTextField T="string" @bind-Value="_recognizedQuestion.Subject" Label="归属学科" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                </MudItem>
+                                <MudItem xs="12" sm="4">
+                                    <MudTextField T="string" @bind-Value="_recognizedQuestion.GradeTarget" Label="适用年级" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                </MudItem>
+                                <MudItem xs="12" sm="4">
+                                    <MudTextField T="string" @bind-Value="_recognizedQuestion.Category" Label="知识点分类" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                </MudItem>
+                            </MudGrid>
+
+                            <MudTextField T="string" @bind-Value="_recognizedQuestion.Stem" Label="识别题干 (Stem)" Variant="Variant.Outlined" Lines="3" Class="mb-3" />
+
+                            <div class="d-flex align-center justify-space-between mb-1">
+                                <MudText Typo="Typo.caption" Class="font-weight-bold mud-text-secondary">识别选项：</MudText>
+                                <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="AddOption">
+                                    添加选项
+                                </MudButton>
+                            </div>
+
+                            @for (int i = 0; i < _parsedOptions.Count; i++)
+                            {
+                                int index = i;
+                                <div class="d-flex align-center gap-2 mb-2">
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Default">@((char)('A' + index))</MudChip>
+                                    <MudTextField T="string" Value="@_parsedOptions[index]" ValueChanged="@(v => _parsedOptions[index] = v)" Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="() => RemoveOption(index)" />
+                                </div>
+                            }
+
+                            <MudGrid Class="mt-2">
+                                <MudItem xs="12" sm="4">
+                                    <MudTextField T="string" @bind-Value="_recognizedQuestion.CorrectAnswer" Label="识别答案 (如 A 或 A,B)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                </MudItem>
+                                <MudItem xs="12" sm="8">
+                                    <MudTextField T="string" @bind-Value="_recognizedQuestion.StandardAnalysis" Label="标准考点解析" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                </MudItem>
+                            </MudGrid>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+            }
+            else if (_imagePreviewUrl != null)
+            {
+                <div class="pa-8 glass-card text-center">
+                    <img src="@_imagePreviewUrl" style="max-width: 300px; max-height: 200px; object-fit: contain; border-radius: 8px; margin-bottom: 16px;" alt="已选图片" />
+                    <div>
+                        <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large" StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="StartOcrRecognitionAsync" Class="font-weight-bold px-8">
+                            立即开始 OCR 识别提取
+                        </MudButton>
+                    </div>
+                </div>
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">关闭窗口</MudButton>
+        @if (_recognizedQuestion != null && !_isProcessingOcr)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CheckCircle" OnClick="SaveOcrQuestionAsync" Class="font-weight-bold">
+                确认校对无误，存入题库
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Guid? UserId { get; set; }
+
+    private string? _selectedFileName;
+    private IBrowserFile? _selectedFile;
+    private string? _imagePreviewUrl;
+    private byte[]? _imageBytes;
+
+    private string _currentOcrProvider = "PaddleOcr";
+    private bool _isTokenSaved = true;
+    private bool _isProcessingOcr = false;
+    private Question? _recognizedQuestion;
+    private string _rawOcrText = string.Empty;
+    private List<string> _parsedOptions = new List<string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await UserSessionService.GetActiveUserAsync();
+        if (user != null && !string.IsNullOrWhiteSpace(user.OcrProvider))
+        {
+            _currentOcrProvider = user.OcrProvider;
+        }
+        else
+        {
+            _currentOcrProvider = "PaddleOcr";
+        }
+        _isTokenSaved = !_currentOcrProvider.Equals("VisionLlm", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void OnOcrProviderChanged(string provider)
+    {
+        _currentOcrProvider = provider;
+        _isTokenSaved = !provider.Equals("VisionLlm", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task OnFileChange(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            _selectedFile = e.File;
+            _selectedFileName = e.File.Name;
+            _recognizedQuestion = null;
+
+            using var ms = new MemoryStream();
+            await _selectedFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024).CopyToAsync(ms);
+            _imageBytes = ms.ToArray();
+
+            _imagePreviewUrl = $"data:{_selectedFile.ContentType};base64,{Convert.ToBase64String(_imageBytes)}";
+            StateHasChanged();
+
+            // 自动触发识别
+            await StartOcrRecognitionAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"图片读取异常: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoadDemoSampleAsync(string sampleType)
+    {
+        _recognizedQuestion = null;
+        string fileName = sampleType switch
+        {
+            "math" => "高中数学_几何与勾股定理典型题.png",
+            "code" => "大学软件_CSharp异步流并发算法题.png",
+            "chem" => "初中化学_酸碱滴定中和反应实验题.png",
+            _ => "初中物理_光的折射与全反射实验题.png"
+        };
+
+        _selectedFileName = fileName;
+
+        // 生成高保真矢量示意图预览
+        string svg = sampleType switch
+        {
+            "math" => @"<svg xmlns='http://www.w3.org/2000/svg' width='400' height='240' viewBox='0 0 400 240' style='background:#1e293b;'><text x='20' y='35' fill='#38bdf8' font-size='16' font-family='sans-serif' font-weight='bold'>【数学试题卷面截图】</text><polygon points='60,190 60,80 260,190' fill='none' stroke='#f59e0b' stroke-width='3'/><line x1='60' y1='190' x2='125' y2='118' stroke='#22c55e' stroke-width='2' stroke-dasharray='4'/><text x='40' y='80' fill='#fff' font-size='14'>A</text><text x='40' y='205' fill='#fff' font-size='14'>C</text><text x='270' y='205' fill='#fff' font-size='14'>B</text><text x='130' y='110' fill='#22c55e' font-size='14'>D</text><text x='20' y='225' fill='#94a3b8' font-size='12'>Rt△ABC 中 AC=6, BC=8, 求斜边高 CD</text></svg>",
+            "code" => @"<svg xmlns='http://www.w3.org/2000/svg' width='400' height='240' viewBox='0 0 400 240' style='background:#1e293b;'><text x='20' y='35' fill='#a855f7' font-size='16' font-family='sans-serif' font-weight='bold'>【C# 架构考试题目】</text><rect x='20' y='55' width='360' height='130' rx='8' fill='#0f172a' stroke='#334155'/><text x='35' y='85' fill='#e2e8f0' font-size='12' font-family='monospace'>public async IAsyncEnumerable&lt;int&gt; GetDataAsync()</text><text x='35' y='115' fill='#38bdf8' font-size='12' font-family='monospace'>{ yield return 1; await Task.Delay(100); }</text><text x='35' y='150' fill='#94a3b8' font-size='12'>关于异步流 IAsyncEnumerable 的描述：</text></svg>",
+            "chem" => @"<svg xmlns='http://www.w3.org/2000/svg' width='400' height='240' viewBox='0 0 400 240' style='background:#1e293b;'><text x='20' y='35' fill='#10b981' font-size='16' font-family='sans-serif' font-weight='bold'>【化学实验题扫描】</text><rect x='60' y='70' width='80' height='120' rx='4' fill='rgba(16,185,129,0.1)' stroke='#10b981' stroke-width='2'/><text x='85' y='140' fill='#fff' font-size='12'>HCl</text><path d='M100,50 L100,70' stroke='#f59e0b' stroke-width='3' marker-end='url(#arrow)'/><text x='160' y='100' fill='#f59e0b' font-size='14'>滴入 NaOH 溶液</text><text x='160' y='140' fill='#94a3b8' font-size='12'>pH 变化趋势分析</text></svg>",
+            _ => @"<svg xmlns='http://www.w3.org/2000/svg' width='400' height='240' viewBox='0 0 400 240' style='background:#1e293b;'><text x='20' y='35' fill='#38bdf8' font-size='16' font-family='sans-serif' font-weight='bold'>【物理实验题扫描】</text><line x1='30' y1='120' x2='370' y2='120' stroke='#94a3b8' stroke-width='2'/><rect x='30' y='120' width='340' height='90' fill='rgba(56,189,248,0.1)' stroke='#38bdf8' stroke-width='1'/><line x1='70' y1='50' x2='200' y2='120' stroke='#ef4444' stroke-width='3'/><line x1='200' y1='120' x2='260' y2='200' stroke='#ef4444' stroke-width='3'/><line x1='200' y1='30' x2='200' y2='210' stroke='#64748b' stroke-dasharray='4'/><text x='50' y='105' fill='#fff' font-size='12'>空气</text><text x='50' y='150' fill='#38bdf8' font-size='12'>玻璃砖</text></svg>"
+        };
+
+        _imageBytes = System.Text.Encoding.UTF8.GetBytes(svg);
+        _imagePreviewUrl = "data:image/svg+xml;utf8," + Uri.EscapeDataString(svg);
+
+        StateHasChanged();
+        await StartOcrRecognitionAsync();
+    }
+
+    private async Task PasteFromClipboardAsync()
+    {
+        try
+        {
+            var base64 = await JSRuntime.InvokeAsync<string?>("navigator.clipboard.readText");
+            if (!string.IsNullOrEmpty(base64) && base64.StartsWith("data:image"))
+            {
+                _imagePreviewUrl = base64;
+                _selectedFileName = $"剪贴板粘贴截图_{DateTime.Now:HHmmss}.png";
+                var commaIdx = base64.IndexOf(',');
+                if (commaIdx != -1)
+                {
+                    _imageBytes = Convert.FromBase64String(base64.Substring(commaIdx + 1));
+                }
+                StateHasChanged();
+                await StartOcrRecognitionAsync();
+            }
+            else
+            {
+                Snackbar.Add("已为您快捷载入试卷样图，您也可以直接点击【选择/拍照上传】上传本地题目照片！", Severity.Info);
+                await LoadDemoSampleAsync("physics");
+            }
+        }
+        catch
+        {
+            await LoadDemoSampleAsync("physics");
+        }
+    }
+
+    private async Task StartOcrRecognitionAsync()
+    {
+        if (_imageBytes == null || _selectedFileName == null) return;
+
+        _isProcessingOcr = true;
+        await InvokeAsync(StateHasChanged);
+
+        var res = await QuestionImportService.RecognizeQuestionFromPhotoAsync(_imageBytes, _selectedFileName, explicitProvider: _currentOcrProvider);
+
+        _isProcessingOcr = false;
+        if (res.Success && res.ParsedQuestion != null)
+        {
+            _recognizedQuestion = res.ParsedQuestion;
+            _rawOcrText = res.RawOcrText;
+            _isTokenSaved = res.IsTokenSaved;
+
+            try
+            {
+                _parsedOptions = JsonSerializer.Deserialize<List<string>>(_recognizedQuestion.OptionsJson) ?? new List<string>();
+            }
+            catch
+            {
+                _parsedOptions = new List<string>();
+            }
+
+            if (_isTokenSaved)
+            {
+                Snackbar.Add("🎉 百度 OCR 高精度识别完成！(本次识别 0 Token 消耗)", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("🎉 照片 OCR 智能提取完成！请校对右侧数据后存入题库。", Severity.Success);
+            }
+        }
+        else
+        {
+            Snackbar.Add($"OCR 提取失败: {res.ErrorMessage}", Severity.Error);
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void AddOption()
+    {
+        char nextKey = (char)('A' + _parsedOptions.Count);
+        _parsedOptions.Add($"{nextKey}. 新选项内容");
+    }
+
+    private void RemoveOption(int index)
+    {
+        if (index >= 0 && index < _parsedOptions.Count)
+        {
+            _parsedOptions.RemoveAt(index);
+        }
+    }
+
+    private async Task SaveOcrQuestionAsync()
+    {
+        if (_recognizedQuestion == null) return;
+
+        if (string.IsNullOrWhiteSpace(_recognizedQuestion.Stem))
+        {
+            Snackbar.Add("题干不能为空！", Severity.Warning);
+            return;
+        }
+
+        _recognizedQuestion.OptionsJson = JsonSerializer.Serialize(_parsedOptions);
+        _recognizedQuestion.CreatedByUserId = UserId;
+        _recognizedQuestion.IsPublic = false;
+        _recognizedQuestion.PublishStatus = PublishStatusEnum.Private;
+
+        var (success, msg, savedQ) = await QuestionManagementService.AddQuestionAsync(_recognizedQuestion, UserId);
+        if (success && savedQ != null)
+        {
+            Snackbar.Add("🎉 照片识别试题已成功加入题库！", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(savedQ));
+        }
+        else
+        {
+            Snackbar.Add($"试题保存失败: {msg}", Severity.Error);
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

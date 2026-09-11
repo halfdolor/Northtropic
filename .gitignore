@@ -1,0 +1,38 @@
+## Build results
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio / VS Code / JetBrains Rider
+.vs/
+.vscode/
+.idea/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+
+## Test results
+TestResults/
+[Tt]est[Rr]esult*/
+
+## Deployment packages & archives
+Northtropic_DeployPackage/
+Northtropic_Windows_Server_Deploy.zip
+*.zip
+
+## ASP.NET DataProtection Keys
+temp-keys/
+
+## SQLite local database files
+*.db
+*.db-shm
+*.db-wal
+
+## OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store

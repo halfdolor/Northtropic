@@ -1,0 +1,640 @@
+@using Northtropic.Models
+@using Northtropic.Services
+@using MudBlazor
+@inject IPracticeService PracticeService
+@inject IErrorBookService ErrorBookService
+@inject IGamificationService GamificationService
+@inject IAiTutorService AiTutorService
+@inject IJSRuntime JSRuntime
+@inject ISnackbar Snackbar
+
+@implements IDisposable
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+            <div class="d-flex align-center gap-2">
+                <MudIcon Icon="@Icons.Material.Filled.AutoFixHigh" Color="Color.Secondary" Size="Size.Large" />
+                <div>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">
+                        @(_isVariantMode ? "🎯 AI 举一反三：同考点变式挑战" : "⚔️ 错题净化消灭终端")
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="color: #94a3b8;">
+                        学科：【@CurrentActiveQuestion?.Subject】 | 考点：【@CurrentActiveQuestion?.Category】
+                    </MudText>
+                </div>
+            </div>
+            @if (_isVariantMode)
+            {
+                <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Filled" Style="font-weight: 800;">
+                    🤖 变式强化加分关卡 (+50 EXP)
+                </MudChip>
+            }
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (CurrentActiveQuestion == null)
+        {
+            <MudText Color="Color.Error">试题数据加载异常</MudText>
+        }
+        else
+        {
+            var q = CurrentActiveQuestion;
+            <div class="glass-card pa-5 mb-4" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;">
+                <!-- 题型与难度 Chip 栏 -->
+                <div class="d-flex align-center justify-space-between mb-3 flex-wrap gap-2">
+                    <div class="d-flex align-center gap-2">
+                        <MudChip T="string" Color="Color.Primary" Size="Size.Small">
+                            @(q.Type == QuestionType.SingleChoice ? "单选题" : q.Type == QuestionType.MultipleChoice ? "多选题" : q.Type == QuestionType.FillInBlank ? "填空题" : "主观问答题")
+                        </MudChip>
+                        <MudChip T="string" Color="Color.Warning" Size="Size.Small">难度: @q.Difficulty 星</MudChip>
+                    </div>
+                    @if (!_isVariantMode && !_submitted)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="StartVariantChallengeAsync" Disabled="@_generatingVariant">
+                            @if (_generatingVariant)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                <span>生成同考点变式中...</span>
+                            }
+                            else
+                            {
+                                <span>举一反三变式演练</span>
+                            }
+                        </MudButton>
+                    }
+                </div>
+
+                <!-- 题干 -->
+                <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-4" Style="color: #f8fafc; font-size: 1.1rem; line-height: 1.6;">
+                    @q.Stem
+                </MudText>
+
+                <!-- 题型作答组件 -->
+                @if (q.Type == QuestionType.SingleChoice)
+                {
+                    var options = q.Options;
+                    <div class="d-flex flex-column gap-2 mb-4">
+                        @for (int oi = 0; oi < options.Count; oi++)
+                        {
+                            var opt = options[oi];
+                            string shortcutLetter = oi switch { 0 => "A", 1 => "B", 2 => "C", 3 => "D", _ => "" };
+                            bool isSelected = _selectedOption == opt;
+                            string btnClass = "option-btn" + (isSelected ? " selected" : "");
+                            <button class="@btnClass" @onclick="() => _selectedOption = opt" disabled="@_submitted">
+                                @if (!string.IsNullOrEmpty(shortcutLetter))
+                                {
+                                    <kbd class="shortcut-badge mr-2">@shortcutLetter</kbd>
+                                }
+                                @opt
+                            </button>
+                        }
+                    </div>
+                }
+                else if (q.Type == QuestionType.MultipleChoice)
+                {
+                    var options = q.Options;
+                    <MudText Typo="Typo.caption" Class="mb-1" Style="color: #60a5fa; font-weight: 700;">💡 多选题（勾选组合答案）：</MudText>
+                    <div class="d-flex flex-column gap-2 mb-4">
+                        @for (int oi = 0; oi < options.Count; oi++)
+                        {
+                            var opt = options[oi];
+                            string shortcutLetter = oi switch { 0 => "A", 1 => "B", 2 => "C", 3 => "D", _ => "" };
+                            bool isChecked = _multiSelectedOptions.Contains(opt);
+                            var correctKeys = (q.CorrectAnswer ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                            bool isCorrectOpt = correctKeys.Any(k => opt.StartsWith(k) || opt == k);
+
+                            string cardStyle = "padding: 8px 12px; border-radius: 8px; transition: all 0.2s;";
+                            if (_submitted)
+                            {
+                                if (isCorrectOpt && isChecked) cardStyle += " background: rgba(34, 197, 94, 0.15); border: 1.5px solid #22c55e;";
+                                else if (isCorrectOpt && !isChecked) cardStyle += " background: rgba(245, 158, 11, 0.15); border: 1.5px dashed #f59e0b;";
+                                else if (!isCorrectOpt && isChecked) cardStyle += " background: rgba(239, 68, 68, 0.15); border: 1.5px solid #ef4444;";
+                                else cardStyle += " background: rgba(255,255,255,0.03); opacity: 0.7;";
+                            }
+                            else if (isChecked)
+                            {
+                                cardStyle += " background: rgba(59, 130, 246, 0.15); border: 1.5px solid var(--mud-palette-primary);";
+                            }
+                            else
+                            {
+                                cardStyle += " background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);";
+                            }
+
+                            <div class="d-flex align-center justify-space-between glass-card" style="@cardStyle">
+                                <MudCheckBox T="bool" Value="@isChecked" ValueChanged="val => ToggleMultiOption(opt, val)" Disabled="@_submitted" Color="Color.Primary" Dense="true" Class="ma-0 pa-0">
+                                    @if (!string.IsNullOrEmpty(shortcutLetter))
+                                    {
+                                        <kbd class="shortcut-badge mr-2">@shortcutLetter</kbd>
+                                    }
+                                    <span>@opt</span>
+                                </MudCheckBox>
+                                @if (_submitted)
+                                {
+                                    if (isCorrectOpt && isChecked)
+                                    {
+                                        <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled">正确选中</MudChip>
+                                    }
+                                    else if (isCorrectOpt && !isChecked)
+                                    {
+                                        <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Outlined">正确项(漏选)</MudChip>
+                                    }
+                                    else if (!isCorrectOpt && isChecked)
+                                    {
+                                        <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Filled">错误多选</MudChip>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="d-flex flex-column gap-2 mb-4">
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">💡 填空/简答作答（支持键盘、语音或快捷符号输入）：</MudText>
+                            <MudChip T="string" Color="@(_isRecordingVoice ? Color.Error : Color.Info)" Size="Size.Small" OnClick="ToggleVoiceRecordingAsync" Style="cursor: pointer; font-weight: 700;">
+                                @(_isRecordingVoice ? "🎤 录音中 (点击完成)" : "🎤 点击语音答题")
+                            </MudChip>
+                        </div>
+
+                        <!-- 常用理科符号快捷插入工具栏 -->
+                        <div class="d-flex align-center gap-1 flex-wrap my-1">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary mr-1">快捷符号：</MudText>
+                            @foreach (var sym in _quickMathSymbols)
+                            {
+                                <button type="button" class="mud-button-root mud-chip-root mud-chip-default mud-chip-size-small mud-chip-outlined" 
+                                        style="min-width: 26px; padding: 1px 6px; font-weight: 700; cursor: pointer; border-radius: 4px; font-family: monospace; font-size: 0.85rem;"
+                                        @onclick="() => InsertSymbol(sym)"
+                                        disabled="@_submitted">
+                                    @sym
+                                </button>
+                            }
+                        </div>
+
+                        <MudTextField T="string" Value="@_textAnswer" ValueChanged="OnTextAnswerChanged" OnKeyDown="OnInputKeyDown" Label="输入你的破解答案或演算步骤 (按 Enter 或 Ctrl+Enter 提交)..." Variant="Variant.Outlined" Lines="3" Disabled="@_submitted" Immediate="true" />
+
+                        <!-- KaTeX 理科公式实时渲染预览框 -->
+                        @if (!string.IsNullOrWhiteSpace(_textAnswer) && (_textAnswer.Contains("$") || _textAnswer.Contains("\\") || _textAnswer.Contains("^") || _textAnswer.Contains("_") || _textAnswer.Contains("{") || _textAnswer.Contains("√") || _textAnswer.Contains("π")))
+                        {
+                            <div class="pa-3 my-1 rounded-lg glass-card katex-preview-box" style="border: 1px dashed var(--mud-palette-primary); background: rgba(59, 130, 246, 0.06);">
+                                <div class="d-flex align-center justify-space-between mb-1">
+                                    <div class="d-flex align-center gap-1">
+                                        <MudIcon Icon="@Icons.Material.Filled.Functions" Size="Size.Small" Color="Color.Primary" />
+                                        <MudText Typo="Typo.caption" Class="font-weight-bold" Color="Color.Primary">理科公式实时渲染预览 (KaTeX)：</MudText>
+                                    </div>
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text" Style="height: 16px; font-size: 0.65rem;">实时解析</MudChip>
+                                </div>
+                                <div class="math-preview-content px-2 py-1" style="font-size: 1.05rem; line-height: 1.6; color: #f8fafc;">
+                                    @_textAnswer
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (_submitted && _evalResult != null)
+                {
+                    <div class="pa-4 mt-4 glass-card" style="@(_evalResult.IsCorrect ? "border-color: rgba(34, 197, 94, 0.4); background: rgba(34, 197, 94, 0.1);" : "border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1);")">
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
+                            <div class="d-flex align-center gap-2">
+                                <MudIcon Icon="@(_evalResult.IsCorrect ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)" Color="@(_evalResult.IsCorrect ? Color.Success : Color.Error)" />
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">
+                                    @(_evalResult.IsCorrect ? (_isVariantMode ? "🎉 厉害！变式题完美破解，掌握度达标！" : "🎉 恭喜！错题净化消灭成功！") : "❌ 仍然答错，建议使用下方苏格拉底模式引导思考！")
+                                </MudText>
+                            </div>
+                            <MudTooltip Text="🔊 语音朗读解析">
+                                <MudIconButton Icon="@Icons.Material.Filled.VolumeUp" Color="Color.Primary" Size="Size.Small" OnClick="SpeakAnalysisAsync" />
+                            </MudTooltip>
+                        </div>
+
+                        @if (_evalResult.IsEquivalentMatch)
+                        {
+                            <div class="pa-3 my-2 rounded-lg" style="background: rgba(16, 185, 129, 0.12); border-left: 4px solid #10b981; border: 1px dashed rgba(16, 185, 129, 0.4);">
+                                <div class="d-flex align-center gap-2 mb-1">
+                                    <MudIcon Icon="@Icons.Material.Filled.Verified" Color="Color.Success" Size="Size.Small" />
+                                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Success">
+                                        🎯 智能等价表达认可
+                                    </MudText>
+                                </div>
+                                <MudText Typo="Typo.body2" Class="mud-text-primary">
+                                    @(!string.IsNullOrWhiteSpace(_evalResult.EquivalentMatchReason) 
+                                        ? _evalResult.EquivalentMatchReason 
+                                        : "系统智能科学/数理比对引擎已确认：您的作答表述与标准答案本质等价，已判定为正确并消灭该错题！")
+                                </MudText>
+                            </div>
+                        }
+
+                        <MudText Typo="Typo.body2" Class="mb-1"><strong>标准答案：</strong> @q.CorrectAnswer</MudText>
+                        <MudText Typo="Typo.body2" Style="color: #cbd5e1;"><strong>标准解析：</strong> @q.StandardAnalysis</MudText>
+
+                        @if (!_isVariantMode)
+                        {
+                            <div class="mt-3 pt-2 d-flex justify-end" style="border-top: 1px dashed rgba(255,255,255,0.1);">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="StartVariantChallengeAsync" Disabled="@_generatingVariant">
+                                    @if (_generatingVariant)
+                                    {
+                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                        <span>正在生成同考点变式...</span>
+                                    }
+                                    else
+                                    {
+                                        <span>挑战同考点变式题 (举一反三巩固) ➔</span>
+                                    }
+                                </MudButton>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (_socraticResult != null)
+                {
+                    <div class="pa-4 mt-4 glass-card" style="background: rgba(236, 72, 153, 0.08); border-left: 4px solid #ec4899; border: 1px dashed rgba(236, 72, 153, 0.3);">
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Style="color: #ec4899;">
+                                🧠 苏格拉底式启发引导提问：
+                            </MudText>
+                            <MudTooltip Text="🔊 语音朗读引导提问">
+                                <MudIconButton Icon="@Icons.Material.Filled.VolumeUp" Color="Color.Secondary" Size="Size.Small" OnClick="SpeakSocraticAsync" />
+                            </MudTooltip>
+                        </div>
+                        <MudText Typo="Typo.body2" Class="mb-2 font-weight-bold">@_socraticResult.ThinkingHint</MudText>
+                        <div class="d-flex flex-column gap-2 mb-2">
+                            @foreach (var p in _socraticResult.ProgressiveQuestions)
+                            {
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">💡 @p</MudText>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">关闭</MudButton>
+        @if (!_submitted)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large" OnClick="SubmitReviseAsync" Disabled="@_revising" Class="px-6 font-weight-bold">
+                @if (_revising)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>🤖 AI 正在核验判定中...</span>
+                }
+                else
+                {
+                    <span>@(_isVariantMode ? "🎯 提交变式作答" : "⚔️ 提交消灭错题")</span>
+                    <kbd class="shortcut-badge ml-2" style="background: rgba(255,255,255,0.2); font-size: 0.75rem;">Enter</kbd>
+                }
+            </MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Large" OnClick="CloseOk" Class="px-6 font-weight-bold">
+                <span>确认并返回副本 ➔</span>
+                <kbd class="shortcut-badge ml-2" style="background: rgba(255,255,255,0.2); font-size: 0.75rem;">Enter</kbd>
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public ErrorItem Item { get; set; } = null!;
+    [Parameter] public ErrorItem? ErrorItem { get; set; }
+    [Parameter] public bool AutoStartVariant { get; set; } = false;
+
+    private Question? _variantQuestion;
+    private bool _isVariantMode = false;
+    private bool _generatingVariant = false;
+    private Question? CurrentActiveQuestion => _isVariantMode ? _variantQuestion : Item?.Question;
+
+    private string _selectedOption = string.Empty;
+    private HashSet<string> _multiSelectedOptions = new HashSet<string>();
+    private string _textAnswer = string.Empty;
+    private bool _submitted = false;
+    private bool _revising = false;
+    private AnswerCheckResult? _evalResult;
+    private bool _isRecordingVoice = false;
+    private DotNetObjectReference<ReviseErrorDialog>? _dotNetRef;
+    private DotNetObjectReference<ReviseErrorDialog>? _keyHelperRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Item == null && ErrorItem != null)
+        {
+            Item = ErrorItem;
+        }
+
+        if (AutoStartVariant)
+        {
+            await StartVariantChallengeAsync();
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Item == null && ErrorItem != null)
+        {
+            Item = ErrorItem;
+        }
+    }
+
+    private void ToggleMultiOption(string opt, bool isChecked)
+    {
+        if (isChecked) _multiSelectedOptions.Add(opt);
+        else _multiSelectedOptions.Remove(opt);
+    }
+
+    private string GetUserAnswer()
+    {
+        if (CurrentActiveQuestion == null) return string.Empty;
+        var q = CurrentActiveQuestion;
+        var options = q.Options;
+
+        if (q.Type == QuestionType.SingleChoice)
+        {
+            if (string.IsNullOrEmpty(_selectedOption)) return string.Empty;
+            int idx = options.FindIndex(o => o == _selectedOption);
+            return Northtropic.Helpers.QuestionShuffleHelper.ExtractChoicePrefix(_selectedOption, idx >= 0 ? idx : 0);
+        }
+        if (q.Type == QuestionType.MultipleChoice)
+        {
+            var selectedPrefixes = _multiSelectedOptions.Select(o =>
+            {
+                int idx = options.FindIndex(opt => opt == o);
+                return Northtropic.Helpers.QuestionShuffleHelper.ExtractChoicePrefix(o, idx >= 0 ? idx : 0);
+            }).OrderBy(s => s);
+            return string.Join(", ", selectedPrefixes);
+        }
+        return _textAnswer.Trim();
+    }
+
+    private async Task SubmitReviseAsync()
+    {
+        if (CurrentActiveQuestion == null || _revising) return;
+        string userAns = GetUserAnswer();
+        if (string.IsNullOrWhiteSpace(userAns))
+        {
+            Snackbar.Add("请先选择或填写你的作答！", Severity.Warning);
+            return;
+        }
+
+        _revising = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _evalResult = await PracticeService.SubmitAnswerAsync(CurrentActiveQuestion, userAns, 15, 1);
+            _submitted = true;
+
+            if (_evalResult.IsCorrect)
+            {
+                // 无论是做原题还是做变式题，只要答对，均消灭原错题并结算净化奖励
+                var revisionReward = await GamificationService.ProcessErrorRevisionRewardAsync(Item.Id, Item.UserId);
+
+                if (_isVariantMode)
+                {
+                    Snackbar.Add($"🎉 变式题挑战大获全胜！原错题已彻底净化，斩获 +{revisionReward.EarnedExp} EXP 与 +{revisionReward.EarnedCoins} 金币！", Severity.Success);
+                }
+                else
+                {
+                    Snackbar.Add($"🎉 错题消灭成功！已标记为熟练掌握，斩获 +{revisionReward.EarnedExp} EXP 奖励！", Severity.Success);
+                }
+
+                await JSRuntime.InvokeVoidAsync("playRewardAudio", "correct");
+                await JSRuntime.InvokeVoidAsync("triggerConfetti");
+            }
+            else
+            {
+                Snackbar.Add("仍有差错，已为您生成苏格拉底启发引导！", Severity.Error);
+                await FetchSocraticGuidanceAsync();
+            }
+        }
+        finally
+        {
+            _revising = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task StartVariantChallengeAsync()
+    {
+        if (Item?.Question == null || _generatingVariant) return;
+        _generatingVariant = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _variantQuestion = await AiTutorService.GenerateVariationQuestionAsync(Item.Question);
+            _isVariantMode = true;
+            _selectedOption = string.Empty;
+            _multiSelectedOptions.Clear();
+            _textAnswer = string.Empty;
+            _submitted = false;
+            _evalResult = null;
+            _socraticResult = null;
+            Snackbar.Add("🎯 已生成同考点 AI 变式题，请仔细审题并挑战！", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"变式题生成异常: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _generatingVariant = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private SocraticGuidanceResult? _socraticResult;
+
+    private async Task FetchSocraticGuidanceAsync()
+    {
+        if (CurrentActiveQuestion == null) return;
+        _socraticResult = await AiTutorService.GetSocraticGuidanceAsync(CurrentActiveQuestion, GetUserAnswer());
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SpeakAnalysisAsync()
+    {
+        if (CurrentActiveQuestion != null)
+        {
+            await JSRuntime.InvokeVoidAsync("speakText", $"标准答案是 {CurrentActiveQuestion.CorrectAnswer}。解析：{CurrentActiveQuestion.StandardAnalysis}");
+        }
+    }
+
+    private async Task SpeakSocraticAsync()
+    {
+        if (_socraticResult != null)
+        {
+            await JSRuntime.InvokeVoidAsync("speakText", $"{_socraticResult.ThinkingHint}。{string.Join("；", _socraticResult.ProgressiveQuestions)}");
+        }
+    }
+
+    private async Task ToggleVoiceRecordingAsync()
+    {
+        if (_isRecordingVoice)
+        {
+            await JSRuntime.InvokeVoidAsync("stopSpeechRecognition");
+            _isRecordingVoice = false;
+        }
+        else
+        {
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+            _isRecordingVoice = true;
+            await JSRuntime.InvokeVoidAsync("startSpeechRecognition", _dotNetRef, nameof(OnVoiceRecorded));
+            Snackbar.Add("🎤 正在聆听您的作答，请清晰朗读...", Severity.Info);
+        }
+    }
+
+    [JSInvokable]
+    public void OnVoiceRecorded(string text)
+    {
+        _textAnswer = string.IsNullOrWhiteSpace(_textAnswer) ? text : _textAnswer + " " + text;
+        _isRecordingVoice = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private readonly string[] _quickMathSymbols = new[] { 
+        "π", "√", "²", "³", "±", "×", "÷", "≈", "≠", "≤", "≥", "°", "∞",
+        "△", "∠", "⊥", "∥", "∵", "∴", "∈", "∉", "⊆", "∪", "∩",
+        "α", "β", "γ", "θ", "λ", "ρ", "Ω", "μ", "Δ", "ω",
+        "→", "⇌", "↑", "↓", "H₂O", "CO₂", "Fe³⁺", "SO₄²⁻",
+        "\\frac{a}{b}", "\\sqrt{x}", "x^{n}", "\\Delta", "\\sin\\theta", "\\cos\\theta", "\\vec{v}"
+    };
+
+    private async Task InsertSymbol(string symbol)
+    {
+        if (_submitted) return;
+        _textAnswer = (_textAnswer ?? "") + symbol;
+        await InvokeAsync(StateHasChanged);
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(30);
+            try { await JSRuntime.InvokeVoidAsync("renderAllMath"); } catch { }
+        });
+    }
+
+    private async Task OnTextAnswerChanged(string val)
+    {
+        _textAnswer = val;
+        await InvokeAsync(StateHasChanged);
+        if (!string.IsNullOrWhiteSpace(val) && (val.Contains("$") || val.Contains("\\") || val.Contains("^") || val.Contains("_") || val.Contains("{") || val.Contains("√") || val.Contains("π")))
+        {
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(30);
+                try { await JSRuntime.InvokeVoidAsync("renderAllMath"); } catch { }
+            });
+        }
+    }
+
+    private async Task OnInputKeyDown(KeyboardEventArgs e)
+    {
+        if (_submitted) return;
+        if ((e.Key == "Enter" && e.CtrlKey) || (e.Key == "Enter" && CurrentActiveQuestion?.Type == QuestionType.FillInBlank))
+        {
+            await SubmitReviseAsync();
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnGlobalShortcut(string key)
+    {
+        if (CurrentActiveQuestion == null) return;
+
+        // 若已判定且答对，按下回车可秒关弹窗返回错题本
+        if (_submitted)
+        {
+            if (key == "Enter" || key == "CtrlEnter")
+            {
+                if (_evalResult?.IsCorrect == true)
+                {
+                    CloseOk();
+                }
+            }
+            return;
+        }
+
+        var q = CurrentActiveQuestion;
+        var options = q.Options;
+
+        if (q.Type == QuestionType.SingleChoice)
+        {
+            int targetIdx = key switch
+            {
+                "A" => 0,
+                "B" => 1,
+                "C" => 2,
+                "D" => 3,
+                "E" => 4,
+                _ => -1
+            };
+
+            if (targetIdx >= 0 && targetIdx < options.Count)
+            {
+                _selectedOption = options[targetIdx];
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+        }
+        else if (q.Type == QuestionType.MultipleChoice)
+        {
+            int targetIdx = key switch
+            {
+                "A" => 0,
+                "B" => 1,
+                "C" => 2,
+                "D" => 3,
+                "E" => 4,
+                _ => -1
+            };
+
+            if (targetIdx >= 0 && targetIdx < options.Count)
+            {
+                var opt = options[targetIdx];
+                ToggleMultiOption(opt, !_multiSelectedOptions.Contains(opt));
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+        }
+
+        if (key == "Enter" || key == "CtrlEnter")
+        {
+            await SubmitReviseAsync();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _keyHelperRef = DotNetObjectReference.Create(this);
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("registerKeyboardShortcuts", _keyHelperRef);
+            }
+            catch { }
+        }
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("renderAllMath");
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            _ = JSRuntime.InvokeVoidAsync("unregisterKeyboardShortcuts");
+        }
+        catch { }
+        _keyHelperRef?.Dispose();
+        _dotNetRef?.Dispose();
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+    private void CloseOk() => MudDialog.Close(DialogResult.Ok(true));
+}

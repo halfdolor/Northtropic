@@ -1,0 +1,1717 @@
+@page "/parent-dashboard"
+@using Northtropic.Models
+@using Northtropic.Services
+@using Microsoft.EntityFrameworkCore
+@inject IUserSessionService UserSessionService
+@inject IPracticeService PracticeService
+@inject ICurriculumConfigService CurriculumConfigService
+@inject IStudentEvolutionService StudentEvolutionService
+@inject IErrorBookService ErrorBookService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>学情分析 - Northtropic</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-6 mb-12">
+    <!-- 头部 Header -->
+    <div class="glass-card pa-6 mb-6 d-flex align-center justify-space-between flex-wrap gap-4">
+        <div>
+            <div class="d-flex align-center gap-3 mb-1">
+                <MudIcon Icon="@Icons.Material.Filled.FamilyRestroom" Color="Color.Secondary" Size="Size.Large" />
+                <MudText Typo="Typo.h4" Class="font-weight-bold">@(_currentUser?.Role == UserRole.Teacher ? "班级学情与作业管控" : "学情分析与作业追踪")</MudText>
+                <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Class="font-weight-bold">
+                    @(_currentUser?.Role == UserRole.Teacher ? "👩‍🏫 名师教研专属" : "👨‍👩‍👧 监护人专属")
+                </MudChip>
+            </div>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                @(_currentUser?.Role == UserRole.Teacher ? "宏观把控学生答题数据、薄弱知识点雷达、作业完成进度与靶向精准分层辅导。" : "管理您关领的子女学生账号，查看答题正确率、错题净化副本进度与智能学情诊断报告。")
+            </MudText>
+        </div>
+
+        @if (_currentUser != null && _currentUser.CanManageBoundStudents)
+        {
+            <div class="d-flex align-center gap-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.AddLink" OnClick="OpenBindDialog">
+                    绑定已有学生账号
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="OpenCreateChildDialog">
+                    新建子女学生账号
+                </MudButton>
+            </div>
+        }
+    </div>
+
+    <!-- 权限拦截检验 -->
+    @if (_currentUser == null)
+    {
+        <div class="d-flex justify-center my-12">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+        </div>
+    }
+    else if (!_currentUser.CanViewStudentAnalytics)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="pa-6 rounded-lg glass-card my-6">
+            <div class="d-flex flex-column align-center text-center gap-3">
+                <MudIcon Icon="@Icons.Material.Filled.GppBad" Size="Size.Large" Color="Color.Warning" />
+                <MudText Typo="Typo.h5" Class="font-weight-bold">权限提示：本页面面向【家长用户】、【名师用户】或【超级管理员】开放</MudText>
+                <MudText Typo="Typo.body1" Class="mud-text-secondary">
+                    当前登录账号：<strong>@_currentUser.Username</strong> (角色: <strong>@_currentUser.RoleDisplayName</strong>)
+                    <br />学生等学习终端账号无法访问学情大盘及作业布置功能，请使用家长、教师或管理员账号登录。
+                </MudText>
+            </div>
+        </MudAlert>
+    }
+    else
+    {
+        <!-- 关联学生账号面板 -->
+        <MudGrid Class="mb-6">
+            @if (!_boundStudents.Any())
+            {
+                <MudItem xs="12">
+                    <MudPaper Class="pa-8 text-center glass-card">
+                        <MudIcon Icon="@Icons.Material.Filled.ChildCare" Size="Size.Large" Color="Color.Secondary" Class="mb-2" />
+                        <MudText Typo="Typo.h6" Class="font-weight-bold mb-1">您尚未绑定任何学生账号</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                            您可以输入子女的 6 位专属绑定码关联现有账号，或直接为子女开通新账号。
+                        </MudText>
+                        <div class="d-flex justify-center gap-3 flex-wrap">
+                            <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Link" OnClick="OpenBindDialog">
+                                输入绑定码关联
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="OpenCreateChildDialog">
+                                新建子女账号
+                            </MudButton>
+                        </div>
+                    </MudPaper>
+                </MudItem>
+            }
+            else
+            {
+                <MudItem xs="12">
+                    <MudText Typo="Typo.h6" Class="font-weight-bold mb-3">
+                        <MudIcon Icon="@Icons.Material.Filled.People" Class="mr-2" />
+                        已绑定的子女列表 (@_boundStudents.Count 人)
+                    </MudText>
+                    
+                    <MudGrid>
+                        @foreach (var student in _boundStudents)
+                        {
+                            bool isSelected = _selectedStudent?.Id == student.Id;
+                            <MudItem xs="12" sm="6" md="4">
+                                <MudPaper Class="@($"pa-4 glass-card cursor-pointer {(isSelected ? "border-primary" : "")}")"
+                                          Style="@(isSelected ? "border: 2px solid var(--mud-palette-primary); background: var(--sub-card-bg);" : "")"
+                                          @onclick="() => SelectStudent(student)">
+                                    <div class="d-flex align-center justify-space-between mb-2">
+                                        <div class="d-flex align-center gap-3">
+                                            <div class="d-flex align-center justify-center rounded-circle" style="width: 42px; height: 42px; font-size: 1.6rem; background: rgba(236,72,153,0.15);">
+                                                @(!string.IsNullOrEmpty(student.Avatar) ? student.Avatar : "🎓")
+                                            </div>
+                                            <div>
+                                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">@student.Username</MudText>
+                                                <MudText Typo="Typo.caption" Class="mud-text-secondary">年级：@student.Grade</MudText>
+                                            </div>
+                                        </div>
+                                        <MudChip T="string" Color="Color.Primary" Size="Size.Small">
+                                            Lv.@student.Level
+                                        </MudChip>
+                                    </div>
+
+                                    <MudDivider Class="my-2" />
+
+                                    <div class="d-flex justify-space-between text-center mt-2">
+                                        <div>
+                                            <MudText Typo="Typo.caption" Class="mud-text-secondary">累计答题</MudText>
+                                            <MudText Typo="Typo.body2" Class="font-weight-bold">@student.TotalAnswered 题</MudText>
+                                        </div>
+                                        <div>
+                                            <MudText Typo="Typo.caption" Class="mud-text-secondary">正确率</MudText>
+                                            <MudText Typo="Typo.body2" Class="font-weight-bold" Color="Color.Success">
+                                                @(student.TotalAnswered > 0 ? (int)((double)student.TotalCorrect / student.TotalAnswered * 100) : 0)%
+                                            </MudText>
+                                        </div>
+                                        <div>
+                                            <MudText Typo="Typo.caption" Class="mud-text-secondary">连胜打卡</MudText>
+                                            <MudText Typo="Typo.body2" Class="font-weight-bold" Color="Color.Warning">
+                                                @student.CurrentStreak 天
+                                            </MudText>
+                                        </div>
+                                    </div>
+
+                                    <div class="d-flex justify-end gap-2 mt-3">
+                                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" OnClick="() => SelectStudent(student)">
+                                            查看详细学情
+                                        </MudButton>
+                                        <MudTooltip Text="编辑子女资料 (修改姓名/头像/年级)">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small" OnClick="() => OpenEditStudentDialog(student)" />
+                                        </MudTooltip>
+                                        <MudTooltip Text="调整就读年级 / 升学">
+                                            <MudIconButton Icon="@Icons.Material.Filled.School" Color="Color.Secondary" Size="Size.Small" OnClick="() => OpenEditGradeDialog(student)" />
+                                        </MudTooltip>
+                                        <MudTooltip Text="解绑">
+                                            <MudIconButton Icon="@Icons.Material.Filled.LinkOff" Color="Color.Default" Size="Size.Small" OnClick="() => UnbindStudentAsync(student)" />
+                                        </MudTooltip>
+                                    </div>
+                                </MudPaper>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                </MudItem>
+            }
+        </MudGrid>
+
+        <!-- 选中的学生学情分析详情面板 -->
+        @if (_selectedStudent != null)
+        {
+            <MudPaper Class="pa-6 glass-card mb-6">
+                <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-6">
+                    <div class="d-flex align-center gap-3">
+                        <div class="d-flex align-center justify-center rounded-circle" style="width: 60px; height: 60px; font-size: 2.2rem; background: rgba(59,130,246,0.15); border: 2px solid var(--mud-palette-primary);">
+                            @(!string.IsNullOrEmpty(_selectedStudent.Avatar) ? _selectedStudent.Avatar : "🎓")
+                        </div>
+                        <div>
+                            <div class="d-flex align-center gap-2">
+                                <MudText Typo="Typo.h5" Class="font-weight-bold">@_selectedStudent.Username</MudText>
+                                <MudChip T="string" Color="Color.Primary" Size="Size.Small" Icon="@Icons.Material.Filled.School">@_selectedStudent.Grade</MudChip>
+                                <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Outlined">专属绑定码: @_selectedStudent.BindingCode</MudChip>
+                            </div>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                最后活跃：@_selectedStudent.LastStudyDate.ToString("yyyy-MM-dd HH:mm")
+                            </MudText>
+                        </div>
+                    </div>
+
+                    <div class="d-flex align-center gap-2 flex-wrap">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PostAdd" OnClick="OpenCreateAssignmentDialog" Style="font-weight: 700; box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);">
+                            📋 布置专属作业
+                        </MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.EmojiEvents" OnClick="OpenQuickPraiseDialog" Style="font-weight: 700; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);">
+                            🎁 颁奖与发金币
+                        </MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Favorite" OnClick="OpenEncouragementDialog">
+                            💌 关怀寄语
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Assessment" OnClick="OpenWeeklyReportDialog">
+                            📊 导出/打印学情周报
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Edit" OnClick="() => OpenEditStudentDialog(_selectedStudent)">
+                            编辑档案
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.School" OnClick="() => OpenEditGradeDialog(_selectedStudent)">
+                            升学年级
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.LockReset" OnClick="() => OpenResetPasswordDialog(_selectedStudent)">
+                            重置密码
+                        </MudButton>
+                    </div>
+                </div>
+
+                <!-- 家长寄语 Banner -->
+                <div class="glass-card pa-4 mb-6 d-flex align-center justify-space-between flex-wrap gap-3" style="background: linear-gradient(135deg, rgba(236, 72, 153, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border-left: 4px solid #ec4899; border-radius: 10px;">
+                    <div class="d-flex align-center gap-3">
+                        <MudIcon Icon="@Icons.Material.Filled.Favorite" Color="Color.Secondary" Size="Size.Medium" />
+                        <div>
+                            <div class="d-flex align-center gap-2">
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Style="color: #ec4899;">
+                                    给 @_selectedStudent.Username 的鼓励寄语
+                                </MudText>
+                                @if (_selectedStudent.ParentNoteUpdatedAt.HasValue)
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                        (@_selectedStudent.ParentNoteUpdatedAt.Value.ToString("yyyy-MM-dd HH:mm"))
+                                    </MudText>
+                                }
+                            </div>
+                            <MudText Typo="Typo.body2" Class="mt-1">
+                                @(!string.IsNullOrWhiteSpace(_selectedStudent.ParentEncouragementNote) ? $"“{_selectedStudent.ParentEncouragementNote}”" : "暂未设置寄语，点击右侧按钮为孩子写一句温暖的鼓励吧！")
+                            </MudText>
+                        </div>
+                    </div>
+                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.EditNote" OnClick="OpenEncouragementDialog">
+                        @(!string.IsNullOrWhiteSpace(_selectedStudent.ParentEncouragementNote) ? "修改寄语" : "写下鼓励寄语")
+                    </MudButton>
+                </div>
+
+                @if (_isLoadingDetails)
+                {
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" Style="border-radius: 4px;" />
+                }
+
+                <!-- 核心数据看板 4 卡片 -->
+                <MudGrid Class="mb-6">
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudPaper Class="pa-4 glass-card" Style="border-left: 4px solid var(--mud-palette-primary);">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">答题正确率</MudText>
+                            <MudText Typo="Typo.h4" Class="font-weight-bold mt-1" Color="Color.Primary">
+                                @(_selectedStudent.TotalAnswered > 0 ? (int)((double)_selectedStudent.TotalCorrect / _selectedStudent.TotalAnswered * 100) : 0)%
+                            </MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">答对 @_selectedStudent.TotalCorrect / 总共 @_selectedStudent.TotalAnswered 题</MudText>
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudPaper Class="pa-4 glass-card" Style="border-left: 4px solid #10b981;">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">已净化错题副本</MudText>
+                            <MudText Typo="Typo.h4" Class="font-weight-bold mt-1" Style="color: #10b981;">
+                                @_selectedStudent.ResolvedErrorsCount 题
+                            </MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">积极举一反三巩固知识点</MudText>
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudPaper Class="pa-4 glass-card" Style="border-left: 4px solid #f59e0b;">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">打卡连胜天数</MudText>
+                            <MudText Typo="Typo.h4" Class="font-weight-bold mt-1" Style="color: #f59e0b;">
+                                @_selectedStudent.CurrentStreak 天
+                            </MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">最高连击纪录: @_selectedStudent.MaxCombo 连胜</MudText>
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudPaper Class="pa-4 glass-card" Style="border-left: 4px solid #8b5cf6;">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">成长等级与金币</MudText>
+                            <MudText Typo="Typo.h4" Class="font-weight-bold mt-1" Style="color: #8b5cf6;">
+                                Lv.@_selectedStudent.Level
+                            </MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">拥有金币: @_selectedStudent.Coins | 经验: @_selectedStudent.Exp</MudText>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+
+                <!-- AI 智能认知演进与精准学情诊断 -->
+                <MudPaper Class="pa-5 glass-card mb-6" Style="border-left: 5px solid #3b82f6; background: rgba(59, 130, 246, 0.04);">
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" Size="Size.Medium" />
+                            <MudText Typo="Typo.h6" Class="font-weight-bold">AI 智能认知演化与精准学情诊断</MudText>
+                            @if (_diagnosisReport != null)
+                            {
+                                <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Star">
+                                    综合评估: @_diagnosisReport.StarRating.ToString("F1") 星级 (@_diagnosisReport.OverallMasteryRate.ToString("F1")% 掌握度)
+                                </MudChip>
+                            }
+                        </div>
+                        <div class="d-flex align-center gap-2">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Print" OnClick="OpenWeeklyReportDialog">
+                                导出学情周报
+                            </MudButton>
+                        </div>
+                    </div>
+
+                    @if (_diagnosisReport != null && !string.IsNullOrWhiteSpace(_diagnosisReport.AiGrowthAdvice))
+                    {
+                        <div class="pa-3 rounded-lg mb-3" style="background: var(--sub-card-bg); border-left: 3px solid #8b5cf6; line-height: 1.6; font-size: 0.92rem; white-space: pre-wrap;">
+                            @_diagnosisReport.AiGrowthAdvice
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-4 mt-3">
+                            @if (_diagnosisReport.TopMasteredCategories.Count > 0)
+                            {
+                                <div class="d-flex align-center gap-2 flex-wrap">
+                                    <span class="text-caption font-weight-bold" style="color: #10b981;">🏆 优势领跑考点:</span>
+                                    @foreach (var c in _diagnosisReport.TopMasteredCategories)
+                                    {
+                                        <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Outlined">@c</MudChip>
+                                    }
+                                </div>
+                            }
+
+                            @if (_diagnosisReport.TopWeakCategories.Count > 0)
+                            {
+                                <div class="d-flex align-center gap-2 flex-wrap">
+                                    <span class="text-caption font-weight-bold" style="color: #f59e0b;">🎯 待破壁薄弱项:</span>
+                                    @foreach (var c in _diagnosisReport.TopWeakCategories)
+                                    {
+                                        <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled" Style="cursor: pointer;" OnClick="async () => await QuickAssignTargetedPractice(c)">
+                                            @c · 一键布置专项 ➔
+                                        </MudChip>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        @if (_diagnosisReport.PrerequisiteWarnings.Count > 0)
+                        {
+                            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mt-3">
+                                <div class="d-flex flex-column gap-2">
+                                    <div>
+                                        <strong>⚠️ 溯源先修考点阻滞预警：</strong>
+                                        @string.Join("；", _diagnosisReport.PrerequisiteWarnings.Select(w => $"攻坚【{w.TargetCategory}】受阻，系统溯源其基础先修考点【{w.PrerequisiteCategory}】掌握度偏低({w.PrerequisiteAccuracy:F0}%)，建议优先巩固基础"))
+                                    </div>
+                                    <div class="d-flex flex-wrap gap-2 mt-1">
+                                        @foreach (var w in _diagnosisReport.PrerequisiteWarnings)
+                                        {
+                                            <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" StartIcon="@Icons.Material.Filled.Bolt"
+                                                       OnClick="async () => await QuickAssignTargetedPractice(w.PrerequisiteCategory, w.PrerequisiteSubject)">
+                                                一键布置先修巩固【@w.PrerequisiteCategory】
+                                            </MudButton>
+                                        }
+                                    </div>
+                                </div>
+                            </MudAlert>
+                        }
+                    }
+                    else if (_selectedStudent.TotalAnswered == 0)
+                    {
+                        <div class="pa-5 rounded-lg text-center" style="background: rgba(59, 130, 246, 0.06); border: 1px dashed rgba(59, 130, 246, 0.3);">
+                            <MudIcon Icon="@Icons.Material.Filled.RocketLaunch" Color="Color.Primary" Size="Size.Large" Class="mb-2" />
+                            <MudText Typo="Typo.subtitle1" Class="font-weight-bold" Color="Color.Primary">
+                                🚀 欢迎新同学！孩子当前尚未开启刷题练习
+                            </MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1 mb-3" Style="max-width: 560px; margin: 0 auto;">
+                                孩子完成首次能力摸底或日常练习后，系统将自动生成多维艾宾浩斯抗遗忘追踪、先修薄弱点溯源与专属学情周报。
+                            </MudText>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.PostAdd" OnClick="OpenCreateAssignmentDialog" Style="font-weight: 700; border-radius: 8px;">
+                                📝 为孩子布置首轮能力测试作业
+                            </MudButton>
+                        </div>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            正在生成该学员的智能学情诊断报告...
+                        </MudText>
+                    }
+                </MudPaper>
+
+                <!-- 学科知识点掌握度全景分布 -->
+                <div class="mb-6">
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudIcon Icon="@Icons.Material.Filled.PieChart" Color="Color.Primary" />
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">学科做题分布与掌握度评估</MudText>
+                    </div>
+                    @if (_subjectMasteries.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">暂无学科作答细分统计数据。</MudText>
+                    }
+                    else
+                    {
+                        <MudGrid>
+                            @foreach (var sub in _subjectMasteries)
+                            {
+                                int rate = (int)sub.AccuracyRate;
+                                Color barColor = rate >= 80 ? Color.Success : (rate >= 60 ? Color.Warning : Color.Error);
+                                <MudItem xs="12" sm="6" md="4">
+                                    <MudPaper Class="pa-4 glass-card" Style="background: var(--sub-card-bg);">
+                                        <div class="d-flex justify-space-between align-center mb-2">
+                                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold">@sub.Subject</MudText>
+                                            <MudChip T="string" Color="@barColor" Size="Size.Small" Variant="Variant.Filled">
+                                                准确率 @rate%
+                                            </MudChip>
+                                        </div>
+                                        <MudProgressLinear Color="@barColor" Value="@rate" Class="my-2" Style="height: 6px; border-radius: 3px;" />
+                                        <div class="d-flex justify-space-between mud-text-secondary" style="font-size: 0.8rem;">
+                                            <span>答对 @sub.CorrectCount 题</span>
+                                            <span>总做题 @sub.TotalCount 题</span>
+                                        </div>
+                                    </MudPaper>
+                                </MudItem>
+                            }
+                        </MudGrid>
+                    }
+                </div>
+
+                <!-- 子女待净化错题档案 (实景审阅) -->
+                <div class="mb-8">
+                    <div class="d-flex align-center justify-space-between mb-3 flex-wrap gap-2">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.MenuBook" Color="Color.Error" />
+                            <MudText Typo="Typo.h6" Class="font-weight-bold">
+                                子女待净化错题档案 (@_unmasteredErrors.Count 题待攻坚)
+                            </MudText>
+                        </div>
+                        @if (_errorReasonBreakdown.Count > 0)
+                        {
+                            <div class="d-flex align-center gap-1 flex-wrap">
+                                <span class="text-caption mud-text-secondary">错因归因分布：</span>
+                                @foreach (var kv in _errorReasonBreakdown)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined">
+                                        @kv.Key: @kv.Value 题
+                                    </MudChip>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @if (_unmasteredErrors.Count == 0)
+                    {
+                        <div class="glass-card pa-6 text-center" style="background: var(--sub-card-bg);">
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Large" Class="mb-1" />
+                            <MudText Typo="Typo.subtitle1" Class="font-weight-bold">太棒了！当前无残留未净化的错题！</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">孩子的所有错题已全部攻克巩固，继续保持！</MudText>
+                        </div>
+                    }
+                    else
+                    {
+                        <MudGrid>
+                            @foreach (var error in _unmasteredErrors.Take(6))
+                            {
+                                <MudItem xs="12" sm="6" md="4">
+                                    <MudPaper Class="pa-4 glass-card d-flex flex-column justify-space-between" Style="background: var(--sub-card-bg); height: 100%; border-top: 3px solid #ef4444;">
+                                        <div>
+                                            <div class="d-flex justify-space-between align-center mb-2">
+                                                <div class="d-flex align-center gap-1">
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled">@(error.Question?.Subject ?? "学科")</MudChip>
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">@(error.Question?.Category ?? "综合")</MudChip>
+                                                </div>
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text">
+                                                    @(string.IsNullOrWhiteSpace(error.ErrorReasonCategory) ? "待归因" : error.ErrorReasonCategory)
+                                                </MudChip>
+                                            </div>
+                                            <MudText Typo="Typo.body2" Class="font-weight-bold mb-2" Style="display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4;">
+                                                @(error.Question?.Stem ?? "题目内容")
+                                            </MudText>
+                                            <div class="pa-2 rounded text-caption mb-3" style="background: rgba(0,0,0,0.2);">
+                                                <div style="color: #f87171;">❌ 孩子错选/填答：@(string.IsNullOrWhiteSpace(error.UserWrongAnswer) ? "未作答" : error.UserWrongAnswer)</div>
+                                                <div style="color: #34d399;">✅ 正确标准答案：@(error.Question?.CorrectAnswer ?? "-")</div>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex justify-space-between align-center pt-2" style="border-top: 1px solid rgba(255,255,255,0.1);">
+                                            <span class="text-caption mud-text-secondary">@error.CreatedAt.ToString("MM-dd HH:mm") 录入</span>
+                                            <MudButton Variant="Variant.Text" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Bolt" OnClick="async () => await QuickAssignTargetedForError(error)">
+                                                靶向变式 ➔
+                                            </MudButton>
+                                        </div>
+                                    </MudPaper>
+                                </MudItem>
+                            }
+                        </MudGrid>
+                    }
+                </div>
+
+                <!-- 近期练习与突破动态 -->
+                <div>
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudIcon Icon="@Icons.Material.Filled.HistoryEdu" Color="Color.Secondary" />
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">近期做题与突破动态明细</MudText>
+                    </div>
+                    @if (_recentRecords.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">暂无近期答题记录。</MudText>
+                    }
+                    else
+                    {
+                        <MudTable Items="@_recentRecords" Dense="true" Hover="true" Class="glass-card" Elevation="0">
+                            <HeaderContent>
+                                <MudTh>答题时间</MudTh>
+                                <MudTh>学科 / 题型</MudTh>
+                                <MudTh>题目题干摘录</MudTh>
+                                <MudTh>作答结果</MudTh>
+                                <MudTh>用时</MudTh>
+                                <MudTh>获得奖励</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="答题时间">@context.AnsweredAt.ToString("MM-dd HH:mm")</MudTd>
+                                <MudTd DataLabel="学科 / 题型">
+                                    <div class="d-flex align-center gap-1">
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@(context.Question?.Subject ?? "未知")</MudChip>
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">@(context.Question?.TypeDisplayName ?? "-")</MudChip>
+                                    </div>
+                                </MudTd>
+                                <MudTd DataLabel="题目题干摘录">
+                                    <MudText Typo="Typo.caption" Style="max-width: 320px; display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                        @(context.Question?.Stem ?? "-")
+                                    </MudText>
+                                </MudTd>
+                                <MudTd DataLabel="作答结果">
+                                    @if (context.IsCorrect)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.Check">答对</MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Filled.Close">答错</MudChip>
+                                    }
+                                </MudTd>
+                                <MudTd DataLabel="用时">@context.TimeTakenSeconds 秒</MudTd>
+                                <MudTd DataLabel="获得奖励">
+                                    <span style="color: #3b82f6;">+@context.EarnedExp EXP</span> /
+                                    <span style="color: #f59e0b;">+@context.EarnedCoins 币</span>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </div>
+
+                <!-- 家长专属布置作业与学情追踪看板 -->
+                <div class="mt-8">
+                    <div class="d-flex align-center justify-space-between mb-4 flex-wrap gap-2">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Color="Color.Primary" />
+                            <MudText Typo="Typo.h6" Class="font-weight-bold">
+                                专属作业与专项突破任务追踪 (@_studentAssignments.Count 份)
+                            </MudText>
+                        </div>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateAssignmentDialog">
+                            布置新作业
+                        </MudButton>
+                    </div>
+
+                    @if (!_studentAssignments.Any())
+                    {
+                        <div class="glass-card pa-8 text-center" style="background: var(--sub-card-bg);">
+                            <MudIcon Icon="@Icons.Material.Filled.AssignmentLate" Color="Color.Default" Size="Size.Large" Class="mb-2" />
+                            <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-1">暂无布置记录</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                                您可以根据上方学情诊断为子女定制 3-15 道特定学科或知识点的专项突破练习题单。
+                            </MudText>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateAssignmentDialog">
+                                立即布置第一份作业
+                            </MudButton>
+                        </div>
+                    }
+                    else
+                    {
+                        <MudGrid>
+                            @foreach (var assign in _studentAssignments)
+                            {
+                                <MudItem xs="12" md="6">
+                                    <div class="glass-card pa-4" style="@(assign.IsCompleted ? "border-left: 4px solid #10b981; background: rgba(16, 185, 129, 0.05);" : (assign.Deadline.HasValue && assign.Deadline.Value < DateTime.Now ? "border-left: 4px solid #ef4444; background: rgba(239, 68, 68, 0.05);" : "border-left: 4px solid #f59e0b; background: rgba(245, 158, 11, 0.05);"))">
+                                        <div class="d-flex align-center justify-space-between mb-2 flex-wrap gap-1">
+                                            <div class="d-flex align-center gap-2">
+                                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">@assign.Title</MudText>
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@assign.Subject</MudChip>
+                                                @if (!string.IsNullOrWhiteSpace(assign.Category) && assign.Category != "全部分类")
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">@assign.Category</MudChip>
+                                                }
+                                            </div>
+                                            @if (assign.IsCompleted)
+                                            {
+                                                <MudChip T="string" Color="Color.Success" Size="Size.Small" Icon="@Icons.Material.Filled.CheckCircle">
+                                                    已完成 · @assign.Score 分 (@assign.AccuracyRate% 正确率)
+                                                </MudChip>
+                                            }
+                                            else if (assign.Deadline.HasValue && assign.Deadline.Value < DateTime.Now)
+                                            {
+                                                <MudChip T="string" Color="Color.Error" Size="Size.Small" Icon="@Icons.Material.Filled.AlarmOff" Variant="Variant.Filled">
+                                                    已逾期 (@assign.QuestionCount 题)
+                                                </MudChip>
+                                            }
+                                            else
+                                            {
+                                                <MudChip T="string" Color="Color.Warning" Size="Size.Small" Icon="@Icons.Material.Filled.HourglassTop">
+                                                    待完成 (@assign.QuestionCount 题)
+                                                </MudChip>
+                                            }
+                                        </div>
+
+                                        @if (!string.IsNullOrWhiteSpace(assign.ParentNote))
+                                        {
+                                            <div class="pa-2 rounded mb-2" style="background: var(--sub-card-bg); font-size: 0.85rem;">
+                                                <span class="mud-text-secondary">💬 家长附言：</span>@assign.ParentNote
+                                            </div>
+                                        }
+
+                                        <div class="d-flex align-center justify-space-between text-caption mud-text-secondary mt-2">
+                                            <div>
+                                                <span>布置于: @assign.CreatedAt.ToString("MM-dd HH:mm")</span>
+                                                @if (assign.Deadline.HasValue)
+                                                {
+                                                    <span class="ml-2" style="color: #f59e0b;">截止: @assign.Deadline.Value.ToString("MM-dd HH:mm")</span>
+                                                }
+                                            </div>
+                                            <div class="d-flex align-center gap-1">
+                                                @if (!assign.IsCompleted)
+                                                {
+                                                    <MudTooltip Text="一键向孩子发送作业催促与暖心提醒">
+                                                        <MudIconButton Icon="@Icons.Material.Filled.NotificationsActive" Size="Size.Small" Color="Color.Warning" OnClick="() => OpenHomeworkReminderDialog(assign.Id, assign.Title)" />
+                                                    </MudTooltip>
+                                                }
+                                                @if (assign.IsCompleted && assign.CompletedAt.HasValue)
+                                                {
+                                                    <span style="color: #10b981;">完成于: @assign.CompletedAt.Value.ToString("MM-dd HH:mm")</span>
+                                                }
+                                                <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small" Color="Color.Default" OnClick="() => DeleteAssignmentAsync(assign.Id)" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </MudItem>
+                            }
+                        </MudGrid>
+                    }
+                </div>
+            </MudPaper>
+        }
+    }
+</MudContainer>
+
+<!-- 绑定已有学生账号弹窗 -->
+<MudDialog @bind-Visible="_showBindDialog">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Class="font-weight-bold">绑定已有学生账号</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField T="string" @bind-Value="_inputBindingCode" Label="学生专属绑定码 或 注册手机号" Variant="Variant.Outlined"
+                      Placeholder="例如：STUD01 或 13700000000" Class="mt-2 mb-4" />
+        <MudAlert Severity="Severity.Info" Variant="Variant.Filled" Class="pa-2">
+            学生可登录其账号在个人大盘查看 6 位专属绑定码，或者直接输入学生的注册手机号关联。
+        </MudAlert>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showBindDialog = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="SubmitBindAsync">确认绑定</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- 创建子女学生账号弹窗 -->
+<MudDialog @bind-Visible="_showCreateChildDialog">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Class="font-weight-bold">为子女新建学生账号</MudText>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex flex-column gap-3 mt-2">
+            <MudTextField T="string" @bind-Value="_newChildName" Label="子女姓名 / 昵称" Variant="Variant.Outlined" Placeholder="如: 小明" />
+            <MudSelect T="string" @bind-Value="_newChildGrade" Label="适用年级/学段" Variant="Variant.Outlined">
+                @foreach (var grade in GradeSubjectProvider.AvailableGrades)
+                {
+                    <MudSelectItem Value="@grade">@grade</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showCreateChildDialog = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SubmitCreateChildAsync">一键开通并绑定</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- 调整子女年级/升学弹窗 -->
+<MudDialog @bind-Visible="_showEditGradeDialog">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.School" Color="Color.Primary" />
+            <MudText Typo="Typo.h6" Class="font-weight-bold">调整子女就读年级 / 升学</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_editingStudent != null)
+        {
+            <div class="d-flex flex-column gap-3 py-2">
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                    正在为子女 <strong>@_editingStudent.Username</strong> (当前年级: <strong>@_editingStudent.Grade</strong>) 调整所在年级。
+                    <br />调整后，系统在刷题、AI 辅导及出题时将自动适配新年级的学科体系与考点深度。
+                </MudAlert>
+                <MudSelect T="string" @bind-Value="_targetNewGrade" Label="选择新年级 / 学段 *" Variant="Variant.Outlined">
+                    @foreach (var grade in GradeSubjectProvider.AvailableGrades)
+                    {
+                        <MudSelectItem Value="@grade">@grade</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showEditGradeDialog = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ConfirmEditGradeAsync">确认调整并保存</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- 重置子女登录密码弹窗 -->
+<MudDialog @bind-Visible="_showResetPasswordDialog">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.LockReset" Color="Color.Error" />
+            <MudText Typo="Typo.h6" Class="font-weight-bold">重置子女登录密码</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_targetResetStudent != null)
+        {
+            <div class="d-flex flex-column gap-3 py-2">
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+                    正在为子女 <strong>@_targetResetStudent.Username</strong> 重置登录密码。
+                    重置后，原密码将立即失效，孩子可以使用新设密码登录系统。
+                </MudAlert>
+                <MudTextField T="string" @bind-Value="_newResetPassword" Label="新密码 *" Variant="Variant.Outlined" HelperText="默认推荐重置为 123456" Immediate="true" />
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showResetPasswordDialog = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Check" OnClick="ConfirmResetPasswordAsync">确认重置密码</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- 编辑家长关怀寄语弹窗 -->
+<MudDialog @bind-Visible="_showEncouragementDialog">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Favorite" Color="Color.Secondary" />
+            <MudText Typo="Typo.h6" Class="font-weight-bold">写给子女的关怀寄语与挑战鼓励</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_selectedStudent != null)
+        {
+            <div class="d-flex flex-column gap-3 py-2">
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                    您撰写的鼓励寄语将直接显示在 <strong>@_selectedStudent.Username</strong> 登录后的首页大盘显著位置，为孩子加油打气！
+                </MudAlert>
+                <MudTextField T="string" @bind-Value="_inputEncouragementNote" Label="家长关怀寄语内容" Variant="Variant.Outlined"
+                              Lines="3" MaxLength="300" Counter="300" Immediate="true"
+                              Placeholder="例如：小明，今天物理浮力题要细心审题哦，晚上做好吃的犒劳你！" />
+                <div class="d-flex align-center gap-2 flex-wrap">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">常用快捷寄语模板：</MudText>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Style="cursor: pointer;" OnClick='() => _inputEncouragementNote = "今天也要保持专注与细心，做完记得复习错题，加油！"'>专注细心</MudChip>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success" Style="cursor: pointer;" OnClick='() => _inputEncouragementNote = "一步一个脚印，错题就是进步的阶梯，爸爸妈妈为你自豪！"'>鼓励陪伴</MudChip>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning" Style="cursor: pointer;" OnClick='() => _inputEncouragementNote = "挑战今日刷题目标，达成后周末带你出去放松玩耍！"'>目标奖励</MudChip>
+                </div>
+
+                <!-- 实时孩子端渲染效果预览 (Live Student Dashboard Preview) -->
+                <div class="mt-2">
+                    <div class="d-flex align-center gap-1 mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Color="Color.Secondary" />
+                        <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: var(--mud-palette-secondary);">
+                            子女端首页实时呈现效果预览：
+                        </MudText>
+                    </div>
+                    <div class="glass-card pa-3 d-flex align-center justify-space-between flex-wrap gap-2" style="background: linear-gradient(135deg, rgba(236, 72, 153, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%); border-left: 4px solid #ec4899; border-radius: 10px; box-shadow: 0 2px 10px rgba(236, 72, 153, 0.1);">
+                        <div class="d-flex align-center gap-2">
+                            <div class="d-flex align-center justify-center rounded-circle" style="width: 36px; height: 36px; background: rgba(236, 72, 153, 0.2); color: #ec4899; flex-shrink: 0;">
+                                <MudIcon Icon="@Icons.Material.Filled.Favorite" Size="Size.Small" />
+                            </div>
+                            <div>
+                                <div class="d-flex align-center gap-1">
+                                    <MudText Typo="Typo.caption" Class="font-weight-bold" style="color: #ec4899;">
+                                        💌 家长暖心寄语
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-size: 0.7rem;">
+                                        (发布后即刻显示)
+                                    </MudText>
+                                </div>
+                                <MudText Typo="Typo.body2" Style="font-weight: 500; font-size: 0.85rem;">
+                                    “@(!string.IsNullOrWhiteSpace(_inputEncouragementNote) ? _inputEncouragementNote : "今天也要保持专注与细心，加油！")”
+                                </MudText>
+                            </div>
+                        </div>
+                        <MudChip T="string" Color="Color.Secondary" Variant="Variant.Outlined" Size="Size.Small" Icon="@Icons.Material.Filled.SportsScore">
+                            努力冲刺，不负期望
+                        </MudChip>
+                    </div>
+                </div>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showEncouragementDialog = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="SubmitEncouragementNoteAsync">发布寄语</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- 快捷表扬与爱心金币发放弹窗 -->
+<MudDialog @bind-Visible="_showQuickPraiseDialog">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Color="Color.Warning" />
+            <MudText Typo="Typo.h6" Class="font-weight-bold">🎁 颁发成长表扬勋章与爱心金币</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_selectedStudent != null)
+        {
+            <div class="d-flex flex-column gap-3 py-2">
+                <MudAlert Severity="Severity.Success" Variant="Variant.Outlined">
+                    及时正向激励能极大提升孩子的学习自驱力！奖励的金币与经验将直接充入 <strong>@_selectedStudent.Username</strong> 的账户。
+                </MudAlert>
+
+                <MudText Typo="Typo.subtitle2" Class="font-weight-bold">选择表扬勋章 / 称号：</MudText>
+                <div class="d-flex gap-2 flex-wrap">
+                    @foreach (var badge in _presetPraiseBadges)
+                    {
+                        bool isSelected = _selectedPraiseBadge == badge;
+                        <MudChip T="string" Color="@(isSelected ? Color.Warning : Color.Default)" Variant="@(isSelected ? Variant.Filled : Variant.Outlined)" Style="cursor: pointer; font-weight: 700;" OnClick="() => SelectPraiseBadge(badge)">
+                            @badge
+                        </MudChip>
+                    }
+                </div>
+
+                <MudText Typo="Typo.subtitle2" Class="font-weight-bold mt-2">附加爱心奖励礼包：</MudText>
+                <div class="d-flex gap-2 flex-wrap">
+                    <MudChip T="int" Color="@(_rewardCoins == 20 ? Color.Primary : Color.Default)" Variant="@(_rewardCoins == 20 ? Variant.Filled : Variant.Outlined)" Style="cursor: pointer;" OnClick="() => _rewardCoins = 20">🪙 +20 金币</MudChip>
+                    <MudChip T="int" Color="@(_rewardCoins == 50 ? Color.Primary : Color.Default)" Variant="@(_rewardCoins == 50 ? Variant.Filled : Variant.Outlined)" Style="cursor: pointer;" OnClick="() => _rewardCoins = 50">🪙 +50 金币 (推荐)</MudChip>
+                    <MudChip T="int" Color="@(_rewardCoins == 100 ? Color.Primary : Color.Default)" Variant="@(_rewardCoins == 100 ? Variant.Filled : Variant.Outlined)" Style="cursor: pointer;" OnClick="() => _rewardCoins = 100">🪙 +100 金币 (大奖)</MudChip>
+                    <MudChip T="int" Color="@(_rewardCoins == 0 ? Color.Primary : Color.Default)" Variant="@(_rewardCoins == 0 ? Variant.Filled : Variant.Outlined)" Style="cursor: pointer;" OnClick="() => _rewardCoins = 0">仅发勋章</MudChip>
+                </div>
+
+                <MudTextField T="string" @bind-Value="_praiseComment" Label="家长表扬留言" Variant="Variant.Outlined" Lines="2" Placeholder="例如：太棒了！看到你今天消灭了好多错题，继续保持这份认真！" Class="mt-2" />
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showQuickPraiseDialog = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Celebration" OnClick="SubmitQuickPraiseAsync" Class="font-weight-bold">
+            一键颁发并奖励
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- 作业暖心催促与关怀寄语弹窗 -->
+<MudDialog @bind-Visible="_showHomeworkNudgeDialog" Options="_homeworkNudgeDialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.NotificationsActive" Color="Color.Warning" />
+            <MudText Typo="Typo.h6" Class="font-weight-bold">💌 发送作业提醒与暖心关怀</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex flex-column gap-3 py-2">
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                正在为专属作业【<strong>@_targetReminderAssignmentTitle</strong>】向孩子发送提醒。选择一条充满爱意的寄语，能让孩子更有动力哦！
+            </MudAlert>
+
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold">选择关怀模板：</MudText>
+            <div class="d-flex flex-column gap-2">
+                @foreach (var template in _presetNudgeTemplates)
+                {
+                    bool isSelected = _customNudgeText == template;
+                    <div class="pa-3 rounded cursor-pointer"
+                         style="@(isSelected ? "border: 2px solid var(--mud-palette-warning); background: rgba(245, 158, 11, 0.12);" : "border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.03);")"
+                         @onclick="() => _customNudgeText = template">
+                        <MudText Typo="Typo.body2" Style="@(isSelected ? "font-weight: 700; color: #f59e0b;" : "")">@template</MudText>
+                    </div>
+                }
+            </div>
+
+            <MudTextField T="string" @bind-Value="_customNudgeText" Label="自定义关怀提醒" Variant="Variant.Outlined" Lines="2" Placeholder="输入您想对孩子说的话..." Class="mt-2" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showHomeworkNudgeDialog = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Send" OnClick="ConfirmSendHomeworkReminderAsync" Class="font-weight-bold">
+            发送暖心提醒
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- 打印/导出学情周报弹窗 -->
+<MudDialog @bind-Visible="_showWeeklyReportDialog" Options="_weeklyReportDialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center justify-space-between flex-wrap gap-2 no-print">
+            <div class="d-flex align-center gap-2">
+                <MudIcon Icon="@Icons.Material.Filled.Assessment" Color="Color.Info" />
+                <MudText Typo="Typo.h6" Class="font-weight-bold">📊 学情成长周报与提分诊断 · 打印预览</MudText>
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Print" OnClick="TriggerReportPrintAsync" Class="font-weight-bold">
+                立即调用打印机 / 导出 PDF
+            </MudButton>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_selectedStudent != null)
+        {
+            <div class="printable-sheet pa-6" style="background: #ffffff; color: #111827; border-radius: 8px; font-family: 'Outfit', 'Noto Sans SC', -apple-system, serif;">
+                <!-- 报告抬头 -->
+                <div style="text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 12px; margin-bottom: 20px;">
+                    <h2 style="margin: 0 0 6px 0; font-size: 1.6rem; font-weight: 800; color: #1e3a8a;">Northtropic 智能研学 · 阶段学情成长与提分诊断报告</h2>
+                    <div style="display: flex; justify-content: space-around; font-size: 0.9rem; color: #4b5563; margin-top: 8px; flex-wrap: gap: 8px;">
+                        <span>学员姓名：<strong>@_selectedStudent.Username</strong></span>
+                        <span>就读年级：<strong>@_selectedStudent.Grade</strong></span>
+                        <span>专属绑定码：<strong>@_selectedStudent.BindingCode</strong></span>
+                        <span>报告生成时间：<strong>@DateTime.Today.ToString("yyyy年MM月dd日")</strong></span>
+                    </div>
+                </div>
+
+                <!-- 核心数据矩阵 (4宫格) -->
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
+                    <div style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; text-align: center; background: #f8fafc;">
+                        <div style="font-size: 0.8rem; color: #64748b;">答题正确率</div>
+                        <div style="font-size: 1.4rem; font-weight: 800; color: #2563eb; margin: 4px 0;">
+                            @(_selectedStudent.TotalAnswered > 0 ? (int)((double)_selectedStudent.TotalCorrect / _selectedStudent.TotalAnswered * 100) : 0)%
+                        </div>
+                        <div style="font-size: 0.75rem; color: #64748b;">累计 @_selectedStudent.TotalCorrect / @_selectedStudent.TotalAnswered 题</div>
+                    </div>
+                    <div style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; text-align: center; background: #f8fafc;">
+                        <div style="font-size: 0.8rem; color: #64748b;">已净化消灭错题</div>
+                        <div style="font-size: 1.4rem; font-weight: 800; color: #16a34a; margin: 4px 0;">
+                            @_selectedStudent.ResolvedErrorsCount 题
+                        </div>
+                        <div style="font-size: 0.75rem; color: #64748b;">薄弱考点转化巩固</div>
+                    </div>
+                    <div style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; text-align: center; background: #f8fafc;">
+                        <div style="font-size: 0.8rem; color: #64748b;">连续打卡天数</div>
+                        <div style="font-size: 1.4rem; font-weight: 800; color: #d97706; margin: 4px 0;">
+                            @_selectedStudent.CurrentStreak 天
+                        </div>
+                        <div style="font-size: 0.75rem; color: #64748b;">最高连击 @_selectedStudent.MaxCombo 连胜</div>
+                    </div>
+                    <div style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; text-align: center; background: #f8fafc;">
+                        <div style="font-size: 0.8rem; color: #64748b;">成长等级与积分</div>
+                        <div style="font-size: 1.4rem; font-weight: 800; color: #7c3aed; margin: 4px 0;">
+                            Lv.@_selectedStudent.Level
+                        </div>
+                        <div style="font-size: 0.75rem; color: #64748b;">金币: @_selectedStudent.Coins | 经验: @_selectedStudent.Exp</div>
+                    </div>
+                </div>
+
+                <!-- AI 智能学情诊断与提分路径 -->
+                <div style="border: 1px solid #bfdbfe; background: #eff6ff; border-radius: 6px; padding: 14px; margin-bottom: 20px;">
+                    <div style="font-weight: 700; font-size: 0.95rem; color: #1d4ed8; margin-bottom: 4px;">
+                        💡 AI 智能研学引擎学情诊断分析：
+                        @if (_diagnosisReport != null)
+                        {
+                            <span style="font-size: 0.85rem; color: #d97706; margin-left: 8px;">(综合能力评级: @_diagnosisReport.StarRating.ToString("F1") 星)</span>
+                        }
+                    </div>
+                    <div style="font-size: 0.9rem; line-height: 1.6; color: #1e293b; white-space: pre-wrap;">
+                        @if (_diagnosisReport != null && !string.IsNullOrWhiteSpace(_diagnosisReport.AiGrowthAdvice))
+                        {
+                            <span>@_diagnosisReport.AiGrowthAdvice</span>
+                        }
+                        else if (_selectedStudent.TotalAnswered == 0)
+                        {
+                            <span>孩子当前尚未开启刷题练习，建议引导孩子使用【AI 智能刷题中心】完成首轮能力评测。</span>
+                        }
+                        else if ((double)_selectedStudent.TotalCorrect / _selectedStudent.TotalAnswered >= 0.8)
+                        {
+                            <span>孩子在 <strong>@_selectedStudent.Grade</strong> 课程知识掌握非常扎实（正确率 @((int)((double)_selectedStudent.TotalCorrect / _selectedStudent.TotalAnswered * 100))%），打卡连胜达到 @_selectedStudent.CurrentStreak 天！建议保持当前节奏，尝试挑战高星拔高题目。</span>
+                        }
+                        else
+                        {
+                            <span>孩子在近期答题中表现出部分知识点薄弱，累计积累了错题，目前已成功净化 @_selectedStudent.ResolvedErrorsCount 道错题。建议提醒孩子多使用【错题净化副本】功能进行 AI Tutor 的互动巩固。</span>
+                        }
+                    </div>
+                </div>
+
+                <!-- 各学科掌握度明细表格 -->
+                <div style="margin-bottom: 20px;">
+                    <div style="font-weight: 700; font-size: 0.95rem; color: #0f172a; margin-bottom: 8px;">
+                        📊 学科知识点作答掌握度全景：
+                    </div>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+                        <thead>
+                            <tr style="background: #f1f5f9; text-align: left;">
+                                <th style="padding: 8px; border: 1px solid #cbd5e1;">学科名称</th>
+                                <th style="padding: 8px; border: 1px solid #cbd5e1;">答对题数 / 总做题数</th>
+                                <th style="padding: 8px; border: 1px solid #cbd5e1;">作答正确率</th>
+                                <th style="padding: 8px; border: 1px solid #cbd5e1;">掌握度评级</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_subjectMasteries.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="4" style="padding: 12px; text-align: center; color: #94a3b8; border: 1px solid #cbd5e1;">暂无学科细分数据</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var sub in _subjectMasteries)
+                                {
+                                    int rate = (int)sub.AccuracyRate;
+                                    string rating = rate >= 85 ? "优秀 (掌握扎实)" : (rate >= 60 ? "良好 (需强化拔高)" : "待加强 (需重点攻坚)");
+                                    string rateColor = rate >= 85 ? "#16a34a" : (rate >= 60 ? "#d97706" : "#dc2626");
+                                    <tr>
+                                        <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: 600;">@sub.Subject</td>
+                                        <td style="padding: 8px; border: 1px solid #cbd5e1;">@sub.CorrectCount / @sub.TotalCount 题</td>
+                                        <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: 700; color: @rateColor;">@rate%</td>
+                                        <td style="padding: 8px; border: 1px solid #cbd5e1; color: @rateColor; font-weight: 500;">@rating</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 家长寄语与签字 -->
+                <div style="border-top: 1px dashed #cbd5e1; padding-top: 16px; margin-top: 24px; display: flex; justify-content: space-between; align-items: flex-end; font-size: 0.88rem; color: #475569;">
+                    <div>
+                        <div>💌 家长鼓励寄语：<strong>@(!string.IsNullOrWhiteSpace(_selectedStudent.ParentEncouragementNote) ? _selectedStudent.ParentEncouragementNote : "继续加油，保持自律与好奇心！")</strong></div>
+                    </div>
+                    <div style="text-align: right; min-width: 200px;">
+                        <div>家长签名确认：____________________</div>
+                        <div style="margin-top: 8px;">指导教师查阅：____________________</div>
+                    </div>
+                </div>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <div class="d-flex justify-end gap-2 w-100 no-print">
+            <MudButton OnClick="() => _showWeeklyReportDialog = false">关闭</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Print" OnClick="TriggerReportPrintAsync" Class="font-weight-bold">
+                立即打印 / 导出 PDF
+            </MudButton>
+        </div>
+    </DialogActions>
+</MudDialog>
+
+<!-- 布置专属作业与专项突破任务弹窗 -->
+<MudDialog @bind-Visible="_showCreateAssignmentDialog">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.PostAdd" Color="Color.Primary" />
+            <MudText Typo="Typo.h6" Class="font-weight-bold">布置专属突破作业与专项提分任务</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex flex-column gap-3 py-2">
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                为子女 <strong>@(_selectedStudent?.Username ?? "学生")</strong> 定制靶向试卷。布置后学生登录首页将收到醒目待办提醒，支持一键刷题与成绩回传。
+            </MudAlert>
+
+            <!-- ⚡ 一键智能模板推荐 -->
+            <div class="d-flex flex-column gap-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary font-weight-bold">⚡ 家长一键智能作业模板推荐 (点击快速套用)：</MudText>
+                <div class="d-flex align-center gap-2 flex-wrap">
+                    <MudChip T="string" Color="Color.Error" Variant="Variant.Outlined" Size="Size.Small" Icon="@Icons.Material.Filled.LocalFireDepartment" OnClick="() => ApplyAssignmentPreset(1)">
+                        🔥 错题专项突破包 (5题·稳固提分)
+                    </MudChip>
+                    <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small" Icon="@Icons.Material.Filled.AutoFixHigh" OnClick="() => ApplyAssignmentPreset(2)">
+                        🌟 基础核心夯实包 (10题·课本过关)
+                    </MudChip>
+                    <MudChip T="string" Color="Color.Secondary" Variant="Variant.Outlined" Size="Size.Small" Icon="@Icons.Material.Filled.EmojiEvents" OnClick="() => ApplyAssignmentPreset(3)">
+                        🏆 压轴培优冲刺包 (3题·思维拔高)
+                    </MudChip>
+                </div>
+            </div>
+
+            <MudTextField T="string" @bind-Value="_assignTitle" Label="作业标题" Variant="Variant.Outlined" Placeholder="如: 物理欧姆定律与电功率专项突破" />
+
+            <div class="d-flex gap-3 flex-wrap">
+                <MudSelect T="string" @bind-Value="_assignSubject" Label="目标学科" Variant="Variant.Outlined" Style="flex: 1; min-width: 160px;" SelectedValuesChanged="OnAssignSubjectChanged">
+                    @foreach (var sub in _availableSubjects)
+                    {
+                        <MudSelectItem Value="@sub">@sub</MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudSelect T="string" @bind-Value="_assignCategory" Label="指定知识点/考点" Variant="Variant.Outlined" Style="flex: 1; min-width: 160px;">
+                    <MudSelectItem Value="@("全部分类")">全部分类 (综合巩固)</MudSelectItem>
+                    @foreach (var cat in _availableCategories)
+                    {
+                        <MudSelectItem Value="@cat">@cat</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+
+            <div class="d-flex gap-3 flex-wrap">
+                <MudSelect T="int" @bind-Value="_assignCount" Label="布置题量" Variant="Variant.Outlined" Style="flex: 1; min-width: 140px;">
+                    <MudSelectItem Value="3">3 道速测 (耗时约 5 分钟)</MudSelectItem>
+                    <MudSelectItem Value="5">5 道巩固 (耗时约 10 分钟)</MudSelectItem>
+                    <MudSelectItem Value="10">10 道强化 (耗时约 20 分钟)</MudSelectItem>
+                    <MudSelectItem Value="15">15 道满分冲刺 (耗时约 30 分钟)</MudSelectItem>
+                </MudSelect>
+
+                <MudSelect T="int" @bind-Value="_assignDifficulty" Label="期望难度" Variant="Variant.Outlined" Style="flex: 1; min-width: 140px;">
+                    <MudSelectItem Value="1">Lv.1 概念入门</MudSelectItem>
+                    <MudSelectItem Value="2">Lv.2 课本基础</MudSelectItem>
+                    <MudSelectItem Value="3">Lv.3 进阶强化</MudSelectItem>
+                    <MudSelectItem Value="4">Lv.4 压轴拔高</MudSelectItem>
+                    <MudSelectItem Value="5">Lv.5 绝杀攻坚</MudSelectItem>
+                </MudSelect>
+            </div>
+
+            <MudTextField T="string" @bind-Value="_assignNote" Label="家长给本次作业的叮嘱/期望" Lines="2" Variant="Variant.Outlined" Placeholder="如: 这部分公式要多加注意单位换算，做完记得复习错题解析！" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showCreateAssignmentDialog = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SubmitCreateAssignmentAsync" Style="font-weight: 700;">确认布置并发布 ➔</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private User? _currentUser;
+    private List<User> _boundStudents = new();
+    private User? _selectedStudent;
+
+    private bool _showEncouragementDialog = false;
+    private string _inputEncouragementNote = string.Empty;
+
+    private bool _showQuickPraiseDialog = false;
+    private readonly List<string> _presetPraiseBadges = new() { "🏆 错题克星先锋", "🌟 坚持打卡模范", "🔥 专注飞跃之星", "💡 破题巧思达人", "🏅 逆风翻盘勇士" };
+    private string _selectedPraiseBadge = "🏆 错题克星先锋";
+    private int _rewardCoins = 50;
+    private string _praiseComment = string.Empty;
+
+    private bool _showWeeklyReportDialog = false;
+    private DialogOptions _weeklyReportDialogOptions = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true };
+
+    private bool _showBindDialog = false;
+    private string _inputBindingCode = string.Empty;
+
+    private bool _showCreateChildDialog = false;
+    private string _newChildName = string.Empty;
+    private string _newChildGrade = "初中二年级";
+
+    private bool _showEditGradeDialog = false;
+    private User? _editingStudent;
+    private string _targetNewGrade = "初中二年级";
+
+    private bool _showResetPasswordDialog = false;
+    private User? _targetResetStudent;
+    private string _newResetPassword = "123456";
+
+    private bool _showCreateAssignmentDialog = false;
+    private string _assignTitle = "专属专项突破作业";
+    private string _assignSubject = "初中物理";
+    private string _assignCategory = "全部分类";
+    private int _assignCount = 5;
+    private int _assignDifficulty = 3;
+    private string _assignNote = string.Empty;
+    private List<string> _availableSubjects = new() { "初中物理", "初中数学", "高中物理", "高中数学", "C# & .NET 进阶", "AI 工程实战", "通用知识" };
+    private List<string> _availableCategories = new();
+
+    private List<SubjectMasteryDto> _subjectMasteries = new();
+    private List<PracticeRecord> _recentRecords = new();
+    private List<HomeworkAssignment> _studentAssignments = new();
+    private EvolutionDiagnosisReportDto? _diagnosisReport;
+    private List<ErrorItem> _unmasteredErrors = new();
+    private Dictionary<string, int> _errorReasonBreakdown = new();
+    private bool _isLoadingDetails = false;
+
+    public class SubjectMasteryDto
+    {
+        public string Subject { get; set; } = string.Empty;
+        public int TotalCount { get; set; }
+        public int CorrectCount { get; set; }
+        public double AccuracyRate => TotalCount > 0 ? (double)CorrectCount / TotalCount * 100 : 0;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserSessionService.OnUserChanged += OnUserChangedHandler;
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _currentUser = await UserSessionService.GetActiveUserAsync();
+        if (_currentUser != null && _currentUser.CanViewStudentAnalytics)
+        {
+            if (_currentUser.Role == UserRole.SuperAdmin || _currentUser.Role == UserRole.Teacher)
+            {
+                var allUsers = await UserSessionService.GetAllUsersAsync();
+                _boundStudents = allUsers.Where(u => u.Role == UserRole.Student).ToList();
+            }
+            else
+            {
+                _boundStudents = await UserSessionService.GetBoundStudentsAsync(_currentUser.Id);
+            }
+
+            if (_boundStudents.Any())
+            {
+                if (_selectedStudent == null || !_boundStudents.Any(s => s.Id == _selectedStudent.Id))
+                {
+                    _selectedStudent = _boundStudents.First();
+                }
+                await LoadStudentDetailsAsync(_selectedStudent.Id);
+            }
+            else
+            {
+                _selectedStudent = null;
+                _subjectMasteries.Clear();
+                _recentRecords.Clear();
+                _diagnosisReport = null;
+                _unmasteredErrors.Clear();
+                _errorReasonBreakdown.Clear();
+            }
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadStudentDetailsAsync(Guid studentId)
+    {
+        try
+        {
+            _isLoadingDetails = true;
+            var records = await PracticeService.GetUserPracticeRecordsAsync(studentId);
+
+            _recentRecords = records.Take(8).ToList();
+
+            _subjectMasteries = records
+                .Where(r => r.Question != null && !string.IsNullOrWhiteSpace(r.Question.Subject))
+                .GroupBy(r => r.Question!.Subject)
+                .Select(g => new SubjectMasteryDto
+                {
+                    Subject = g.Key,
+                    TotalCount = g.Count(),
+                    CorrectCount = g.Count(r => r.IsCorrect)
+                })
+                .OrderByDescending(s => s.TotalCount)
+                .ToList();
+
+            _studentAssignments = await PracticeService.GetHomeworkAssignmentsByStudentAsync(studentId);
+
+            // 智能学情演进与错题深潜诊断加载
+            _diagnosisReport = await StudentEvolutionService.GenerateDiagnosisReportAsync(studentId);
+            _unmasteredErrors = await ErrorBookService.GetUnmasteredErrorsAsync(studentId, _currentUser?.Id);
+            _errorReasonBreakdown = _unmasteredErrors
+                .GroupBy(e => string.IsNullOrWhiteSpace(e.ErrorReasonCategory) ? "未归类错因" : e.ErrorReasonCategory)
+                .ToDictionary(g => g.Key, g => g.Count());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading student details: {ex.Message}");
+        }
+        finally
+        {
+            _isLoadingDetails = false;
+        }
+    }
+
+    private async Task QuickAssignTargetedPractice(string category, string? subject = null)
+    {
+        if (string.IsNullOrWhiteSpace(subject) && category.Contains('-'))
+        {
+            var firstDash = category.IndexOf('-');
+            subject = category.Substring(0, firstDash);
+            category = category.Substring(firstDash + 1);
+        }
+        _assignSubject = !string.IsNullOrWhiteSpace(subject) ? subject : (_selectedStudent?.Grade?.Contains("初中") == true ? "初中物理" : "高中物理");
+        _assignCategory = category;
+        _assignTitle = $"{_assignSubject} · {category} 薄弱靶向攻坚作业";
+        _assignCount = 5;
+        _assignDifficulty = 3;
+        _assignNote = $"系统检测到你在【{category}】考点尚有薄弱，特布置此专项练习，认真思考，突破短板！";
+        await UpdateCategoriesForSubjectAsync(_assignSubject);
+        _showCreateAssignmentDialog = true;
+        StateHasChanged();
+    }
+
+    private async Task QuickAssignTargetedForError(ErrorItem error)
+    {
+        await QuickAssignTargetedPractice(error.Question?.Category ?? "综合", error.Question?.Subject);
+    }
+
+    private async void OnUserChangedHandler()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task SelectStudent(User student)
+    {
+        _selectedStudent = student;
+        await LoadStudentDetailsAsync(student.Id);
+        StateHasChanged();
+    }
+
+    private void OpenBindDialog()
+    {
+        _inputBindingCode = string.Empty;
+        _showBindDialog = true;
+    }
+
+    private async Task SubmitBindAsync()
+    {
+        if (_currentUser == null) return;
+
+        var res = await UserSessionService.BindStudentByCodeAsync(_currentUser.Id, _inputBindingCode);
+        if (res.Success)
+        {
+            Snackbar.Add(res.Message, Severity.Success);
+            _showBindDialog = false;
+            await LoadDataAsync();
+        }
+        else
+        {
+            Snackbar.Add(res.Message, Severity.Error);
+        }
+    }
+
+    private void OpenCreateChildDialog()
+    {
+        _newChildName = string.Empty;
+        _newChildGrade = "初中二年级";
+        _showCreateChildDialog = true;
+    }
+
+    private async Task SubmitCreateChildAsync()
+    {
+        if (_currentUser == null) return;
+
+        var res = await UserSessionService.CreateChildStudentAsync(_currentUser.Id, _newChildName, _newChildGrade);
+        if (res.Success && res.Student != null)
+        {
+            Snackbar.Add(res.Message, Severity.Success);
+            _showCreateChildDialog = false;
+            await LoadDataAsync();
+            _selectedStudent = res.Student;
+        }
+        else
+        {
+            Snackbar.Add(res.Message, Severity.Error);
+        }
+    }
+
+    private async Task UnbindStudentAsync(User student)
+    {
+        if (_currentUser == null) return;
+
+        bool? confirmed = await DialogService.ShowMessageBox(
+            title: "🔗 解除绑定确认",
+            markupMessage: new MarkupString(
+                $"确定要解除与子女 <strong>【{student.Username}】</strong>（{student.Grade}）的学情关联绑定吗？<br/><br/>" +
+                $"解除后您将无法在学情大盘中查看该学生的数据，后续可通过该学生的专属绑定码随时重新绑定。"
+            ),
+            yesText: "确认解除绑定",
+            cancelText: "取消"
+        );
+
+        if (confirmed != true) return;
+
+        var res = await UserSessionService.UnbindStudentAsync(_currentUser.Id, student.Id);
+        if (res.Success)
+        {
+            Snackbar.Add(res.Message, Severity.Success);
+            if (_selectedStudent?.Id == student.Id) _selectedStudent = null;
+            await LoadDataAsync();
+        }
+        else
+        {
+            Snackbar.Add(res.Message, Severity.Error);
+        }
+    }
+
+    private async Task OpenEditStudentDialog(User student)
+    {
+        var parameters = new DialogParameters<Northtropic.Components.Dialogs.EditProfileDialog>
+        {
+            { x => x.CurrentUser, student }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<Northtropic.Components.Dialogs.EditProfileDialog>("", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadDataAsync();
+        }
+    }
+
+    private void OpenEditGradeDialog(User student)
+    {
+        _editingStudent = student;
+        _targetNewGrade = student.Grade;
+        _showEditGradeDialog = true;
+    }
+
+    private async Task ConfirmEditGradeAsync()
+    {
+        if (_editingStudent == null || string.IsNullOrWhiteSpace(_targetNewGrade)) return;
+
+        var success = await UserSessionService.UpdateUserGradeAsync(_editingStudent.Id, _targetNewGrade);
+        if (success)
+        {
+            _editingStudent.Grade = _targetNewGrade;
+            Snackbar.Add($"已成功将 【{_editingStudent.Username}】 的年级调整为 【{_targetNewGrade}】！", Severity.Success);
+            _showEditGradeDialog = false;
+            await LoadDataAsync();
+        }
+        else
+        {
+            Snackbar.Add("修改年级失败，请稍后重试！", Severity.Error);
+        }
+    }
+
+    private void OpenResetPasswordDialog(User? student)
+    {
+        if (student == null) return;
+        _targetResetStudent = student;
+        _newResetPassword = "123456";
+        _showResetPasswordDialog = true;
+    }
+
+    private async Task ConfirmResetPasswordAsync()
+    {
+        if (_targetResetStudent == null || _currentUser == null) return;
+        if (string.IsNullOrWhiteSpace(_newResetPassword) || _newResetPassword.Length < 6)
+        {
+            Snackbar.Add("密码长度不能少于 6 位！", Severity.Warning);
+            return;
+        }
+
+        bool success = await UserSessionService.ResetUserPasswordAsync(_targetResetStudent.Id, _newResetPassword.Trim(), _currentUser.Id);
+        if (success)
+        {
+            Snackbar.Add($"已成功重置【{_targetResetStudent.Username}】的登录密码为：{_newResetPassword.Trim()}", Severity.Success);
+            _showResetPasswordDialog = false;
+        }
+        else
+        {
+            Snackbar.Add("重置密码失败，请确认您具有该子女账号的监护关联权限。", Severity.Error);
+        }
+    }
+
+    // 作业暖心提醒模态框状态与模板
+    private bool _showHomeworkNudgeDialog = false;
+    private readonly DialogOptions _homeworkNudgeDialogOptions = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+    private Guid _targetReminderAssignmentId = Guid.Empty;
+    private string _targetReminderAssignmentTitle = string.Empty;
+    private string _customNudgeText = string.Empty;
+    private readonly List<string> _presetNudgeTemplates = new List<string>
+    {
+        "🌟 宝贝，做完作业记得休息眼睛，劳逸结合最棒！",
+        "💡 遇到难题不要急，AI 导师苏格拉底会一步一步启发你！",
+        "🚀 今天专练这几个核心考点，攻克它们就是大突破！",
+        "🍎 专心答完，爸爸/妈妈为你准备了美味的水果点心！"
+    };
+
+    private void OpenHomeworkReminderDialog(Guid assignmentId, string title)
+    {
+        _targetReminderAssignmentId = assignmentId;
+        _targetReminderAssignmentTitle = title;
+        _customNudgeText = _presetNudgeTemplates[0];
+        _showHomeworkNudgeDialog = true;
+    }
+
+    private async Task ConfirmSendHomeworkReminderAsync()
+    {
+        if (_currentUser == null || _targetReminderAssignmentId == Guid.Empty) return;
+        var (success, msg) = await PracticeService.SendHomeworkReminderNudgeAsync(_currentUser.Id, _targetReminderAssignmentId, _customNudgeText);
+        if (success)
+        {
+            Snackbar.Add(msg, Severity.Success);
+            _showHomeworkNudgeDialog = false;
+            if (_selectedStudent != null)
+            {
+                var allUsers = await UserSessionService.GetAllUsersAsync();
+                var refreshed = allUsers.FirstOrDefault(u => u.Id == _selectedStudent.Id);
+                if (refreshed != null)
+                {
+                    _selectedStudent = refreshed;
+                }
+            }
+            StateHasChanged();
+        }
+        else
+        {
+            Snackbar.Add(msg, Severity.Warning);
+        }
+    }
+
+    private async Task SendHomeworkReminderAsync(Guid assignmentId)
+    {
+        if (_currentUser == null) return;
+        var (success, msg) = await PracticeService.SendHomeworkReminderNudgeAsync(_currentUser.Id, assignmentId);
+        if (success)
+        {
+            Snackbar.Add(msg, Severity.Success);
+            if (_selectedStudent != null)
+            {
+                var allUsers = await UserSessionService.GetAllUsersAsync();
+                var refreshed = allUsers.FirstOrDefault(u => u.Id == _selectedStudent.Id);
+                if (refreshed != null)
+                {
+                    _selectedStudent = refreshed;
+                }
+            }
+            StateHasChanged();
+        }
+        else
+        {
+            Snackbar.Add(msg, Severity.Warning);
+        }
+    }
+
+    private void OpenEncouragementDialog()
+    {
+        if (_selectedStudent == null) return;
+        _inputEncouragementNote = _selectedStudent.ParentEncouragementNote ?? string.Empty;
+        _showEncouragementDialog = true;
+    }
+
+    private async Task SubmitEncouragementNoteAsync()
+    {
+        if (_selectedStudent == null) return;
+        var res = await UserSessionService.UpdateParentEncouragementNoteAsync(_selectedStudent.Id, _inputEncouragementNote);
+        if (res.Success)
+        {
+            _selectedStudent.ParentEncouragementNote = _inputEncouragementNote;
+            _selectedStudent.ParentNoteUpdatedAt = DateTime.Now;
+            _showEncouragementDialog = false;
+            Snackbar.Add($"💌 关怀寄语发布成功！子女 {_selectedStudent.Username} 登录即可查收。", Severity.Success);
+            StateHasChanged();
+        }
+        else
+        {
+            Snackbar.Add(res.Message, Severity.Error);
+        }
+    }
+
+    private async Task OpenCreateAssignmentDialog()
+    {
+        if (_selectedStudent == null) return;
+        _assignTitle = $"{_selectedStudent.Username} 的 {_assignSubject} 专项突破作业";
+        await UpdateCategoriesForSubjectAsync(_assignSubject);
+        _showCreateAssignmentDialog = true;
+    }
+
+    private async Task OnAssignSubjectChanged(IEnumerable<string> values)
+    {
+        var sub = values.FirstOrDefault() ?? "初中物理";
+        _assignSubject = sub;
+        await UpdateCategoriesForSubjectAsync(sub);
+    }
+
+    private async Task UpdateCategoriesForSubjectAsync(string subject)
+    {
+        try
+        {
+            var categories = await CurriculumConfigService.GetCategoriesBySubjectAsync(subject);
+            if (categories.Any())
+            {
+                _availableCategories = categories.Where(c => c != "全部").ToList();
+            }
+            else
+            {
+                var questions = await PracticeService.GetCategoriesBySubjectAsync(subject);
+                _availableCategories = questions.Where(c => !string.IsNullOrWhiteSpace(c) && c != "全部").ToList();
+            }
+            if (!_availableCategories.Contains(_assignCategory))
+            {
+                _assignCategory = _availableCategories.FirstOrDefault() ?? "综合考点";
+            }
+        }
+        catch
+        {
+            _availableCategories = new List<string> { "综合考点", "基础概念", "拔高冲刺" };
+        }
+    }
+
+    private void ApplyAssignmentPreset(int presetType)
+    {
+        string studentName = _selectedStudent?.Username ?? "宝贝";
+        if (presetType == 1) // 错题突破
+        {
+            _assignTitle = $"{_assignSubject} · 错题靶向净化突破任务";
+            _assignCount = 5;
+            _assignDifficulty = 3;
+            _assignNote = $"加油{studentName}！认真审题，消灭之前的薄弱考点，做完系统会立即给出AI名师解析！";
+        }
+        else if (presetType == 2) // 基础夯实
+        {
+            _assignTitle = $"{_assignSubject} · 基础核心知识过关练";
+            _assignCount = 10;
+            _assignDifficulty = 2;
+            _assignNote = $"稳扎稳打夯实基本功，细心审题，争取全对！";
+        }
+        else if (presetType == 3) // 压轴冲刺
+        {
+            _assignTitle = $"{_assignSubject} · 压轴高分思维攻坚包";
+            _assignCount = 3;
+            _assignDifficulty = 5;
+            _assignNote = $"攻坚难题挑战自我！开动脑筋，遇到卡壳多利用草稿纸演算分析。";
+        }
+        Snackbar.Add("已成功套用专属作业推荐模板！", Severity.Info);
+    }
+
+    private async Task SubmitCreateAssignmentAsync()
+    {
+        if (_currentUser == null || _selectedStudent == null) return;
+
+        try
+        {
+            var assignment = await PracticeService.CreateHomeworkAssignmentAsync(
+                creatorUserId: _currentUser.Id,
+                studentUserId: _selectedStudent.Id,
+                title: _assignTitle,
+                subject: _assignSubject,
+                category: _assignCategory,
+                questionCount: _assignCount,
+                difficulty: _assignDifficulty,
+                deadline: DateTime.Now.AddDays(3),
+                note: _assignNote
+            );
+
+            _showCreateAssignmentDialog = false;
+            Snackbar.Add($"📋 成功为【{_selectedStudent.Username}】布置专属作业《{_assignTitle}》！", Severity.Success);
+            await LoadStudentDetailsAsync(_selectedStudent.Id);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"布置作业失败: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteAssignmentAsync(Guid assignmentId)
+    {
+        bool? confirm = await DialogService.ShowMessageBox("删除作业确认", "确定要删除该份专属作业吗？", yesText: "确认删除", cancelText: "取消");
+        if (confirm == true)
+        {
+            await PracticeService.DeleteHomeworkAssignmentAsync(assignmentId, requestorUserId: _currentUser?.Id);
+            Snackbar.Add("已成功删除该份作业记录", Severity.Info);
+            if (_selectedStudent != null)
+            {
+                await LoadStudentDetailsAsync(_selectedStudent.Id);
+            }
+        }
+    }
+
+    private void OpenQuickPraiseDialog()
+    {
+        if (_selectedStudent == null) return;
+        _selectedPraiseBadge = "🏆 错题克星先锋";
+        _rewardCoins = 50;
+        _praiseComment = $"恭喜获得【{_selectedPraiseBadge}】！爸爸妈妈看到你的努力与进步，为你骄傲！";
+        _showQuickPraiseDialog = true;
+    }
+
+    private void SelectPraiseBadge(string badge)
+    {
+        _selectedPraiseBadge = badge;
+        _praiseComment = $"恭喜获得【{badge}】！爸爸妈妈看到你的努力与进步，为你骄傲！";
+    }
+
+    private async Task SubmitQuickPraiseAsync()
+    {
+        if (_selectedStudent == null) return;
+        try
+        {
+            var (success, msg, newCoins, newExp, note, noteTime) = await UserSessionService.AwardParentPraiseRewardAsync(_selectedStudent.Id, _selectedPraiseBadge, _praiseComment, _rewardCoins);
+            if (success)
+            {
+                if (newCoins.HasValue) _selectedStudent.Coins = newCoins.Value;
+                if (newExp.HasValue) _selectedStudent.Exp = newExp.Value;
+                _selectedStudent.ParentEncouragementNote = note ?? string.Empty;
+                _selectedStudent.ParentNoteUpdatedAt = noteTime;
+
+                try
+                {
+                    await JSRuntime.InvokeVoidAsync("playRewardAudio", "reward");
+                    await JSRuntime.InvokeVoidAsync("triggerConfetti");
+                }
+                catch { }
+
+                _showQuickPraiseDialog = false;
+                Snackbar.Add($"🎉 成功向【{_selectedStudent.Username}】颁发了【{_selectedPraiseBadge}】并奖励了 {_rewardCoins} 爱心金币！", Severity.Success);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"颁发奖励失败: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void OpenWeeklyReportDialog()
+    {
+        if (_selectedStudent == null) return;
+        _showWeeklyReportDialog = true;
+    }
+
+    private async Task TriggerReportPrintAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("printCurrentPage");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"调起打印异常: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private async Task PrintReportAsync()
+    {
+        OpenWeeklyReportDialog();
+    }
+
+    public void Dispose()
+    {
+        UserSessionService.OnUserChanged -= OnUserChangedHandler;
+    }
+}

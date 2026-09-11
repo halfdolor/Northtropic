@@ -1,0 +1,1162 @@
+@inherits LayoutComponentBase
+@using Northtropic.Models
+@using Northtropic.Services
+@inject IGamificationService GamificationService
+@inject IUserSessionService UserSessionService
+@inject IDialogService DialogService
+@inject NavigationManager NavigationManager
+@inject ThemeService ThemeService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@implements IDisposable
+
+<MudThemeProvider IsDarkMode="@ThemeService.CurrentTheme.IsDarkMode" Theme="@ThemeService.GetMudTheme()" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<style>
+    :root {
+        @ThemeService.CurrentTheme.CssVariables
+    }
+</style>
+
+<MudLayout Class="@($"theme-{ThemeService.CurrentTheme.Code}")">
+    @if (!UserSessionService.IsAuthenticated || _currentUser == null)
+    {
+        <!-- 全屏强鉴权登录拦截门禁 (不鉴权不允许访问系统) -->
+        <div class="d-flex align-center justify-center min-vh-100 pa-4" style="background: radial-gradient(circle at 50% 20%, rgba(59, 130, 246, 0.15), transparent 70%), var(--bg-color, #0f172a); min-height: 100vh;">
+            <MudPaper Class="glass-card pa-8 rounded-xl shadow-2xl" Style="max-width: 540px; width: 100%; border: 1px solid var(--glass-card-border); backdrop-filter: blur(20px);">
+                <!-- 品牌 Logo 与标题 -->
+                <div class="text-center mb-6">
+                    <div class="d-inline-flex align-center justify-center pa-3 rounded-circle mb-3" style="background: linear-gradient(135deg, #3b82f6, #8b5cf6);">
+                        <MudIcon Icon="@Icons.Material.Filled.SportsEsports" Size="Size.Large" Style="color: #ffffff;" />
+                    </div>
+                    <MudText Typo="Typo.h4" Class="font-weight-bold gradient-text">Northtropic</MudText>
+                    <MudText Typo="Typo.subtitle1" Class="mud-text-secondary mt-1">AI 智适应精准助学与错题净化提分系统</MudText>
+                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined" Class="mt-2 font-weight-bold">
+                        🔒 系统安全鉴权登录网关
+                    </MudChip>
+                </div>
+
+                <!-- 登录双通道 Tabs -->
+                <MudTabs Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4" Color="Color.Primary" SliderColor="Color.Secondary">
+                    <!-- Tab 1: 密码登录 -->
+                    <MudTabPanel Text="🔑 密码登录" Icon="@Icons.Material.Filled.Password">
+                        <div class="d-flex flex-column gap-4">
+                            <MudTextField T="string" @bind-Value="_loginAccount" Label="手机号 / 账号名" Variant="Variant.Outlined"
+                                          Placeholder="请输入手机号码或用户名..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AccountCircle" />
+
+                            <MudTextField T="string" @bind-Value="_loginPassword" Label="登录密码" Variant="Variant.Outlined"
+                                          InputType="@(_showPassword ? InputType.Text : InputType.Password)"
+                                          Placeholder="请输入登录密码 (默认初始密码 123456)..."
+                                          Adornment="Adornment.End" AdornmentIcon="@(_showPassword ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff)"
+                                          OnAdornmentClick="() => _showPassword = !_showPassword" />
+
+                            <MudAlert Severity="Severity.Info" Variant="Variant.Text" Class="py-1">
+                                💡 提示：所有新开通账号默认密码为 <code>123456</code>，登录后将要求修改密码。
+                            </MudAlert>
+
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Login"
+                                       OnClick="SubmitPasswordLoginAsync" Disabled="@_isLoggingIn" Class="font-weight-bold py-3 mt-2" Style="border-radius: 10px;">
+                                @if (_isLoggingIn)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                    <span>鉴权中...</span>
+                                }
+                                else
+                                {
+                                    <span>安全登录系统</span>
+                                }
+                            </MudButton>
+                        </div>
+                    </MudTabPanel>
+
+                    <!-- Tab 2: 短信验证码登录 -->
+                    <MudTabPanel Text="📱 短信登录" Icon="@Icons.Material.Filled.PhonelinkRing">
+                        <div class="d-flex flex-column gap-4">
+                            <div class="d-flex align-center gap-2">
+                                <MudTextField T="string" @bind-Value="_smsPhone" Label="手机号码 (11位)" Variant="Variant.Outlined"
+                                              Placeholder="请输入 11 位已注册手机号..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.PhoneAndroid"
+                                              Immediate="true" Class="flex-grow-1" />
+
+                                <MudButton Variant="Variant.Filled" Color="Color.Secondary" Disabled="@(_countdown > 0 || _isSendingCode)"
+                                           OnClick="SendSmsCodeAsync" Style="height: 56px; min-width: 130px;">
+                                    @if (_isSendingCode)
+                                    {
+                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                        <span>发送中...</span>
+                                    }
+                                    else if (_countdown > 0)
+                                    {
+                                        <span>@(_countdown)s 倒计时</span>
+                                    }
+                                    else
+                                    {
+                                        <span>获取验证码</span>
+                                    }
+                                </MudButton>
+                            </div>
+
+                            <MudTextField T="string" @bind-Value="_smsCode" Label="6位短信验证码" Variant="Variant.Outlined"
+                                          Placeholder="输入收到的短信验证码..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.LockClock"
+                                          MaxLength="6" Immediate="true" />
+
+                            <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Login"
+                                       OnClick="SubmitSmsLoginAsync" Disabled="@_isLoggingIn" Class="font-weight-bold py-3 mt-2" Style="border-radius: 10px;">
+                                @if (_isLoggingIn)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                    <span>验证登录中...</span>
+                                }
+                                else
+                                {
+                                    <span>短信验证码登录</span>
+                                }
+                            </MudButton>
+                        </div>
+                    </MudTabPanel>
+
+                    <!-- Tab 3: 用户自主注册 -->
+                    <MudTabPanel Text="📝 新用户注册" Icon="@Icons.Material.Filled.PersonAdd">
+                        @if (!string.IsNullOrEmpty(_registrationSuccessMsg))
+                        {
+                            <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="rounded-lg pa-4 my-2">
+                                <div class="font-weight-bold mb-1">🎉 注册申请已成功提交！</div>
+                                <div style="font-size: 0.9rem;">
+                                    @_registrationSuccessMsg
+                                </div>
+                                <div class="mt-2 text-caption">
+                                    提示：默认初始密码为 <code>123456</code>。请耐心等待超级管理员审批通过后再进行登录。
+                                </div>
+                            </MudAlert>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" FullWidth="true" Class="mt-3" OnClick="() => _registrationSuccessMsg = string.Empty">
+                                重新提交或登记其他账号
+                            </MudButton>
+                        }
+                        else
+                        {
+                            <div class="d-flex flex-column gap-3">
+                                <!-- 注册模式切换器 -->
+                                <div class="d-flex align-center justify-space-between pb-1 border-b">
+                                    <MudRadioGroup T="int" @bind-Value="_regMode" Class="d-flex gap-4">
+                                        <MudRadio T="int" Value="0" Color="Color.Primary" Dense="true">📱 短信验证码注册</MudRadio>
+                                        <MudRadio T="int" Value="1" Color="Color.Secondary" Dense="true">🔐 手工设置密码注册</MudRadio>
+                                    </MudRadioGroup>
+                                </div>
+
+                                @if (_regSmsFailed && _regMode == 0)
+                                {
+                                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="py-1">
+                                        短信发送未成功？建议直接点击
+                                        <MudLink Underline="Underline.Always" Color="Color.Secondary" Class="font-weight-bold cursor-pointer" OnClick="() => _regMode = 1">【切换为手工设置密码注册】</MudLink>
+                                        提交申请！
+                                    </MudAlert>
+                                }
+
+                                <MudGrid>
+                                    <MudItem xs="12" sm="6">
+                                        <MudTextField T="string" @bind-Value="_regUsername" Label="真实姓名 / 用户名 *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                      Placeholder="请输入您的姓名..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Badge" />
+                                    </MudItem>
+                                    <MudItem xs="12" sm="6">
+                                        <MudSelect T="UserRole" @bind-Value="_regRole" Label="注册身份角色 *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                            <MudSelectItem Value="UserRole.Student">🎒 学生用户</MudSelectItem>
+                                            <MudSelectItem Value="UserRole.Parent">👨‍👩‍👧 家长用户</MudSelectItem>
+                                            <MudSelectItem Value="UserRole.Teacher">👩‍🏫 老师用户</MudSelectItem>
+                                        </MudSelect>
+                                    </MudItem>
+                                </MudGrid>
+
+                                <MudGrid>
+                                    <MudItem xs="12" sm="6">
+                                        <MudTextField T="string" @bind-Value="_regPhone" Label="手机号码 (11位) *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                      Placeholder="请输入 11 位手机号码..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.PhoneAndroid" />
+                                    </MudItem>
+                                    <MudItem xs="12" sm="6">
+                                        <MudTextField T="string" @bind-Value="_regEmail" Label="电子邮箱 *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                      Placeholder="如：example@domain.com" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Email" />
+                                    </MudItem>
+                                </MudGrid>
+
+                                <MudSelect T="string" @bind-Value="_regGrade" Label="适学/教学年级" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                    @foreach (var grade in GradeSubjectProvider.AvailableGrades)
+                                    {
+                                        <MudSelectItem Value="@grade">@grade</MudSelectItem>
+                                    }
+                                </MudSelect>
+
+                                @if (_regMode == 0)
+                                {
+                                    <!-- 模式 1: 短信验证码注册 (不自动回填，须用户手工查收短信后输入) -->
+                                    <div class="d-flex align-center gap-2">
+                                        <MudTextField T="string" @bind-Value="_regSmsCode" Label="短信验证码 *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                      Placeholder="请输入您手机接收到的 6 位验证码..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.LockClock"
+                                                      MaxLength="6" Class="flex-grow-1" />
+
+                                        <MudButton Variant="Variant.Filled" Color="Color.Secondary" Disabled="@(_regCountdown > 0 || _isRegSendingCode)"
+                                                   OnClick="SendRegSmsCodeAsync" Style="height: 40px; min-width: 120px;" Size="Size.Small">
+                                            @if (_isRegSendingCode)
+                                            {
+                                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                                <span>发送中...</span>
+                                            }
+                                            else if (_regCountdown > 0)
+                                            {
+                                                <span>@(_regCountdown)s</span>
+                                            }
+                                            else
+                                            {
+                                                <span>发送验证码</span>
+                                            }
+                                        </MudButton>
+                                    </div>
+
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.HowToReg"
+                                               OnClick="SubmitRegistrationAsync" Disabled="@_isRegistering" Class="font-weight-bold py-3 mt-2" Style="border-radius: 10px;">
+                                        @if (_isRegistering)
+                                        {
+                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                            <span>提交审核中...</span>
+                                        }
+                                        else
+                                        {
+                                            <span>验证短信并提交注册 (等待审批)</span>
+                                        }
+                                    </MudButton>
+                                }
+                                else
+                                {
+                                    <!-- 模式 2: 手工设置高复杂度密码注册 (常规复杂度要求) -->
+                                    <MudAlert Severity="Severity.Normal" Variant="Variant.Text" Class="py-1">
+                                        🔒 密码复杂度要求：长度 $\ge 8$ 位，须同时包含英文字母与阿拉伯数字。
+                                    </MudAlert>
+
+                                    <MudTextField T="string" @bind-Value="_regManualPassword" Label="设置登录密码 *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                  InputType="@(_showRegManualPassword ? InputType.Text : InputType.Password)"
+                                                  Placeholder="至少 8 位，包含字母与数字..."
+                                                  Adornment="Adornment.End" AdornmentIcon="@(_showRegManualPassword ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff)"
+                                                  OnAdornmentClick="() => _showRegManualPassword = !_showRegManualPassword" />
+
+                                    <MudTextField T="string" @bind-Value="_regManualConfirmPassword" Label="确认登录密码 *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                  InputType="@(_showRegManualPassword ? InputType.Text : InputType.Password)"
+                                                  Placeholder="请再次输入上方密码以确认..." />
+
+                                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large" StartIcon="@Icons.Material.Filled.LockPerson"
+                                               OnClick="SubmitManualPasswordRegistrationAsync" Disabled="@_isRegistering" Class="font-weight-bold py-3 mt-2" Style="border-radius: 10px;">
+                                        @if (_isRegistering)
+                                        {
+                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                            <span>提交审核中...</span>
+                                        }
+                                        else
+                                        {
+                                            <span>提交密码注册申请 (等待审批)</span>
+                                        }
+                                    </MudButton>
+                                }
+                            </div>
+                        }
+                    </MudTabPanel>
+                </MudTabs>
+
+                <!-- 🎭 体验账号一键登录通道 (无门槛体验 4 大角色) -->
+                <div class="mt-4 pa-4 glass-card" style="background: rgba(59, 130, 246, 0.06); border: 1px dashed rgba(59, 130, 246, 0.4); border-radius: 12px;">
+                    <div class="d-flex align-center justify-space-between mb-2 flex-wrap gap-1">
+                        <div class="d-flex align-center gap-1">
+                            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Secondary" Size="Size.Small" />
+                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Style="color: var(--mud-palette-secondary);">
+                                🎭 快捷体验通道 · 4 大角色一键进入
+                            </MudText>
+                        </div>
+                        <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Text">免密极速体验</MudChip>
+                    </div>
+                    <MudGrid Spacing="2">
+                        <MudItem xs="6">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" FullWidth="true"
+                                       StartIcon="@Icons.Material.Filled.School" Class="justify-start text-left py-2"
+                                       OnClick='() => QuickDemoLoginAsync("Student")' Disabled="@_isLoggingIn">
+                                <div>
+                                    <div class="font-weight-bold">🎓 学员 · 李小明</div>
+                                    <div class="mud-text-secondary" style="font-size: 0.72rem;">初二/刷题/错题副本</div>
+                                </div>
+                            </MudButton>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" FullWidth="true"
+                                       StartIcon="@Icons.Material.Filled.FamilyRestroom" Class="justify-start text-left py-2"
+                                       OnClick='() => QuickDemoLoginAsync("Parent")' Disabled="@_isLoggingIn">
+                                <div>
+                                    <div class="font-weight-bold">👨‍👩‍👧 家长 · 李大强</div>
+                                    <div class="mud-text-secondary" style="font-size: 0.72rem;">学情雷达/定制做题</div>
+                                </div>
+                            </MudButton>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" FullWidth="true"
+                                       StartIcon="@Icons.Material.Filled.PersonSearch" Class="justify-start text-left py-2"
+                                       OnClick='() => QuickDemoLoginAsync("Teacher")' Disabled="@_isLoggingIn">
+                                <div>
+                                    <div class="font-weight-bold">👩‍🏫 名师 · 张老师</div>
+                                    <div class="mud-text-secondary" style="font-size: 0.72rem;">题库录入/OCR拍照</div>
+                                </div>
+                            </MudButton>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" FullWidth="true"
+                                       StartIcon="@Icons.Material.Filled.AdminPanelSettings" Class="justify-start text-left py-2"
+                                       OnClick='() => QuickDemoLoginAsync("Admin")' Disabled="@_isLoggingIn">
+                                <div>
+                                    <div class="font-weight-bold">🛡️ 超级管理员</div>
+                                    <div class="mud-text-secondary" style="font-size: 0.72rem;">系统总控/用户审核</div>
+                                </div>
+                            </MudButton>
+                        </MudItem>
+                    </MudGrid>
+                </div>
+
+                <!-- 底部安全与超时说明 -->
+                <div class="mt-5 text-center">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        ⏱️ 安全机制：系统 30 分钟无响应自动退出 | 🛡️ 新建账号默认密码 123456
+                    </MudText>
+                </div>
+            </MudPaper>
+        </div>
+    }
+    else
+    {
+        <!-- 已鉴权：顶栏励志成长状态栏与登录区域 -->
+        <MudAppBar Elevation="1" Style="@ThemeService.CurrentTheme.AppbarStyle">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
+            
+            <MudText Typo="Typo.h6" Class="gradient-text font-weight-bold ml-2">
+                Northtropic
+            </MudText>
+
+            <MudSpacer />
+
+            <!-- 励志进阶学霸状态 (统一 5 色纯净风格 - 桌面端) -->
+            <div class="d-none d-md-flex align-center gap-3">
+                <!-- 打卡 Streak -->
+                <div class="d-flex align-center gap-1 px-3 py-1 glass-card" style="border-radius: 20px;">
+                    <MudIcon Icon="@Icons.Material.Filled.Whatshot" Color="Color.Primary" Size="Size.Small" />
+                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                        @_currentUser.CurrentStreak 天连胜
+                    </MudText>
+                </div>
+
+                <!-- 金币 Coins -->
+                <div class="d-flex align-center gap-1 px-3 py-1 glass-card" style="border-radius: 20px;">
+                    <MudIcon Icon="@Icons.Material.Filled.MonetizationOn" Color="Color.Primary" Size="Size.Small" />
+                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                        @_currentUser.Coins 金币
+                    </MudText>
+                </div>
+
+                <!-- 等级 & 经验条 -->
+                <div class="d-flex align-center gap-2 px-3 py-1 glass-card" style="border-radius: 20px; min-width: 140px;">
+                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Filled" Style="font-weight: 800;">
+                        Lv.@_currentUser.Level
+                    </MudChip>
+                    <div class="flex-grow-1">
+                        <div class="d-flex justify-space-between mb-1" style="font-size: 0.75rem;">
+                            <span>EXP</span>
+                            <span>@_currentUser.Exp / @(_currentUser.Level * 100)</span>
+                        </div>
+                        <MudProgressLinear Color="Color.Primary" Value="@((double)_currentUser.Exp / (_currentUser.Level * 100) * 100)" Style="height: 5px; border-radius: 3px;" />
+                    </div>
+                </div>
+
+                <!-- 3 大风格主题选择器 -->
+                <MudSelect T="string" Value="@ThemeService.CurrentTheme.Code" ValueChanged="OnThemeChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 160px; border-radius: 20px; font-weight: 700;">
+                    @foreach (var t in ThemeService.AvailableThemes)
+                    {
+                        <MudSelectItem Value="@t.Code">@t.Name</MudSelectItem>
+                    }
+                </MudSelect>
+
+                <!-- 全局 LLM Token 账单按钮 (仅超级管理员可见) -->
+                @if (_currentUser?.CanAccessSystemConfig == true)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ReceiptLong" OnClick="() => _tokenDrawerOpen = true" Style="border-radius: 20px; font-weight: 700;">
+                        LLM 账单
+                    </MudButton>
+                }
+
+                <!-- 快捷音效静音切换 (桌面端) -->
+                <MudTooltip Text="@(_currentUser?.SoundEffectsEnabled == false ? "🔇 答题音效已静音 (点击开启)" : "🔊 答题音效已开启 (点击静音)")">
+                    <MudIconButton Icon="@(_currentUser?.SoundEffectsEnabled == false ? Icons.Material.Filled.VolumeOff : Icons.Material.Filled.VolumeUp)"
+                                   Color="@(_currentUser?.SoundEffectsEnabled == false ? Color.Default : Color.Primary)"
+                                   OnClick="ToggleSoundEffectsAsync"
+                                   Size="Size.Medium" />
+                </MudTooltip>
+
+                <!-- 🎭 快速切换体验身份快捷菜单 (桌面端) -->
+                <MudMenu AnchorOrigin="Origin.BottomCenter" TransformOrigin="Origin.TopCenter">
+                    <ActivatorContent>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.SwapHoriz" EndIcon="@Icons.Material.Filled.ArrowDropDown" Style="border-radius: 20px; font-weight: 700;">
+                            🎭 切身份
+                        </MudButton>
+                    </ActivatorContent>
+                    <ChildContent>
+                        <div class="px-4 py-2 font-weight-bold" style="font-size: 0.78rem; border-bottom: 1px solid var(--glass-card-border); color: #94a3b8;">
+                            🎭 无需重新输入账号 · 一键热切换
+                        </div>
+                        <MudMenuItem Icon="@Icons.Material.Filled.School" IconColor="Color.Primary" OnClick='() => SwitchToPersonaAsync("Student")'>
+                            🎓 切换至：学员 · 李小明 (初二 · 刷题/错题/成长)
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.FamilyRestroom" IconColor="Color.Secondary" OnClick='() => SwitchToPersonaAsync("Parent")'>
+                            👨‍👩‍👧 切换至：家长 · 李大强 (学情雷达/定制做题)
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.PersonSearch" IconColor="Color.Warning" OnClick='() => SwitchToPersonaAsync("Teacher")'>
+                            👩‍🏫 切换至：名师 · 张老师 (题库录入/OCR拍照)
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.AdminPanelSettings" IconColor="Color.Error" OnClick='() => SwitchToPersonaAsync("Admin")'>
+                            🛡️ 切换至：超级管理员 (系统总控/用户审批)
+                        </MudMenuItem>
+                    </ChildContent>
+                </MudMenu>
+
+                <!-- 用户菜单 (角色展示、修改个人资料、修改密码、切换用户、退出登录) -->
+                <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                    <ActivatorContent>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ArrowDropDown" Style="border-radius: 20px; font-weight: 700; padding: 6px 14px;">
+                            <span style="font-size: 1.25rem; line-height: 1;" class="mr-2">@(!string.IsNullOrEmpty(_currentUser?.Avatar) ? _currentUser.Avatar : "🎓")</span>
+                            <span class="mr-1">@_currentUser?.RoleDisplayName</span>
+                            <span>@_currentUser?.Username</span>
+                        </MudButton>
+                    </ActivatorContent>
+                    <ChildContent>
+                        <div class="d-flex align-center gap-3 px-4 py-3" style="border-bottom: 1px solid var(--glass-card-border); background: var(--sub-card-bg); min-width: 240px;">
+                            <div class="d-inline-flex align-center justify-center rounded-circle flex-shrink-0" style="width: 48px; height: 48px; font-size: 1.85rem; background: rgba(59,130,246,0.15); border: 2px solid var(--mud-palette-primary);">
+                                @(!string.IsNullOrEmpty(_currentUser?.Avatar) ? _currentUser.Avatar : "🎓")
+                            </div>
+                            <div style="min-width: 0; flex-grow: 1;">
+                                <div class="font-weight-bold" style="font-size: 1.15rem; line-height: 1.25; color: var(--glass-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    @_currentUser?.Username
+                                </div>
+                                <div class="d-flex align-center gap-1 mt-1 text-muted" style="font-size: 0.78rem;">
+                                    <span>@_currentUser?.RoleDisplayName</span>
+                                    <span>|</span>
+                                    <span>@(_currentUser?.PhoneNumber ?? "未绑定手机")</span>
+                                </div>
+                            </div>
+                        </div>
+                        <MudMenuItem Icon="@Icons.Material.Filled.ManageAccounts" OnClick="OpenEditProfileDialog">编辑个人资料</MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.Key" OnClick="OpenChangePasswordDialog">修改登录密码</MudMenuItem>
+                        <MudDivider />
+                        <div class="px-4 py-1 font-weight-bold" style="font-size: 0.75rem; color: #94a3b8;">
+                            🎭 切换体验身份
+                        </div>
+                        <MudMenuItem Icon="@Icons.Material.Filled.School" IconColor="Color.Primary" OnClick='() => SwitchToPersonaAsync("Student")'>
+                            🎓 学员 · 李小明
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.FamilyRestroom" IconColor="Color.Secondary" OnClick='() => SwitchToPersonaAsync("Parent")'>
+                            👨‍👩‍👧 家长 · 李大强
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.PersonSearch" IconColor="Color.Warning" OnClick='() => SwitchToPersonaAsync("Teacher")'>
+                            👩‍🏫 名师 · 张老师
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.AdminPanelSettings" IconColor="Color.Error" OnClick='() => SwitchToPersonaAsync("Admin")'>
+                            🛡️ 超级管理员
+                        </MudMenuItem>
+                        <MudDivider />
+                        <MudMenuItem Icon="@Icons.Material.Filled.Logout" IconColor="Color.Error" OnClick="LogoutAsync">安全退出登录</MudMenuItem>
+                    </ChildContent>
+                </MudMenu>
+            </div>
+
+            <!-- 移动端精简顶栏状态与快捷菜单 -->
+            <div class="d-flex d-md-none align-center gap-2">
+                <div class="d-flex align-center gap-1 px-2 py-1 glass-card" style="border-radius: 16px; font-size: 0.8rem;">
+                    <MudIcon Icon="@Icons.Material.Filled.Whatshot" Color="Color.Primary" Size="Size.Small" />
+                    <span class="font-weight-bold">@(_currentUser?.CurrentStreak ?? 0)</span>
+                </div>
+                <div class="d-flex align-center gap-1 px-2 py-1 glass-card" style="border-radius: 16px; font-size: 0.8rem;">
+                    <MudIcon Icon="@Icons.Material.Filled.MonetizationOn" Color="Color.Primary" Size="Size.Small" />
+                    <span class="font-weight-bold">@(_currentUser?.Coins ?? 0)</span>
+                </div>
+
+                <MudIconButton Icon="@(_currentUser?.SoundEffectsEnabled == false ? Icons.Material.Filled.VolumeOff : Icons.Material.Filled.VolumeUp)"
+                               Color="@(_currentUser?.SoundEffectsEnabled == false ? Color.Default : Color.Primary)"
+                               OnClick="ToggleSoundEffectsAsync"
+                               Size="Size.Small" />
+
+                <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                    <ActivatorContent>
+                        <MudIconButton Color="Color.Primary" Size="Size.Medium">
+                            <span style="font-size: 1.4rem;">@(!string.IsNullOrEmpty(_currentUser?.Avatar) ? _currentUser.Avatar : "🎓")</span>
+                        </MudIconButton>
+                    </ActivatorContent>
+                    <ChildContent>
+                        <div class="d-flex align-center gap-3 px-3 py-2" style="border-bottom: 1px solid var(--glass-card-border); background: var(--sub-card-bg); min-width: 220px;">
+                            <div class="d-inline-flex align-center justify-center rounded-circle flex-shrink-0" style="width: 44px; height: 44px; font-size: 1.6rem; background: rgba(59,130,246,0.15); border: 2px solid var(--mud-palette-primary);">
+                                @(!string.IsNullOrEmpty(_currentUser?.Avatar) ? _currentUser.Avatar : "🎓")
+                            </div>
+                            <div style="min-width: 0; flex-grow: 1;">
+                                <div class="font-weight-bold" style="font-size: 1.1rem; line-height: 1.25; color: var(--glass-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    @_currentUser?.Username
+                                </div>
+                                <div class="d-flex align-center gap-1 mt-1" style="font-size: 0.75rem; color: #94a3b8;">
+                                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Filled" Style="height: 18px; font-size: 0.7rem; padding: 0 6px;">
+                                        Lv.@_currentUser?.Level @_currentUser?.RoleDisplayName
+                                    </MudChip>
+                                </div>
+                            </div>
+                        </div>
+                        @if (_currentUser?.CanAccessSystemConfig == true)
+                        {
+                            <MudMenuItem Icon="@Icons.Material.Filled.ReceiptLong" OnClick="() => _tokenDrawerOpen = true">LLM 账单</MudMenuItem>
+                        }
+                        <MudMenuItem Icon="@Icons.Material.Filled.Palette">
+                            <div class="d-flex align-center justify-space-between gap-2" style="width: 100%;">
+                                <span>切换主题</span>
+                                <MudSelect T="string" Value="@ThemeService.CurrentTheme.Code" ValueChanged="OnThemeChanged" Margin="Margin.Dense" Style="min-width: 120px;">
+                                    @foreach (var t in ThemeService.AvailableThemes)
+                                    {
+                                        <MudSelectItem Value="@t.Code">@t.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </div>
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.ManageAccounts" OnClick="OpenEditProfileDialog">编辑个人资料</MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.Key" OnClick="OpenChangePasswordDialog">修改登录密码</MudMenuItem>
+                        <MudDivider />
+                        <div class="px-4 py-1 font-weight-bold" style="font-size: 0.75rem; color: #94a3b8;">
+                            🎭 快速切换身份
+                        </div>
+                        <MudMenuItem Icon="@Icons.Material.Filled.School" IconColor="Color.Primary" OnClick='() => SwitchToPersonaAsync("Student")'>
+                            🎓 学员 · 李小明
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.FamilyRestroom" IconColor="Color.Secondary" OnClick='() => SwitchToPersonaAsync("Parent")'>
+                            👨‍👩‍👧 家长 · 李大强
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.PersonSearch" IconColor="Color.Warning" OnClick='() => SwitchToPersonaAsync("Teacher")'>
+                            👩‍🏫 名师 · 张老师
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.AdminPanelSettings" IconColor="Color.Error" OnClick='() => SwitchToPersonaAsync("Admin")'>
+                            🛡️ 超级管理员
+                        </MudMenuItem>
+                        <MudDivider />
+                        <MudMenuItem Icon="@Icons.Material.Filled.Logout" IconColor="Color.Error" OnClick="LogoutAsync">安全退出登录</MudMenuItem>
+                    </ChildContent>
+                </MudMenu>
+            </div>
+        </MudAppBar>
+
+        <Northtropic.Components.Dialogs.LlmTokenDrawer @bind-IsOpen="_tokenDrawerOpen" />
+
+        <!-- 侧边导航栏 (结合 4 类角色 RBAC 动态过滤) -->
+        <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="1" Style="@ThemeService.CurrentTheme.DrawerStyle">
+            <div class="d-flex flex-column justify-space-between h-100">
+                <MudNavMenu Class="mt-4">
+                    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard" IconColor="Color.Primary">
+                        主面板
+                    </MudNavLink>
+                    <MudNavLink Href="/practice" Icon="@Icons.Material.Filled.SportsEsports" IconColor="Color.Primary">
+                        刷题中心
+                    </MudNavLink>
+                    <MudNavLink Href="/error-book" Icon="@Icons.Material.Filled.AutoFixHigh" IconColor="Color.Primary">
+                        净化副本
+                    </MudNavLink>
+                    <MudNavLink Href="/practice-records" Icon="@Icons.Material.Filled.Analytics" IconColor="Color.Primary">
+                        闯关分析
+                    </MudNavLink>
+
+                    <!-- 老师 & 超级管理员专属：题库管理 -->
+                    @if (_currentUser?.CanManageQuestionBank == true)
+                    {
+                        <MudNavLink Href="/question-management" Icon="@Icons.Material.Filled.LibraryBooks" IconColor="Color.Warning">
+                            题库管理
+                        </MudNavLink>
+                    }
+
+                    <!-- 家长、名师 & 超级管理员：学情大盘与作业 -->
+                    @if (_currentUser?.CanViewStudentAnalytics == true)
+                    {
+                        <MudNavLink Href="/parent-dashboard" Icon="@Icons.Material.Filled.FamilyRestroom" IconColor="Color.Secondary">
+                            @(_currentUser?.Role == UserRole.Teacher ? "学情与作业" : "学情分析")
+                        </MudNavLink>
+                    }
+
+                    <MudNavLink Href="/achievements" Icon="@Icons.Material.Filled.EmojiEvents" IconColor="Color.Primary">
+                        荣誉商城
+                    </MudNavLink>
+
+                    <!-- 超级管理员专属：帐号管理 -->
+                    @if (_currentUser?.CanManageUsers == true)
+                    {
+                        <MudNavLink Href="/user-management" Icon="@Icons.Material.Filled.PeopleAlt" IconColor="Color.Error">
+                            帐号管理
+                        </MudNavLink>
+                    }
+
+                    <!-- 超级管理员专属：系统配置 -->
+                    @if (_currentUser?.CanAccessSystemConfig == true)
+                    {
+                        <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Settings" IconColor="Color.Error">
+                            系统配置
+                        </MudNavLink>
+                    }
+                </MudNavMenu>
+
+                <!-- 侧边栏底部用户信息卡片 -->
+                <div class="pa-4 ma-2 glass-card cursor-pointer" style="border-radius: 12px; background: rgba(255,255,255,0.03);" @onclick="OpenEditProfileDialog">
+                    <div class="d-flex align-center justify-space-between mb-2">
+                        <div class="d-flex align-center gap-2">
+                            <div class="d-flex align-center justify-center rounded-circle" style="width: 34px; height: 34px; font-size: 1.3rem; background: rgba(59,130,246,0.15);">
+                                @(!string.IsNullOrEmpty(_currentUser?.Avatar) ? _currentUser.Avatar : "🎓")
+                            </div>
+                            <div>
+                                <div class="font-weight-bold" style="font-size: 0.85rem; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    @(_currentUser?.Username ?? "未登录")
+                                </div>
+                                <div style="font-size: 0.7rem; color: #94a3b8;">
+                                    @(_currentUser?.RoleDisplayName ?? "学员")
+                                </div>
+                            </div>
+                        </div>
+                        <MudTooltip Text="编辑个人资料">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Default" Size="Size.Small" OnClick="OpenEditProfileDialog" />
+                        </MudTooltip>
+                    </div>
+                </div>
+            </div>
+        </MudDrawer>
+
+        <!-- 主内容区 -->
+        <MudMainContent Class="pa-6" Style="@($"background: {ThemeService.CurrentTheme.BackgroundColor}; min-height: 100vh; transition: background 0.4s ease;")">
+            @Body
+        </MudMainContent>
+    }
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+    private User? _currentUser;
+    private bool _tokenDrawerOpen = false;
+    private DotNetObjectReference<MainLayout>? _dotNetRef;
+
+    // 门禁登录表单变量
+    private string _loginAccount = string.Empty;
+    private string _loginPassword = string.Empty;
+    private bool _showPassword = false;
+    private bool _isLoggingIn = false;
+
+    private string _smsPhone = string.Empty;
+    private string _smsCode = string.Empty;
+    private bool _isSendingCode = false;
+    private int _countdown = 0;
+    private bool _isNewUserRegister = false;
+    private UserRole _selectedRole = UserRole.Parent;
+    private string _registerUsername = string.Empty;
+    private string _registerGrade = "初中二年级";
+
+    // 自主注册表单变量
+    private int _regMode = 0; // 0: 短信验证码注册, 1: 手工设置密码注册
+    private bool _regSmsFailed = false;
+    private string _regUsername = string.Empty;
+    private UserRole _regRole = UserRole.Student;
+    private string _regPhone = string.Empty;
+    private string _regEmail = string.Empty;
+    private string _regGrade = "初中二年级";
+    private string _regSmsCode = string.Empty;
+    private string _regManualPassword = string.Empty;
+    private string _regManualConfirmPassword = string.Empty;
+    private bool _showRegManualPassword = false;
+    private int _regCountdown = 0;
+    private bool _isRegSendingCode = false;
+    private bool _isRegistering = false;
+    private string _registrationSuccessMsg = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserSessionService.OnUserChanged += OnUserChangedHandler;
+        ThemeService.OnThemeChanged += OnThemeChangedHandler;
+        await LoadUserDataAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            try
+            {
+                await JS.InvokeVoidAsync("initInactivityTracker", _dotNetRef, _currentUser?.SessionTimeoutMinutes ?? 30);
+            }
+            catch { }
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnInactivityWarningOccurred(int secondsLeft)
+    {
+        if (UserSessionService.IsAuthenticated)
+        {
+            Snackbar.Add(
+                $"⏱️ 会话闲置预警：系统将在约 {Math.Max(1, secondsLeft / 60)} 分钟后自动登出。点击【继续学习】可立即一键续期！",
+                Severity.Warning,
+                config =>
+                {
+                    config.Action = "继续学习";
+                    config.ActionColor = Color.Primary;
+                    config.Onclick = async snackbar =>
+                    {
+                        await ExtendSessionAsync();
+                    };
+                });
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public async Task ExtendSessionAsync()
+    {
+        UserSessionService.RecordUserActivity();
+        try
+        {
+            await JS.InvokeVoidAsync("extendUserSession");
+        }
+        catch { }
+        Snackbar.Add("✅ 会话已成功一键续期，祝您练习愉快！", Severity.Success);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnInactivityTimeoutOccurred()
+    {
+        if (UserSessionService.IsAuthenticated)
+        {
+            await UserSessionService.LogoutAsync();
+            _currentUser = null;
+            Snackbar.Add("⏱️ 系统检测到您已超过 30 分钟无操作，已自动安全退出登录！", Severity.Warning);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SubmitPasswordLoginAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_loginAccount) || string.IsNullOrWhiteSpace(_loginPassword))
+        {
+            Snackbar.Add("账号与密码不能为空！", Severity.Warning);
+            return;
+        }
+
+        _isLoggingIn = true;
+        await InvokeAsync(StateHasChanged);
+
+        var (success, user, message) = await UserSessionService.LoginWithPasswordAsync(_loginAccount, _loginPassword);
+
+        _isLoggingIn = false;
+        if (success && user != null)
+        {
+            _currentUser = user;
+            Snackbar.Add(message, Severity.Success);
+            await LoadUserDataAsync();
+
+            if (user.MustChangePassword)
+            {
+                await PromptMandatoryPasswordChangeAsync(user.Id);
+            }
+        }
+        else
+        {
+            Snackbar.Add(message, Severity.Error);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task QuickDemoLoginAsync(string roleOrPhone)
+    {
+        _isLoggingIn = true;
+        await InvokeAsync(StateHasChanged);
+
+        var (success, user, message) = await UserSessionService.QuickLoginDemoUserAsync(roleOrPhone);
+        _isLoggingIn = false;
+
+        if (success && user != null)
+        {
+            _currentUser = user;
+            Snackbar.Add(message, Severity.Success);
+            await LoadUserDataAsync();
+            NavigationManager.NavigateTo("/", forceLoad: false);
+        }
+        else
+        {
+            Snackbar.Add(message, Severity.Error);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SwitchToPersonaAsync(string roleOrPhone)
+    {
+        var (success, user, message) = await UserSessionService.QuickLoginDemoUserAsync(roleOrPhone);
+        if (success && user != null)
+        {
+            _currentUser = user;
+            Snackbar.Add(message, Severity.Success);
+            await LoadUserDataAsync();
+            NavigationManager.NavigateTo("/", forceLoad: false);
+        }
+        else
+        {
+            Snackbar.Add(message, Severity.Error);
+        }
+    }
+
+    private void OnSmsPhoneKeyUp()
+    {
+        if (System.Text.RegularExpressions.Regex.IsMatch(_smsPhone.Trim(), @"^1[3-9]\d{9}$"))
+        {
+            CheckPhoneRegisteredState();
+        }
+    }
+
+    private async void CheckPhoneRegisteredState()
+    {
+        var users = await UserSessionService.GetAllUsersAsync();
+        var exists = users.Any(u => u.PhoneNumber == _smsPhone.Trim());
+        _isNewUserRegister = !exists;
+        StateHasChanged();
+    }
+
+    private async Task SendSmsCodeAsync()
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(_smsPhone.Trim(), @"^1[3-9]\d{9}$"))
+        {
+            Snackbar.Add("请输入正确的 11 位手机号码！", Severity.Warning);
+            return;
+        }
+
+        _isSendingCode = true;
+        var res = await UserSessionService.SendSmsCodeAsync(_smsPhone);
+        _isSendingCode = false;
+
+        if (res.Success)
+        {
+            Snackbar.Add(res.Message, Severity.Success);
+            _smsCode = string.Empty; // 不自动回填，必须等待用户查收短信后自行输入
+            StartCountdown();
+            CheckPhoneRegisteredState();
+        }
+        else
+        {
+            Snackbar.Add(res.Message, Severity.Warning);
+        }
+    }
+
+    private async void StartCountdown()
+    {
+        _countdown = 60;
+        while (_countdown > 0)
+        {
+            await Task.Delay(1000);
+            _countdown--;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SubmitSmsLoginAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_smsPhone) || string.IsNullOrWhiteSpace(_smsCode))
+        {
+            Snackbar.Add("手机号与验证码不能为空！", Severity.Warning);
+            return;
+        }
+
+        _isLoggingIn = true;
+        await InvokeAsync(StateHasChanged);
+
+        var (success, user, message) = await UserSessionService.LoginOrRegisterWithSmsAsync(_smsPhone, _smsCode, _selectedRole, _registerUsername, _registerGrade);
+
+        _isLoggingIn = false;
+        if (success && user != null)
+        {
+            _currentUser = user;
+            Snackbar.Add(message, Severity.Success);
+            await LoadUserDataAsync();
+
+            if (user.MustChangePassword)
+            {
+                await PromptMandatoryPasswordChangeAsync(user.Id);
+            }
+        }
+        else
+        {
+            Snackbar.Add(message, Severity.Error);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SendRegSmsCodeAsync()
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(_regPhone.Trim(), @"^1[3-9]\d{9}$"))
+        {
+            Snackbar.Add("请输入正确的 11 位中国大陆手机号码！", Severity.Warning);
+            return;
+        }
+
+        _isRegSendingCode = true;
+        var res = await UserSessionService.SendSmsCodeAsync(_regPhone);
+        _isRegSendingCode = false;
+
+        if (res.Success)
+        {
+            _regSmsFailed = false;
+            Snackbar.Add(res.Message, Severity.Success);
+            _regSmsCode = string.Empty; // 不自动回填，必须等待用户查收短信后自行输入
+            _regCountdown = 60;
+            StartRegCountdown();
+        }
+        else
+        {
+            _regSmsFailed = true;
+            Snackbar.Add(res.Message, Severity.Warning);
+        }
+    }
+
+    private async void StartRegCountdown()
+    {
+        while (_regCountdown > 0)
+        {
+            await Task.Delay(1000);
+            _regCountdown--;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SubmitRegistrationAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_regUsername))
+        {
+            Snackbar.Add("请输入真实姓名！", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_regPhone) || !System.Text.RegularExpressions.Regex.IsMatch(_regPhone.Trim(), @"^1[3-9]\d{9}$"))
+        {
+            Snackbar.Add("请输入正确的 11 位手机号码！", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_regEmail) || !_regEmail.Contains("@"))
+        {
+            Snackbar.Add("请输入有效的电子邮箱地址！", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_regSmsCode))
+        {
+            Snackbar.Add("请输入短信验证码！", Severity.Warning);
+            return;
+        }
+
+        _isRegistering = true;
+        await InvokeAsync(StateHasChanged);
+
+        var (success, user, message) = await UserSessionService.RegisterWithSmsAsync(
+            _regUsername,
+            _regRole,
+            _regPhone,
+            _regEmail,
+            _regSmsCode,
+            _regGrade
+        );
+
+        _isRegistering = false;
+        if (success)
+        {
+            _registrationSuccessMsg = message;
+            Snackbar.Add("🎉 注册成功！已提交管理员审批。", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(message, Severity.Error);
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SubmitManualPasswordRegistrationAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_regUsername))
+        {
+            Snackbar.Add("请输入真实姓名！", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_regPhone) || !System.Text.RegularExpressions.Regex.IsMatch(_regPhone.Trim(), @"^1[3-9]\d{9}$"))
+        {
+            Snackbar.Add("请输入正确的 11 位手机号码！", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_regEmail) || !_regEmail.Contains("@"))
+        {
+            Snackbar.Add("请输入有效的电子邮箱地址！", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_regManualPassword))
+        {
+            Snackbar.Add("请设置登录密码！", Severity.Warning);
+            return;
+        }
+        if (_regManualPassword.Length < 8)
+        {
+            Snackbar.Add("密码长度不能少于 8 位！", Severity.Warning);
+            return;
+        }
+        if (!System.Text.RegularExpressions.Regex.IsMatch(_regManualPassword, @"[a-zA-Z]") || !System.Text.RegularExpressions.Regex.IsMatch(_regManualPassword, @"[0-9]"))
+        {
+            Snackbar.Add("密码必须同时包含英文字母与阿拉伯数字！", Severity.Warning);
+            return;
+        }
+        if (_regManualPassword != _regManualConfirmPassword)
+        {
+            Snackbar.Add("两次输入的密码不一致！", Severity.Warning);
+            return;
+        }
+
+        _isRegistering = true;
+        await InvokeAsync(StateHasChanged);
+
+        var (success, user, message) = await UserSessionService.RegisterWithPasswordAsync(
+            _regUsername,
+            _regRole,
+            _regPhone,
+            _regEmail,
+            _regManualPassword,
+            _regManualConfirmPassword,
+            _regGrade
+        );
+
+        _isRegistering = false;
+        if (success)
+        {
+            _registrationSuccessMsg = message;
+            Snackbar.Add("🎉 密码注册申请提交成功！已提交管理员审批。", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(message, Severity.Error);
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PromptMandatoryPasswordChangeAsync(Guid userId)
+    {
+        var parameters = new DialogParameters<Northtropic.Components.Dialogs.ChangePasswordDialog>
+        {
+            { x => x.UserId, userId },
+            { x => x.IsMandatory, true }
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true,
+            BackdropClick = false,
+            CloseButton = false
+        };
+
+        var dialog = await DialogService.ShowAsync<Northtropic.Components.Dialogs.ChangePasswordDialog>("", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadUserDataAsync();
+        }
+    }
+
+    private async Task OpenEditProfileDialog()
+    {
+        if (_currentUser == null) return;
+        var parameters = new DialogParameters<Northtropic.Components.Dialogs.EditProfileDialog>
+        {
+            { x => x.CurrentUser, _currentUser }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<Northtropic.Components.Dialogs.EditProfileDialog>("", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadUserDataAsync();
+        }
+    }
+
+    private async Task OpenChangePasswordDialog()
+    {
+        if (_currentUser == null) return;
+        var parameters = new DialogParameters<Northtropic.Components.Dialogs.ChangePasswordDialog>
+        {
+            { x => x.UserId, _currentUser.Id },
+            { x => x.IsMandatory, false }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+        await DialogService.ShowAsync<Northtropic.Components.Dialogs.ChangePasswordDialog>("", parameters, options);
+    }
+
+    private void OnThemeChanged(string code)
+    {
+        ThemeService.SetTheme(code);
+    }
+
+    private async void OnThemeChangedHandler()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadUserDataAsync()
+    {
+        if (UserSessionService.IsAuthenticated)
+        {
+            _currentUser = await UserSessionService.GetActiveUserAsync();
+            if (_currentUser != null)
+            {
+                await GamificationService.UpdateStreakAsync();
+            }
+        }
+        else
+        {
+            _currentUser = null;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnUserChangedHandler()
+    {
+        await LoadUserDataAsync();
+    }
+
+    private async Task LogoutAsync()
+    {
+        await UserSessionService.LogoutAsync();
+        _currentUser = null;
+        Snackbar.Add("您已成功安全退出登录！", Severity.Info);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ToggleSoundEffectsAsync()
+    {
+        if (_currentUser == null) return;
+        bool newStatus = !_currentUser.SoundEffectsEnabled;
+        _currentUser.SoundEffectsEnabled = newStatus;
+        await UserSessionService.UpdateSoundEffectsEnabledAsync(_currentUser.Id, newStatus);
+        if (newStatus)
+        {
+            Snackbar.Add("🔊 答题音效反馈已开启！", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add("🔇 已切换至图书馆静音专注模式！", Severity.Info);
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        UserSessionService.OnUserChanged -= OnUserChangedHandler;
+        ThemeService.OnThemeChanged -= OnThemeChangedHandler;
+        _dotNetRef?.Dispose();
+    }
+
+    private void ToggleDrawer()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+}

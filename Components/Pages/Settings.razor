@@ -1,0 +1,1838 @@
+@page "/settings"
+@using Northtropic.Models
+@using Northtropic.Services
+@inject IGamificationService GamificationService
+@inject IUserSessionService UserSessionService
+@inject IAiTutorService AiTutorService
+@inject IQuestionImportService QuestionImportService
+@inject ICurriculumConfigService CurriculumConfigService
+@inject ISystemHealthService SystemHealthService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+
+<PageTitle>系统配置 - Northtropic</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-2 mb-10">
+    <div class="glass-card pa-6 mb-6">
+        <div class="d-flex align-center gap-3">
+            <MudIcon Icon="@Icons.Material.Filled.Settings" Color="Color.Primary" Size="Size.Large" />
+            <div>
+                <MudText Typo="Typo.h5" Class="font-weight-bold gradient-text">系统配置</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    内置支持 Google Gemini 与各大主流大模型。配置 API Key，AI 将实时为你定制专属练习题与智能启发式辅导。
+                </MudText>
+            </div>
+        </div>
+    </div>
+
+    @if (_currentUser == null)
+    {
+        <div class="d-flex justify-center my-12">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+        </div>
+    }
+    else if (!_currentUser.CanAccessSystemConfig)
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="pa-6 rounded-lg glass-card my-6">
+            <div class="d-flex flex-column align-center text-center gap-3">
+                <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Large" Color="Color.Primary" />
+                <MudText Typo="Typo.h5" Class="font-weight-bold">权限不足：当前角色无【系统配置】权限</MudText>
+                <MudText Typo="Typo.body1" Class="mud-text-secondary">
+                    当前登录账号：<strong>@_currentUser.Username</strong> (角色身份: <strong>@_currentUser.RoleDisplayName</strong>)
+                    <br />根据系统角色权限规范，家长/老师与学生无系统配置权限，仅允许超级管理员进行系统参数与 LLM 密钥调整。
+                </MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Logout" OnClick="LogoutAndReloginAsync">
+                    安全退出当前账号，以管理员身份重新登录
+                </MudButton>
+            </div>
+        </MudAlert>
+    }
+    else
+    {
+        <!-- 1. 年级与学段设置 -->
+        <div class="glass-card pa-6 mb-6">
+            <MudText Typo="Typo.h6" Class="font-weight-bold mb-4 d-flex align-center gap-2">
+                <MudIcon Icon="@Icons.Material.Filled.School" Color="Color.Primary" /> 1. 学生年级与学段设置
+            </MudText>
+
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="string" Label="学生所在年级" @bind-Value="_currentUser.Grade" Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
+                        @foreach (var grade in GradeSubjectProvider.AvailableGrades)
+                        {
+                            <MudSelectItem Value="@grade">@grade</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField T="string" Label="昵称 / 学霸代号" @bind-Value="_currentUser.Username" Variant="Variant.Outlined" />
+                </MudItem>
+            </MudGrid>
+        </div>
+
+        <!-- 2. 全学段科目与专题考点配置管理 -->
+        <div class="glass-card pa-6 mb-6">
+            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                <MudText Typo="Typo.h6" Class="font-weight-bold d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Color="Color.Primary" /> 2. 全学段科目与主要专题考点配置管理
+                </MudText>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetDefaultCurriculumAsync">
+                    恢复全学段官方标准科目与专题
+                </MudButton>
+            </div>
+
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                系统已内置小学、初中、高中、大学全部学科与标准主要考点专题。您可自由切换年级增删科目、精细化调整各学科的专题知识点，修改后刷题、出题与学情图谱将实时生效。
+            </MudText>
+
+            <!-- 年级切换与添加科目栏 -->
+            <div class="d-flex align-center gap-4 mb-4 flex-wrap">
+                <div style="min-width: 260px;">
+                    <MudSelect T="string" Label="选择要配置的年级/学段" Value="_selectedConfigGrade" ValueChanged="OnConfigGradeChanged" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                        @foreach (var g in GradeSubjectProvider.AvailableGrades)
+                        {
+                            <MudSelectItem Value="@g">@g</MudSelectItem>
+                        }
+                    </MudSelect>
+                </div>
+
+                <div class="d-flex align-center gap-2 flex-grow-1" style="max-width: 480px;">
+                    <MudTextField T="string" @bind-Value="_newSubjectName" Placeholder="输入新科目名称 (如: 信息技术/编程)..." Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddNewSubjectAsync" Class="font-weight-bold text-nowrap">
+                        添加科目
+                    </MudButton>
+                </div>
+            </div>
+
+            <!-- 当前年级的学科列表 Chips -->
+            <div class="pa-4 rounded-lg mb-4 glass-card" style="background: var(--sub-card-bg);">
+                <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2 text-primary">
+                    📌 【@_selectedConfigGrade】包含的学科（点击切换选中以编辑右下侧考点专题）：
+                </MudText>
+                <div class="d-flex flex-wrap gap-2 align-center">
+                    @if (_gradeConfigs == null || !_gradeConfigs.Any())
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">该年级暂无科目，请在上方添加或点击右上角重置</MudText>
+                    }
+                    else
+                    {
+                        @foreach (var cfg in _gradeConfigs)
+                        {
+                            var isSelected = _selectedConfig?.Id == cfg.Id;
+                            <MudChip T="string"
+                                     Color="@(isSelected ? Color.Primary : Color.Default)"
+                                     Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
+                                     Size="Size.Medium"
+                                     OnClick="() => SelectSubjectForEdit(cfg)"
+                                     Class="font-weight-bold cursor-pointer">
+                                @cfg.Subject
+                                <span class="ml-1 opacity-75" style="font-size: 0.75rem;">(@(GetTopicCount(cfg.TopicsJson))个专题)</span>
+                            </MudChip>
+                        }
+                    }
+                </div>
+            </div>
+
+            <!-- 选中学科的专题考点管理面板 -->
+            @if (_selectedConfig != null)
+            {
+                <div class="pa-4 rounded-lg border border-primary border-solid glass-card" style="background: var(--card-bg);">
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Category" Color="Color.Primary" />
+                            <MudText Typo="Typo.h6" Class="font-weight-bold">
+                                【@_selectedConfig.Grade - @_selectedConfig.Subject】专题与考点清单
+                            </MudText>
+                        </div>
+                        <div class="d-flex align-center gap-2">
+                            <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveCurrentSubjectTopicsAsync" Disabled="@_isSavingCurriculum">
+                                @if (_isSavingCurriculum)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                    <span>保存中...</span>
+                                }
+                                else
+                                {
+                                    <span>💾 保存专题修改</span>
+                                }
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.Delete" OnClick="() => DeleteSubjectAsync(_selectedConfig)">
+                                🗑️ 删除学科
+                            </MudButton>
+                        </div>
+                    </div>
+
+                    <!-- 添加新专题 -->
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudTextField T="string" @bind-Value="_newTopicName" Placeholder="输入新专题/考点名称 (如: 欧姆定律综合计算)，按回车添加..."
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" OnKeyDown="HandleTopicKeyDown" />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Medium" StartIcon="@Icons.Material.Filled.AddCircle" OnClick="AddTopicToCurrentSubject" Class="text-nowrap">
+                            添加专题
+                        </MudButton>
+                    </div>
+
+                    <!-- 专题 Chips 列表 -->
+                    <div class="d-flex flex-wrap gap-2 pa-3 rounded-lg" style="background: var(--sub-card-bg); min-height: 80px; align-content: flex-start;">
+                        @if (_selectedTopicsList == null || !_selectedTopicsList.Any())
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary pa-2">暂无专题考点，请在上方输入添加</MudText>
+                        }
+                        else
+                        {
+                            @foreach (var topic in _selectedTopicsList)
+                            {
+                                if (topic == "全部")
+                                {
+                                    <MudChip T="string" Color="Color.Info" Variant="Variant.Filled" Size="Size.Small" Class="font-weight-bold">
+                                        🌟 全部考点 (系统默认)
+                                    </MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small"
+                                             OnClose="() => RemoveTopic(topic)" CloseIcon="@Icons.Material.Filled.Close">
+                                        @topic
+                                    </MudChip>
+                                }
+                            }
+                        }
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
+                        💡 提示：点击专题右侧的 ❌ 即可删除该专题。编辑完成后请点击右上角 **“💾 保存专题修改”** 即时同步全站。
+                    </MudText>
+                </div>
+            }
+        </div>
+
+        <!-- 3. 交互体验与音效设置 -->
+        <div class="glass-card pa-6 mb-6">
+            <MudText Typo="Typo.h6" Class="font-weight-bold mb-4 d-flex align-center gap-2">
+                <MudIcon Icon="@Icons.Material.Filled.Tune" Color="Color.Primary" /> 3. 交互体验与沉浸感偏好
+            </MudText>
+
+            <div class="d-flex flex-column gap-3">
+                <div class="d-flex align-center justify-space-between pa-3 rounded glass-card" style="background: var(--sub-card-bg);">
+                    <div>
+                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold">🔊 做题答题音效与连击播报</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">答对、升级、高连击爆发时的正向声学反馈</MudText>
+                    </div>
+                    <MudSwitch T="bool" @bind-Value="_currentUser.SoundEffectsEnabled" Color="Color.Primary" />
+                </div>
+
+                <div class="d-flex align-center justify-space-between pa-3 rounded glass-card" style="background: var(--sub-card-bg);">
+                    <div>
+                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold">🎉 庆祝礼花与粒子特效 (Confetti)</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">答对题目与满分交卷时触发全屏礼花特效</MudText>
+                    </div>
+                    <MudSwitch T="bool" @bind-Value="_currentUser.ConfettiEnabled" Color="Color.Primary" />
+                </div>
+
+                <div class="d-flex align-center justify-space-between pa-3 rounded glass-card" style="background: var(--sub-card-bg);">
+                    <div>
+                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold">🗣️ AI 导师语音朗读支持 (Web Speech)</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">支持题目朗读与 AI 导师逐句语音启发</MudText>
+                    </div>
+                    <MudSwitch T="bool" @bind-Value="_currentUser.AutoVoiceGuidance" Color="Color.Primary" />
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. LLM API 参数配置 -->
+        <div class="glass-card pa-6 mb-6">
+            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
+                <MudText Typo="Typo.h6" Class="font-weight-bold d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Psychology" Color="Color.Primary" /> 4. LLM 大语言模型配置 (已内置 Gemini)
+                </MudText>
+            </div>
+            
+            <div class="pa-3 mb-4 rounded-lg glass-card" style="background: var(--sub-card-bg);">
+                <MudText Typo="Typo.body2" Class="font-weight-bold" Color="Color.Primary">
+                    系统已内置 Google Gemini 地址与模型 (gemini-1.5-flash)，只需在下方填入 Gemini API Key 即可使用！
+                </MudText>
+            </div>
+
+            <!-- 快捷预设按钮组 -->
+            <div class="mb-4">
+                <MudText Typo="Typo.caption" Class="mb-2 d-block mud-text-secondary">一键套用常用供应商预设：</MudText>
+                <div class="d-flex flex-wrap gap-2">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.FlashOn" OnClick="PresetGemini">
+                        Google Gemini (内置推荐)
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.SmartToy" OnClick="PresetOpenAi">
+                        OpenAI (gpt-4o-mini)
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="PresetZhipu">
+                        智谱 GLM (glm-4-flash)
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Psychology" OnClick="PresetDeepSeek">
+                        DeepSeek (deepseek-chat)
+                    </MudButton>
+                </div>
+            </div>
+
+            <div class="d-flex flex-column gap-4">
+                <MudTextField T="string" Label="LLM API Key (密钥)" @bind-Value="_currentUser.LlmApiKey" InputType="InputType.Password" Placeholder="AIzaSy... (仅需填写 Key)" Variant="Variant.Outlined" HelperText="密钥安全存储于本地 SQLite 数据库中" Class="font-weight-bold" />
+
+                <MudGrid>
+                    <MudItem xs="12" sm="7">
+                        <MudTextField T="string" Label="API Base URL (接口基地址)" @bind-Value="_currentUser.LlmBaseUrl" Placeholder="https://generativelanguage.googleapis.com/v1beta/openai/" Variant="Variant.Outlined" HelperText="Gemini 默认: https://generativelanguage.googleapis.com/v1beta/openai/" />
+                    </MudItem>
+                    <MudItem xs="12" sm="5">
+                        <MudTextField T="string" Label="Model Name (模型名称)" @bind-Value="_currentUser.LlmModelName" Placeholder="gemini-1.5-flash" Variant="Variant.Outlined" HelperText="Gemini 默认: gemini-1.5-flash" />
+                    </MudItem>
+                </MudGrid>
+
+                <div class="d-flex align-center justify-space-between flex-wrap gap-2 pt-2">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.WifiTethering" OnClick="TestApiConnectionAsync" Disabled="@_testingConnection">
+                        @if (_testingConnection)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            <span>连通性测试中...</span>
+                        }
+                        else
+                        {
+                            <span>🧪 一键测试 API 连通性与模型响应</span>
+                        }
+                    </MudButton>
+                </div>
+
+                @if (_testResult != null)
+                {
+                    <MudAlert Severity="@(_testResult.Success ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mt-2 rounded-lg">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@(_testResult.Success ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
+                            <div>
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                                    @(_testResult.Success ? $"✅ 连通性测试成功！(耗时 {_testResult.LatencyMs}ms)" : "❌ 连通性测试未通过")
+                                </MudText>
+                                <MudText Typo="Typo.caption">
+                                    @_testResult.Message
+                                </MudText>
+                            </div>
+                        </div>
+                    </MudAlert>
+                }
+            </div>
+        </div>
+
+        <!-- 5. OCR 图像试题识别配置 (节省 Token 核心配置) -->
+        <div class="glass-card pa-6 mb-6">
+            <div class="d-flex align-center justify-space-between mb-2 flex-wrap gap-2">
+                <MudText Typo="Typo.h6" Class="font-weight-bold d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.AddAPhoto" Color="Color.Primary" /> 5. OCR 试题识别设置 (省 Token 配置)
+                </MudText>
+                <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled" Style="font-weight: 700;">
+                    @(string.Equals(_currentUser.OcrProvider, "PaddleOcr", StringComparison.OrdinalIgnoreCase) ? "⚡ 本地 PaddleOCR (0 Token · 纯离线)" : (string.Equals(_currentUser.OcrProvider, "BaiduOcr", StringComparison.OrdinalIgnoreCase) ? "🎯 百度云 OCR (0 Token)" : (string.Equals(_currentUser.OcrProvider, "BuiltinHeuristic", StringComparison.OrdinalIgnoreCase) ? "🆓 内置规则引擎 (0 Token)" : "🤖 大模型视觉 (消耗 Token)")))
+                </MudChip>
+            </div>
+
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4 rounded-lg">
+                <strong>💡 节省 Token 提示：</strong> 默认使用 <strong>【本地 PaddleOCR 引擎】</strong> 识别试卷，直接在服务器本地运算，<strong>大模型 Token 消耗为 0，零外部网络依赖，数据 100% 离线保密</strong>！
+            </MudAlert>
+
+            <div class="d-flex flex-column gap-4">
+                <!-- OCR 服务商选择 -->
+                <MudSelect T="string" Label="OCR 识别服务商" @bind-Value="_currentUser.OcrProvider" Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
+                    <MudSelectItem Value='@("PaddleOcr")'>⚡ 本地 PaddleOCR (推荐 · 离线 0 Token)</MudSelectItem>
+                    <MudSelectItem Value='@("BaiduOcr")'>🎯 百度智能云 OCR (0 Token)</MudSelectItem>
+                    <MudSelectItem Value='@("VisionLlm")'>🤖 多模态大模型视觉 (消耗 Token)</MudSelectItem>
+                </MudSelect>
+
+                @if (string.Equals(_currentUser.OcrProvider, "PaddleOcr", StringComparison.OrdinalIgnoreCase))
+                {
+                    <div class="pa-4 rounded glass-card" style="background: var(--sub-card-bg); border-left: 4px solid #22c55e;">
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
+                            <div>
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Success">
+                                    🚀 本地原生 PaddleOCR 引擎
+                                </MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    运行环境：Windows Server 本地离线引擎 | 硬件加速与纯本地内嵌推理
+                                </MudText>
+                            </div>
+
+                            <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Bolt" OnClick="TestLocalPaddleOcrAsync" Disabled="@_testingPaddleOcr">
+                                @if (_testingPaddleOcr)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                    <span>测试中...</span>
+                                }
+                                else
+                                {
+                                    <span>🧪 测试本地引擎状态</span>
+                                }
+                            </MudButton>
+                        </div>
+
+                        @if (_paddleTestResult != null)
+                        {
+                            <MudAlert Severity="@(_paddleTestResult.Success ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mt-3 rounded-lg">
+                                <div class="d-flex align-center gap-2">
+                                    <MudIcon Icon="@(_paddleTestResult.Success ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
+                                    <div>
+                                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                                            @(_paddleTestResult.Success ? $"✅ 本地 PaddleOCR 引擎就绪 (响应 {_paddleTestResult.LatencyMs}ms)" : "❌ 本地引擎状态提示")
+                                        </MudText>
+                                        <MudText Typo="Typo.caption">
+                                            @_paddleTestResult.Message
+                                        </MudText>
+                                    </div>
+                                </div>
+                            </MudAlert>
+                        }
+                    </div>
+                }
+                else if (string.Equals(_currentUser.OcrProvider, "BaiduOcr", StringComparison.OrdinalIgnoreCase))
+                {
+                    <div class="pa-4 rounded glass-card" style="background: var(--sub-card-bg); border-left: 4px solid #38bdf8;">
+                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-3" Color="Color.Info">
+                            百度智能云 OCR 凭证配置
+                        </MudText>
+
+                        <MudGrid Class="mb-2">
+                            <MudItem xs="12" sm="6">
+                                <MudTextField T="string" Label="百度 API Key (Client ID)" @bind-Value="_currentUser.BaiduApiKey" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="例如：2GvB9... (留空则使用智能免配模式)" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField T="string" Label="百度 Secret Key (Client Secret)" @bind-Value="_currentUser.BaiduSecretKey" Variant="Variant.Outlined" Margin="Margin.Dense" InputType="InputType.Password" Placeholder="例如：u7K... (留空则使用智能免配模式)" />
+                            </MudItem>
+                        </MudGrid>
+
+                        <MudTextField T="string" Label="百度 OCR 识别接口 Endpoint" @bind-Value="_currentUser.BaiduOcrEndpoint" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" />
+
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                            <div class="d-flex align-center gap-2 flex-wrap">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary font-weight-bold">一键接口预设：</MudText>
+                                <MudChip T="string" Color="Color.Primary" Size="Size.Small" OnClick="PresetBaiduAccurate" Style="cursor: pointer;">
+                                    通用文字识别 (高精度版)
+                                </MudChip>
+                                <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClick="PresetBaiduEdu" Style="cursor: pointer;">
+                                    试题与试卷作业识别 (教育版)
+                                </MudChip>
+                            </div>
+
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.WifiTethering" OnClick="TestBaiduOcrAsync" Disabled="@_testingBaiduOcr">
+                                @if (_testingBaiduOcr)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                    <span>测试中...</span>
+                                }
+                                else
+                                {
+                                    <span>🧪 测试百度 OCR 凭证有效性</span>
+                                }
+                            </MudButton>
+                        </div>
+
+                        @if (_baiduTestResult != null)
+                        {
+                            <MudAlert Severity="@(_baiduTestResult.Success ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mt-3 rounded-lg">
+                                <div class="d-flex align-center gap-2">
+                                    <MudIcon Icon="@(_baiduTestResult.Success ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
+                                    <div>
+                                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                                            @(_baiduTestResult.Success ? $"✅ 百度 OCR 凭证鉴权成功！(耗时 {_baiduTestResult.LatencyMs}ms)" : "❌ 百度 OCR 鉴权失败")
+                                        </MudText>
+                                        <MudText Typo="Typo.caption">
+                                            @_baiduTestResult.Message
+                                        </MudText>
+                                    </div>
+                                </div>
+                            </MudAlert>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- 6. 阿里云短信服务 (Aliyun Dysmsapi) 与会话安全配置 -->
+        <div class="glass-card pa-6 mb-6">
+            <div class="d-flex align-center gap-3 mb-4">
+                <MudIcon Icon="@Icons.Material.Filled.Sms" Color="Color.Primary" Size="Size.Large" />
+                <div>
+                    <MudText Typo="Typo.h5" Class="font-weight-bold">6. 阿里云短信服务 (Aliyun SMS) 与安全配置</MudText>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                        配置阿里云短信服务 (Dysmsapi) 的 AccessKey、短信签名与模板代码，实现高可靠验证码下发。
+                    </MudText>
+                </div>
+            </div>
+
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4 rounded-lg">
+                <strong>🔒 阿里云短信服务配置说明：</strong>
+                请登录 <a href="https://dysms.console.aliyun.com/" target="_blank" style="color: #3b82f6; text-decoration: underline;">阿里云短信控制台</a> 获取 RAM 用户的 AccessKey，并填入已报备审核通过的<strong>短信签名</strong>（如：<code>智学系统</code>）和<strong>模板 CODE</strong>（如：<code>SMS_154950909</code>）。
+            </MudAlert>
+
+            <MudGrid Class="mb-4">
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" Label="阿里云 AccessKey ID *" @bind-Value="_currentUser.AliyunAccessKeyId" Variant="Variant.Outlined"
+                                  Placeholder="例如：LTAI5t7xxxxxxxxxxxxxxxx" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Key" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" Label="阿里云 AccessKey Secret *" @bind-Value="_currentUser.AliyunAccessKeySecret" Variant="Variant.Outlined"
+                                  InputType="@(_showAliyunSecret ? InputType.Text : InputType.Password)"
+                                  Placeholder="例如：wxxxxxxxxxxxxxxxxxxxxxx" Adornment="Adornment.End"
+                                  AdornmentIcon="@(_showAliyunSecret ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff)"
+                                  OnAdornmentClick="() => _showAliyunSecret = !_showAliyunSecret" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" Label="短信签名 (SignName) *" @bind-Value="_currentUser.AliyunSmsSignName" Variant="Variant.Outlined"
+                                  Placeholder="例如：智学系统 或 阿里云短信测试" HelperText="须与阿里云控制台申请的签名完全一致" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Draw" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" Label="短信模板代码 (TemplateCode) *" @bind-Value="_currentUser.AliyunSmsTemplateCode" Variant="Variant.Outlined"
+                                  Placeholder="例如：SMS_154950909" HelperText="须与阿里云控制台报备的模板 CODE 一致" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.ConfirmationNumber" />
+                </MudItem>
+
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="模板变量名 (TemplateParam)" @bind-Value="_currentUser.AliyunSmsTemplateParam" Variant="Variant.Outlined"
+                                  Placeholder="code" HelperText="对应模板中的 ${code} 变量，默认填 code" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Code" />
+                </MudItem>
+
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="API 接入域名 (Endpoint)" @bind-Value="_currentUser.AliyunSmsEndpoint" Variant="Variant.Outlined"
+                                  Placeholder="dysmsapi.aliyuncs.com" HelperText="默认: dysmsapi.aliyuncs.com" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Http" />
+                </MudItem>
+
+                <MudItem xs="12" md="4">
+                    <MudNumericField T="int" Label="系统无操作超时自动退出 (分钟)" @bind-Value="_currentUser.SessionTimeoutMinutes" Min="5" Max="1440" Variant="Variant.Outlined"
+                                     HelperText="默认 30 分钟无响应自动注销登录" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Timer" />
+                </MudItem>
+            </MudGrid>
+
+            <!-- 阿里云短信连通性即时测试面板 -->
+            <div class="pa-4 rounded glass-card" style="background: var(--sub-card-bg); border-left: 4px solid #3b82f6;">
+                <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
+                    <div>
+                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Primary">
+                            🧪 阿里云短信 API 发送即时测试
+                        </MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            填入接收手机号，直接向阿里云 Dysmsapi 发起真实验证码发送测试并返回耗时与回执
+                        </MudText>
+                    </div>
+
+                    <div class="d-flex align-center gap-2">
+                        <MudTextField T="string" @bind-Value="_testSmsPhone" Placeholder="输入接收手机号..." Variant="Variant.Outlined" Margin="Margin.Dense" Style="width: 170px;" />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Send" OnClick="TestAliyunSmsAsync" Disabled="@_testingSms">
+                            @if (_testingSms)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                <span>请求阿里云中...</span>
+                            }
+                            else
+                            {
+                                <span>🚀 发送测试短信</span>
+                            }
+                        </MudButton>
+                    </div>
+                </div>
+
+                @if (_smsTestResult != null)
+                {
+                    <MudAlert Severity="@(_smsTestResult.IsSuccess ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mt-3 rounded-lg">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@(_smsTestResult.IsSuccess ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
+                            <div>
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                                    @(_smsTestResult.IsSuccess ? $"✅ 阿里云短信通信正常 (响应耗时: {_smsTestResult.LatencyMs}ms)" : "❌ 阿里云短信发送失败")
+                                </MudText>
+                                <MudText Typo="Typo.caption">
+                                    @_smsTestResult.Message @(_smsTestResult.SampleResponse != null ? $" | 网关原样回执: {_smsTestResult.SampleResponse}" : "")
+                                </MudText>
+                            </div>
+                        </div>
+                    </MudAlert>
+                }
+            </div>
+        </div>
+
+        <!-- 7. 系统架构健康与 SQLite 数据库自愈维护 (SuperAdmin 专属) -->
+        <div class="glass-card pa-6 mb-6">
+            <div class="d-flex align-center justify-space-between flex-wrap gap-3 mb-4">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Speed" Color="Color.Primary" Size="Size.Large" />
+                    <div>
+                        <div class="d-flex align-center gap-2">
+                            <MudText Typo="Typo.h6" Class="font-weight-bold">7. 系统架构健康诊断与 SQLite 数据库自愈维护</MudText>
+                            <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">架构师巡检与自愈运维</MudChip>
+                        </div>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            全方位遥测 SQLite 物理完整性 (PRAGMA integrity_check)、微秒级查询时延、WAL 日志截断与防爆破限流态势
+                        </MudText>
+                    </div>
+                </div>
+                <div class="d-flex align-center gap-2 flex-wrap">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh" OnClick="RunDiagnosticsAsync" Disabled="@_isRunningDiagnostics">
+                        @(_isRunningDiagnostics ? "正在诊断..." : "刷新健康诊断")
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.CheckCircleOutline" OnClick="RunIntegrityCheckAsync" Disabled="@_isCheckingIntegrity">
+                        @(_isCheckingIntegrity ? "校验中..." : "🔍 物理完整性校验")
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" StartIcon="@Icons.Material.Filled.Rule" OnClick="RunForeignKeyCheckAsync" Disabled="@_isCheckingForeignKey">
+                        @(_isCheckingForeignKey ? "外键校验中..." : "🔗 关系外键校验")
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Tertiary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick="OptimizeDatabaseAsync" Disabled="@_isOptimizing">
+                        @(_isOptimizing ? "正在自愈优化..." : "⚡ 直方图与自愈优化 (ANALYZE & OPTIMIZE)")
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Compress" OnClick="VacuumDatabaseAsync" Disabled="@_isVacuuming">
+                        @(_isVacuuming ? "正在收敛整理..." : "🧹 碎片整理 (VACUUM)")
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.RocketLaunch" OnClick="RunFullHealthCheckAndHealingAsync" Disabled="@_isHealingAll" Style="font-weight: 700; box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);">
+                        @(_isHealingAll ? "正在全维自愈..." : "🚀 一键全维体检与自愈优化")
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.FileDownload" OnClick="ExportArchitectureDiagnosticReportAsync" Disabled="@_isExportingReport">
+                        @(_isExportingReport ? "导出中..." : "📥 导出架构诊断快照 (JSON)")
+                    </MudButton>
+                </div>
+            </div>
+
+            @if (_healthDto != null)
+            {
+                <!-- 架构健康评分与智能诊断建议仪表盘 -->
+                <div class="pa-4 mb-4 rounded-lg glass-card" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%); border: 1px solid rgba(16, 185, 129, 0.3);">
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-4">
+                        <div class="d-flex align-center gap-4">
+                            <div class="d-flex flex-column align-center justify-center rounded-circle pa-2" style="width: 74px; height: 74px; background: rgba(16, 185, 129, 0.2); border: 2px solid #10b981; flex-shrink: 0;">
+                                <span style="font-size: 1.55rem; font-weight: 800; color: #10b981; line-height: 1;">@_healthDto.HealthScore</span>
+                                <span style="font-size: 0.62rem; color: #94a3b8; font-weight: 700;">分/100</span>
+                            </div>
+                            <div>
+                                <div class="d-flex align-center gap-2 flex-wrap">
+                                    <MudText Typo="Typo.h6" Class="font-weight-bold">系统综合架构健康指数：@_healthDto.HealthRating</MudText>
+                                    <MudChip T="string" Color="@(_healthDto.HealthScore >= 90 ? Color.Success : (_healthDto.HealthScore >= 75 ? Color.Info : Color.Warning))" Size="Size.Small" Variant="Variant.Filled">
+                                        @(_healthDto.HealthScore >= 90 ? "状态极佳" : (_healthDto.HealthScore >= 75 ? "运转良好" : "建议优化"))
+                                    </MudChip>
+                                </div>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    基于 SQLite 物理完整性、WAL 增长速率、微秒级往返时延及运行时环境多维加权计算
+                                </MudText>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-column gap-1 flex-grow-1" style="max-width: 580px; min-width: 280px;">
+                            @foreach (var rec in _healthDto.HealthRecommendations.Take(3))
+                            {
+                                <div class="d-flex align-center gap-1" style="font-size: 0.78rem; line-height: 1.4;">
+                                    <span style="color: var(--mud-palette-text-secondary);">@rec</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <MudGrid Spacing="3" Class="mb-4">
+                    <!-- SQLite 存储与 WAL -->
+                    <MudItem xs="12" sm="6" md="3">
+                        <div class="pa-4 rounded glass-card h-100 d-flex flex-column justify-space-between" style="background: rgba(59, 130, 246, 0.08); border-left: 4px solid #3b82f6;">
+                            <div>
+                                <div class="d-flex align-center justify-space-between mb-1">
+                                    <span class="mud-text-secondary" style="font-size: 0.8rem;">SQLite 物理存储与 WAL</span>
+                                    <MudChip T="string" Color="@(_healthDto.IsDatabaseHealthy ? Color.Success : Color.Error)" Size="Size.Small" Variant="Variant.Filled">
+                                        @(_healthDto.IsDatabaseHealthy ? "完整性 ok" : "完整性异常")
+                                    </MudChip>
+                                </div>
+                                <MudText Typo="Typo.h5" Class="font-weight-bold">
+                                    @_healthDto.DatabaseSizeFormatted
+                                </MudText>
+                                <div class="d-flex align-center justify-space-between mt-1" style="font-size: 0.78rem; color: #64748b;">
+                                    <span>WAL 日志: <strong style="color: #3b82f6;">@_healthDto.WalSizeFormatted</strong></span>
+                                    <span>碎片率: <strong style="color: @(_healthDto.FragmentationRatio > 0.3 ? "#ef4444" : "#10b981");">@_healthDto.FragmentationRatio.ToString("P1")</strong></span>
+                                </div>
+                                <div class="d-flex align-center justify-space-between mt-1" style="font-size: 0.75rem; color: #64748b;">
+                                    <span>分页: @_healthDto.PageCount (空闲 @_healthDto.FreelistCount)</span>
+                                    <span>磁盘可用: <strong style="color: #10b981;">@_healthDto.DiskFreeSpaceFormatted</strong></span>
+                                </div>
+                            </div>
+                            <div class="mt-2 pt-1 border-t border-solid d-flex justify-space-between flex-wrap gap-1" style="border-color: rgba(59, 130, 246, 0.2); font-size: 0.72rem; color: #94a3b8;">
+                                <span>页面完整性: <strong style="color: @(_healthDto.IsDatabaseHealthy ? "#10b981" : "#ef4444");">@_healthDto.SqliteIntegrityStatus</strong></span>
+                                <span>外键引用: <strong style="color: @(_healthDto.IsForeignKeyHealthy ? "#10b981" : "#ef4444");">@_healthDto.ForeignKeyIntegrityStatus</strong></span>
+                            </div>
+                        </div>
+                    </MudItem>
+
+                    <!-- 响应延迟与性能 -->
+                    <MudItem xs="12" sm="6" md="3">
+                        <div class="pa-4 rounded glass-card h-100 d-flex flex-column justify-space-between" style="background: rgba(16, 185, 129, 0.08); border-left: 4px solid #10b981;">
+                            <div>
+                                <div class="d-flex align-center justify-space-between mb-1">
+                                    <span class="mud-text-secondary" style="font-size: 0.8rem;">数据库查询时延</span>
+                                    <MudChip T="string" Color="@GetLatencyColor(_healthDto.DatabaseLatencyMs)" Size="Size.Small" Variant="Variant.Filled">
+                                        @(_healthDto.DatabaseLatencyMs >= 0 ? (_healthDto.DatabaseLatencyMs <= 10 ? "极速响应" : "良好") : "检测中")
+                                    </MudChip>
+                                </div>
+                                <MudText Typo="Typo.h5" Class="font-weight-bold" Color="@GetLatencyColor(_healthDto.DatabaseLatencyMs)">
+                                    @(_healthDto.DatabaseLatencyMs >= 0 ? $"{_healthDto.DatabaseLatencyMs:F2} ms" : "检测中")
+                                </MudText>
+                                <span style="font-size: 0.75rem; color: #64748b;">单次基础往返探测耗时</span>
+                            </div>
+                            <div class="mt-2 pt-1 border-t border-solid" style="border-color: rgba(16, 185, 129, 0.2); font-size: 0.72rem; color: #94a3b8;">
+                                状态评级: <strong style="color: #10b981;">毫秒级极速响应</strong>
+                            </div>
+                        </div>
+                    </MudItem>
+
+                    <!-- GC 托管内存与运行时 -->
+                    <MudItem xs="12" sm="6" md="3">
+                        <div class="pa-4 rounded glass-card h-100 d-flex flex-column justify-space-between" style="background: rgba(139, 92, 246, 0.08); border-left: 4px solid #8b5cf6;">
+                            <div>
+                                <div class="d-flex align-center justify-space-between mb-1">
+                                    <span class="mud-text-secondary" style="font-size: 0.8rem;">GC 托管内存与主机</span>
+                                    <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Outlined">.NET @_healthDto.DotNetVersion.Split('+')[0]</MudChip>
+                                </div>
+                                <MudText Typo="Typo.h5" Class="font-weight-bold">@_healthDto.GcMemoryFormatted</MudText>
+                                <span style="font-size: 0.75rem; color: #64748b;">线程数: @_healthDto.ThreadCount 个</span>
+                            </div>
+                            <div class="mt-2 pt-1 border-t border-solid" style="border-color: rgba(139, 92, 246, 0.2); font-size: 0.72rem; color: #94a3b8;">
+                                持续运行: @_healthDto.ProcessUptimeFormatted
+                            </div>
+                        </div>
+                    </MudItem>
+
+                    <!-- 核心业务数据规模与安全防御 -->
+                    <MudItem xs="12" sm="6" md="3">
+                        <div class="pa-4 rounded glass-card h-100 d-flex flex-column justify-space-between" style="background: rgba(245, 158, 11, 0.08); border-left: 4px solid #f59e0b;">
+                            <div>
+                                <div class="d-flex align-center justify-space-between mb-1">
+                                    <span class="mud-text-secondary" style="font-size: 0.8rem;">安全防御与会话</span>
+                                    <MudChip T="string" Color="@(_healthDto.ActiveLockoutsCount > 0 ? Color.Warning : Color.Success)" Size="Size.Small" Variant="Variant.Filled">
+                                        @(_healthDto.ActiveLockoutsCount > 0 ? $"{_healthDto.ActiveLockoutsCount} 封禁" : "安全防御正常")
+                                    </MudChip>
+                                </div>
+                                <MudText Typo="Typo.h5" Class="font-weight-bold">
+                                    @_healthDto.TotalQuestions <span style="font-size: 0.85rem; color: #64748b;">题库 / @_healthDto.TotalUsers 用户</span>
+                                </MudText>
+                                <span style="font-size: 0.75rem; color: #64748b;">错题本: @_healthDto.TotalErrorItems | 刷题流: @_healthDto.TotalPracticeRecords 次</span>
+                            </div>
+                            <div class="mt-2 pt-1 border-t border-solid" style="border-color: rgba(245, 158, 11, 0.2); font-size: 0.72rem; color: #94a3b8;">
+                                待验验证码: @_healthDto.PendingSmsCodesCount | 活跃下载票据: @_healthDto.PendingDownloadTicketsCount | LLM 审计: @_healthDto.TotalLlmLogs 条
+                            </div>
+                        </div>
+                    </MudItem>
+                </MudGrid>
+
+                <div class="d-flex align-center justify-space-between text-caption mud-text-secondary px-1 mb-3">
+                    <span>🕒 最近架构健康诊断时间: @_healthDto.DiagnosedAt.ToString("yyyy-MM-dd HH:mm:ss")</span>
+                    <span>用户总数: @_healthDto.TotalUsers 人 | 专属作业: @_healthDto.TotalHomeworkAssignments 份 | 典藏题目: @_healthDto.TotalUserFavorites 题</span>
+                </div>
+
+                <!-- 架构缓存层性能遥测条 -->
+                <div class="pa-3 mb-4 rounded glass-card d-flex align-center justify-space-between flex-wrap gap-2" style="background: rgba(59, 130, 246, 0.08); border-left: 4px solid #3b82f6;">
+                    <div class="d-flex align-center gap-2 flex-wrap">
+                        <MudIcon Icon="@Icons.Material.Filled.Bolt" Color="Color.Primary" Size="Size.Small" />
+                        <span style="font-size: 0.85rem; font-weight: 700;">高频架构缓存遥测：</span>
+                        <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Filled">
+                            考点分类缓存命中率: @_healthDto.CategoryCacheHitRatio%
+                        </MudChip>
+                        <span class="mud-text-secondary" style="font-size: 0.78rem;">
+                            (累计命中 @_healthDto.CategoryCacheHitCount 次 / 穿透读取 @_healthDto.CategoryCacheMissCount 次)
+                        </span>
+                    </div>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh" OnClick="() => PracticeService.InvalidateCategoryCache()">
+                        强制失效分类缓存
+                    </MudButton>
+                </div>
+
+                <!-- SQLite 在线热备份与灾难恢复中心 -->
+                <div class="pa-4 mb-4 rounded-lg glass-card" style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(59, 130, 246, 0.25);">
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.CloudSync" Color="Color.Info" />
+                            <div>
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">SQLite 零停机在线热快照与灾备中心 (VACUUM INTO)</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    基于 SQLite 原子事务快照引擎，在业务高频读写运转的同时生成 100% 物理一致的独立数据库副本
+                                </MudText>
+                            </div>
+                        </div>
+                        <div class="d-flex align-center gap-2 flex-wrap">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Backup" OnClick="CreateDatabaseBackupAsync" Disabled="@_isBackingUp">
+                                @(_isBackingUp ? "正在快照导出..." : "⚡ 立即生成在线热快照")
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" StartIcon="@Icons.Material.Filled.CleaningServices" OnClick="PruneOldBackupsAsync" Disabled="@_isPruningBackups">
+                                @(_isPruningBackups ? "正在淘汰..." : "🧹 淘汰陈旧快照 (保留7份)")
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadBackupsAndTelemetryAsync">
+                                刷新列表
+                            </MudButton>
+                        </div>
+                    </div>
+
+                    @if (_backupsList.Count == 0)
+                    {
+                        <div class="pa-4 text-center mud-text-secondary" style="font-size: 0.85rem; border: 1px dashed rgba(255,255,255,0.1); border-radius: 8px;">
+                            当前暂无历史热快照。点击上方按钮可秒级生成一份完整校验的灾备副本。
+                        </div>
+                    }
+                    else
+                    {
+                        <MudTable Items="@_backupsList" Dense="true" Hover="true" Elevation="0" Style="background: transparent;">
+                            <HeaderContent>
+                                <MudTh>备份快照文件</MudTh>
+                                <MudTh>物理大小</MudTh>
+                                <MudTh>创建时间</MudTh>
+                                <MudTh>物理完整性</MudTh>
+                                <MudTh Style="text-align: right;">操作</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="文件名">
+                                    <div class="d-flex flex-column gap-1">
+                                        <div class="d-flex align-center gap-2">
+                                            <MudIcon Icon="@Icons.Custom.FileFormats.FileCode" Size="Size.Small" Color="Color.Info" />
+                                            <span style="font-family: monospace; font-size: 0.82rem;">@context.BackupFileName</span>
+                                        </div>
+                                        @if (_verifyResults.TryGetValue(context.BackupFileName, out var vRes))
+                                        {
+                                            <span style="font-size: 0.72rem; color: @(vRes.IsHealthy ? "#34d399" : "#f87171");" title="@vRes.ErrorMessage">
+                                                @(vRes.IsHealthy ? $"✓ 物理与Schema自检合格 ({vRes.TableCount} 张表, {vRes.VerificationDurationMs}ms)" : $"✗ 深度校验异常: {vRes.ErrorMessage}")
+                                            </span>
+                                        }
+                                        @if (_sha256Cache.TryGetValue(context.BackupFileName, out var hashVal))
+                                        {
+                                            <span style="font-family: monospace; font-size: 0.72rem; color: #a5b4fc;" title="SHA-256 物理完整性哈希">
+                                                SHA256: @hashVal.Substring(0, Math.Min(16, hashVal.Length))...
+                                            </span>
+                                        }
+                                    </div>
+                                </MudTd>
+                                <MudTd DataLabel="大小">@context.FileSizeFormatted</MudTd>
+                                <MudTd DataLabel="时间">@context.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
+                                <MudTd DataLabel="完整性">
+                                    <MudChip T="string" Color="@(context.IntegrityVerified ? Color.Success : Color.Warning)" Size="Size.Small" Variant="Variant.Filled">
+                                        @(context.IntegrityVerified ? "✓ PRAGMA ok" : "⚠️ 校验未过")
+                                    </MudChip>
+                                </MudTd>
+                                <MudTd DataLabel="操作" Style="text-align: right;">
+                                    <div class="d-flex align-center justify-end gap-1 flex-wrap">
+                                        <MudButton Variant="Variant.Outlined" Color="Color.Tertiary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Rule" OnClick="@(async () => await VerifyBackupSnapshotAsync(context.BackupFileName))" Disabled="@(_verifyingBackups.Contains(context.BackupFileName))">
+                                            @(_verifyingBackups.Contains(context.BackupFileName) ? "校验中..." : "深度校验")
+                                        </MudButton>
+                                        <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.Fingerprint" OnClick="@(async () => await CalculateSha256Async(context.BackupFileName))">
+                                            SHA-256
+                                        </MudButton>
+                                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Download" OnClick="@(async () => await DownloadBackupSnapshotAsync(context.BackupFileName))">
+                                            下载
+                                        </MudButton>
+                                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.DeleteOutline" OnClick="@(async () => await DeleteBackupSnapshotAsync(context.BackupFileName))">
+                                            删除
+                                        </MudButton>
+                                    </div>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </div>
+
+                <!-- 核心数据表存储分布与行级遥测 (Table Storage Metrics) -->
+                <div class="pa-4 mb-4 rounded-lg glass-card" style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(59, 130, 246, 0.25);">
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Storage" Color="Color.Primary" />
+                            <div>
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">核心数据表存储分布与行级遥测 (Table Storage Metrics)</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    物理数据库分表行数分布与热度追踪，助力架构容量规划与归档优化
+                                </MudText>
+                            </div>
+                        </div>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadTableStorageMetricsAsync">
+                            刷新行数指标
+                        </MudButton>
+                    </div>
+
+                    @if (_tableStorageMetrics.Count == 0)
+                    {
+                        <div class="pa-4 text-center mud-text-secondary" style="font-size: 0.85rem; border: 1px dashed rgba(255,255,255,0.1); border-radius: 8px;">
+                            暂未加载数据表存储分布。点击上方按钮可即时同步最新行级统计。
+                        </div>
+                    }
+                    else
+                    {
+                        <MudGrid Spacing="2">
+                            @foreach (var table in _tableStorageMetrics)
+                            {
+                                <MudItem xs="12" sm="6" md="3">
+                                    <div class="pa-3 rounded glass-card" style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(255, 255, 255, 0.08);">
+                                        <div class="d-flex align-center justify-space-between mb-1">
+                                            <span style="font-size: 0.85rem; font-weight: 700; color: #60a5fa;">@table.DisplayName</span>
+                                            <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Outlined" Style="font-family: monospace;">
+                                                @table.RowCount 行
+                                            </MudChip>
+                                        </div>
+                                        <div style="font-size: 0.72rem; color: #94a3b8; font-family: monospace;">@table.TableName</div>
+                                        <div style="font-size: 0.75rem; color: #64748b; margin-top: 4px;">@table.Description</div>
+                                    </div>
+                                </MudItem>
+                            }
+                        </MudGrid>
+                    }
+                </div>
+
+                <!-- 架构生命周期与自愈遥测事件流 -->
+                <div class="pa-4 mb-4 rounded-lg glass-card" style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(139, 92, 246, 0.25);">
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Timeline" Color="Color.Secondary" />
+                            <div>
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">系统架构自愈遥测事件流 (Telemetry Event Stream)</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    内存循环缓冲实时遥测核心架构事件 (WAL 截断、VACUUM 重整、热快照、防爆破限流)
+                                </MudText>
+                            </div>
+                        </div>
+                        <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Outlined">
+                            实时环形缓冲 60 帧
+                        </MudChip>
+                    </div>
+
+                    @if (_telemetryEvents.Count == 0)
+                    {
+                        <div class="pa-4 text-center mud-text-secondary" style="font-size: 0.85rem; border: 1px dashed rgba(255,255,255,0.1); border-radius: 8px;">
+                            架构事件流平稳运行中，暂无待警示异动事件。
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-column gap-2" style="max-height: 280px; overflow-y: auto;">
+                            @foreach (var evt in _telemetryEvents)
+                            {
+                                <div class="d-flex align-center justify-space-between flex-wrap gap-2 pa-2 rounded" style="background: rgba(255,255,255,0.03); border-left: 3px solid @(evt.Level == "Error" ? "#ef4444" : (evt.Level == "Warning" ? "#f59e0b" : "#3b82f6")); font-size: 0.82rem;">
+                                    <div class="d-flex align-center gap-2">
+                                        <span class="mud-text-secondary" style="font-family: monospace; font-size: 0.75rem;">@evt.Timestamp.ToString("HH:mm:ss.fff")</span>
+                                        <MudChip T="string" Color="@(evt.Level == "Error" ? Color.Error : (evt.Level == "Warning" ? Color.Warning : Color.Info))" Size="Size.Small" Variant="Variant.Filled" Style="font-size: 0.7rem; height: 20px;">
+                                            @evt.Category
+                                        </MudChip>
+                                        <span style="color: var(--mud-palette-text-primary);">@evt.Message</span>
+                                    </div>
+                                    @if (evt.DurationMs.HasValue)
+                                    {
+                                        <span class="mud-text-secondary" style="font-size: 0.75rem;">@evt.DurationMs.Value ms</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="pa-6 text-center">
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" Color="Color.Primary" Class="mb-2" />
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">正在初始化系统架构健康指标...</MudText>
+                </div>
+            }
+        </div>
+
+        <!-- 保存按钮 -->
+        <div class="d-flex justify-end gap-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveSettingsAsync" Class="px-8 font-weight-bold" Style="border-radius: 12px;">
+                保存所有配置
+            </MudButton>
+        </div>
+    }
+</MudContainer>
+
+@code {
+    private User? _currentUser;
+    private bool _testingConnection = false;
+    private TestConnectionResult? _testResult;
+
+    private bool _testingBaiduOcr = false;
+    private TestConnectionResult? _baiduTestResult;
+
+    private bool _testingPaddleOcr = false;
+    private TestConnectionResult? _paddleTestResult;
+
+    // 学科与专题配置管理状态
+    private string _selectedConfigGrade = "初中二年级";
+    private List<CurriculumSubjectConfig> _gradeConfigs = new();
+    private CurriculumSubjectConfig? _selectedConfig;
+    private List<string> _selectedTopicsList = new();
+    private string _newTopicName = string.Empty;
+    private string _newSubjectName = string.Empty;
+    private bool _isSavingCurriculum = false;
+
+    // 系统架构自检状态
+    private SystemHealthDto? _healthDto;
+    private bool _isRunningDiagnostics = false;
+    private bool _isCheckingIntegrity = false;
+    private bool _isCheckingForeignKey = false;
+    private bool _isVacuuming = false;
+    private bool _isOptimizing = false;
+    private bool _isHealingAll = false;
+    private bool _isBackingUp = false;
+    private bool _isPruningBackups = false;
+    private bool _isExportingReport = false;
+    private HashSet<string> _verifyingBackups = new();
+    private Dictionary<string, BackupVerificationResultDto> _verifyResults = new();
+    private List<DatabaseBackupResultDto> _backupsList = new();
+    private List<SystemArchitectureEvent> _telemetryEvents = new();
+    private List<TableStorageMetricDto> _tableStorageMetrics = new();
+    private Dictionary<string, string> _sha256Cache = new();
+
+    private async Task LoadBackupsAndTelemetryAsync()
+    {
+        try
+        {
+            _backupsList = await SystemHealthService.GetBackupsListAsync();
+            _telemetryEvents = SystemHealthService.GetRecentArchitectureEvents().Take(20).ToList();
+            _tableStorageMetrics = await SystemHealthService.GetTableStorageMetricsAsync();
+        }
+        catch
+        {
+            // 非侵入式容错
+        }
+    }
+
+    private async Task LoadTableStorageMetricsAsync()
+    {
+        try
+        {
+            _tableStorageMetrics = await SystemHealthService.GetTableStorageMetricsAsync();
+            StateHasChanged();
+            Snackbar.Add("📊 核心数据表存储分布与行级指标已刷新。", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"刷新数据表指标异常: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task CalculateSha256Async(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return;
+        try
+        {
+            var hash = await SystemHealthService.CalculateBackupSha256Async(fileName);
+            if (!string.IsNullOrEmpty(hash))
+            {
+                _sha256Cache[fileName] = hash;
+                StateHasChanged();
+                Snackbar.Add($"🛡️ SHA-256 完整性哈希已计算: {hash}", Severity.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"计算 SHA-256 失败: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteBackupSnapshotAsync(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return;
+        bool? confirmed = await DialogService.ShowMessageBox(
+            "确认删除备份快照",
+            $"确定要物理删除该备份快照文件 [{fileName}] 吗？此操作不可恢复。",
+            yesText: "确认删除", cancelText: "取消");
+
+        if (confirmed == true)
+        {
+            var ok = await SystemHealthService.DeleteBackupAsync(fileName);
+            if (ok)
+            {
+                _sha256Cache.Remove(fileName);
+                Snackbar.Add($"🗑️ 备份快照 [{fileName}] 已安全删除。", Severity.Success);
+                await LoadBackupsAndTelemetryAsync();
+            }
+            else
+            {
+                Snackbar.Add($"删除备份快照 [{fileName}] 失败。", Severity.Error);
+            }
+        }
+    }
+
+    private async Task PruneOldBackupsAsync()
+    {
+        _isPruningBackups = true;
+        StateHasChanged();
+        try
+        {
+            var report = await SystemHealthService.PruneBackupsAsync(keepCount: 7, maxAgeDays: 30);
+            if (report.PrunedCount > 0)
+            {
+                double mb = report.ReclaimedBytes / 1024.0 / 1024.0;
+                Snackbar.Add($"🧹 成功淘汰 {report.PrunedCount} 个历史快照，回收物理磁盘存储 {mb:F2} MB！", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("🧹 历史快照均在保留策略窗口内（保留最新7份），无需清理。", Severity.Info);
+            }
+            await LoadBackupsAndTelemetryAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"淘汰历史快照异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isPruningBackups = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DownloadBackupSnapshotAsync(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName) || _currentUser == null) return;
+        try
+        {
+            var ticket = await UserSessionService.GenerateDownloadTicketAsync(_currentUser.Id, "backup_download", fileName);
+            NavigationManager.NavigateTo($"/api/system/backups/download?filename={Uri.EscapeDataString(fileName)}&ticket={Uri.EscapeDataString(ticket)}", forceLoad: true);
+            Snackbar.Add($"🛡️ 正在安全下载备份快照: {fileName}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"生成安全下载凭证失败: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task VerifyBackupSnapshotAsync(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return;
+        _verifyingBackups.Add(fileName);
+        StateHasChanged();
+        try
+        {
+            var res = await SystemHealthService.VerifyBackupSnapshotAsync(fileName);
+            _verifyResults[fileName] = res;
+            if (res.IsHealthy)
+            {
+                Snackbar.Add($"✅ 快照物理深度校验通过: {fileName} (表数量: {res.TableCount}, 耗时: {res.VerificationDurationMs}ms)", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"⚠️ 快照校验异常: {res.ErrorMessage}", Severity.Warning);
+            }
+            await LoadBackupsAndTelemetryAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"快照校验执行失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _verifyingBackups.Remove(fileName);
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportArchitectureDiagnosticReportAsync()
+    {
+        if (_currentUser == null) return;
+        _isExportingReport = true;
+        StateHasChanged();
+        try
+        {
+            var ticket = await UserSessionService.GenerateDownloadTicketAsync(_currentUser.Id, "diagnostics_export", "all");
+            NavigationManager.NavigateTo($"/api/system/diagnostics/export?ticket={Uri.EscapeDataString(ticket)}", forceLoad: true);
+            Snackbar.Add("🛡️ 正在导出全量系统架构诊断快照报告 (JSON)...", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"生成架构诊断报告失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isExportingReport = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CreateDatabaseBackupAsync()
+    {
+        _isBackingUp = true;
+        StateHasChanged();
+        try
+        {
+            var res = await SystemHealthService.CreateDatabaseBackupAsync();
+            if (res.Success)
+            {
+                Snackbar.Add($"🛡️ 在线热备份成功！耗时 {res.ElapsedMilliseconds}ms，快照已完成物理校验。", Severity.Success);
+                await LoadBackupsAndTelemetryAsync();
+            }
+            else
+            {
+                Snackbar.Add($"热备份异常: {res.Message}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"备份执行失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isBackingUp = false;
+            StateHasChanged();
+        }
+    }
+
+    private Color GetLatencyColor(double latencyMs)
+    {
+        if (latencyMs < 0) return Color.Default;
+        if (latencyMs <= 10) return Color.Success;
+        if (latencyMs <= 50) return Color.Warning;
+        return Color.Error;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currentUser = await GamificationService.GetCurrentUserAsync();
+        if (_currentUser != null)
+        {
+            if (string.IsNullOrWhiteSpace(_currentUser.LlmBaseUrl))
+            {
+                _currentUser.LlmBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/";
+            }
+            if (string.IsNullOrWhiteSpace(_currentUser.LlmModelName))
+            {
+                _currentUser.LlmModelName = "gemini-1.5-flash";
+            }
+            if (string.IsNullOrWhiteSpace(_currentUser.OcrProvider))
+            {
+                _currentUser.OcrProvider = "PaddleOcr";
+            }
+            if (string.IsNullOrWhiteSpace(_currentUser.BaiduOcrEndpoint))
+            {
+                _currentUser.BaiduOcrEndpoint = "https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic";
+            }
+
+            if (!string.IsNullOrWhiteSpace(_currentUser.Grade))
+            {
+                _selectedConfigGrade = _currentUser.Grade;
+            }
+        }
+
+        await CurriculumConfigService.EnsureInitializedAsync();
+        await LoadCurriculumForGradeAsync(_selectedConfigGrade);
+
+        if (_currentUser?.Role == UserRole.SuperAdmin)
+        {
+            try
+            {
+                _healthDto = await SystemHealthService.GetSystemHealthAsync();
+                await LoadBackupsAndTelemetryAsync();
+            }
+            catch
+            {
+                // 非阻断
+            }
+        }
+    }
+
+    private async Task RunDiagnosticsAsync()
+    {
+        _isRunningDiagnostics = true;
+        StateHasChanged();
+        try
+        {
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+            await LoadBackupsAndTelemetryAsync();
+            Snackbar.Add("✅ 系统架构健康诊断完成！核心指标已成功刷新。", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"诊断执行异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isRunningDiagnostics = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RunIntegrityCheckAsync()
+    {
+        _isCheckingIntegrity = true;
+        StateHasChanged();
+        try
+        {
+            var status = await SystemHealthService.RunDatabaseIntegrityCheckAsync();
+            if (status.Equals("ok", StringComparison.OrdinalIgnoreCase))
+            {
+                Snackbar.Add($"🛡️ SQLite 物理完整性校验通过！B-Tree 页面与索引结构完全正常 (Result: {status})", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"⚠️ SQLite 物理完整性校验告警: {status}", Severity.Warning);
+            }
+            if (_healthDto != null)
+            {
+                _healthDto.SqliteIntegrityStatus = status;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"完整性校验异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isCheckingIntegrity = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RunForeignKeyCheckAsync()
+    {
+        _isCheckingForeignKey = true;
+        StateHasChanged();
+        try
+        {
+            var status = await SystemHealthService.RunDatabaseForeignKeyCheckAsync();
+            bool isHealthy = status.Equals("ok", StringComparison.OrdinalIgnoreCase);
+            if (isHealthy)
+            {
+                Snackbar.Add($"🔗 SQLite 外键引用完整性校验通过！无孤立悬挂外键违规引用 (Status: {status})", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"⚠️ SQLite 外键校验告警: {status}", Severity.Warning);
+            }
+            if (_healthDto != null)
+            {
+                _healthDto.ForeignKeyIntegrityStatus = status;
+                _healthDto.ForeignKeyViolationsCount = isHealthy ? 0 : 1;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"外键校验异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isCheckingForeignKey = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task VacuumDatabaseAsync()
+    {
+        _isVacuuming = true;
+        StateHasChanged();
+        try
+        {
+            var ok = await SystemHealthService.VacuumDatabaseAsync();
+            if (ok)
+            {
+                _healthDto = await SystemHealthService.GetSystemHealthAsync();
+                Snackbar.Add("🚀 数据库存储收敛整理 (VACUUM) 执行成功！", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("VACUUM 执行未能完全完成，请检查写锁状态。", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"收敛执行异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isVacuuming = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OptimizeDatabaseAsync()
+    {
+        _isOptimizing = true;
+        StateHasChanged();
+        try
+        {
+            var res = await SystemHealthService.OptimizeDatabaseAsync();
+            if (res.Success)
+            {
+                _healthDto = await SystemHealthService.GetSystemHealthAsync();
+                Snackbar.Add($"⚡ {res.Message}", Severity.Success);
+                await DialogService.ShowMessageBox(
+                    "⚡ SQLite 自愈与索引优化完成",
+                    (MarkupString)$"<b>执行状态：</b>成功<br/>" +
+                                   $"<b>执行耗时：</b>{res.ElapsedMilliseconds:F1} ms<br/>" +
+                                   $"<b>释放空间：</b>{res.BytesReclaimed} 字节<br/>" +
+                                   $"<b>PRAGMA analyze (直方图)：</b>{res.AnalyzeStatus}<br/>" +
+                                   $"<b>PRAGMA optimize (自愈)：</b>{res.OptimizeStatus}<br/>" +
+                                   $"<b>WAL Checkpoint (日志截断)：</b>{res.CheckpointStatus}<br/>" +
+                                   $"<b>自愈后查询延迟：</b>{res.DatabaseLatencyMs:F2} ms",
+                    yesText: "确定");
+            }
+            else
+            {
+                Snackbar.Add($"优化自愈未能完成: {res.Message}", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"自愈执行异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isOptimizing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RunFullHealthCheckAndHealingAsync()
+    {
+        _isHealingAll = true;
+        StateHasChanged();
+        try
+        {
+            Snackbar.Add("🚀 正在启动全维体检与一键自愈流水线...", Severity.Info);
+            var optRes = await SystemHealthService.OptimizeDatabaseAsync();
+            var fkStatus = await SystemHealthService.RunDatabaseForeignKeyCheckAsync();
+            var integrityStatus = await SystemHealthService.RunDatabaseIntegrityCheckAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+
+            bool isFkHealthy = fkStatus.Equals("ok", StringComparison.OrdinalIgnoreCase);
+            bool isIntegrityHealthy = integrityStatus.Equals("ok", StringComparison.OrdinalIgnoreCase);
+
+            string reportHtml = $"<b>🚀 全维体检与自愈优化执行报告：</b><br/><br/>" +
+                                $"• <b>物理 B-Tree 完整性：</b><span style='color: {(isIntegrityHealthy ? "#10b981" : "#ef4444")}; font-weight: bold;'>{integrityStatus}</span><br/>" +
+                                $"• <b>外键关系完整性：</b><span style='color: {(isFkHealthy ? "#10b981" : "#ef4444")}; font-weight: bold;'>{fkStatus}</span><br/>" +
+                                $"• <b>查询计划统计分析 (ANALYZE)：</b><span style='color: #10b981; font-weight: bold;'>{optRes.AnalyzeStatus}</span><br/>" +
+                                $"• <b>查询计划自愈 (OPTIMIZE)：</b><span style='color: #10b981; font-weight: bold;'>{optRes.OptimizeStatus}</span><br/>" +
+                                $"• <b>WAL 日志截断归档：</b><span style='color: #10b981; font-weight: bold;'>{optRes.CheckpointStatus}</span><br/>" +
+                                $"• <b>瞬时收敛释放空间：</b>{optRes.BytesReclaimed} 字节<br/>" +
+                                $"• <b>综合架构健康评分：</b><span style='color: #10b981; font-weight: bold;'>{_healthDto.HealthScore} 分 ({_healthDto.HealthRating})</span><br/>" +
+                                $"• <b>自愈后微秒级时延：</b><span style='color: #10b981; font-weight: bold;'>{_healthDto.DatabaseLatencyMs:F2} ms</span>";
+
+            await DialogService.ShowMessageBox(
+                "🚀 全维体检与自愈优化完成",
+                (MarkupString)reportHtml,
+                yesText: "确定");
+            Snackbar.Add("🎉 全维体检与自愈优化完成！系统处于极佳生产态势。", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"全维自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingAll = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task TestLocalPaddleOcrAsync()
+    {
+        _testingPaddleOcr = true;
+        _paddleTestResult = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _paddleTestResult = await QuestionImportService.TestLocalPaddleOcrStatusAsync();
+            if (_paddleTestResult.Success)
+            {
+                Snackbar.Add($"🎉 本地 PaddleOCR 引擎状态就绪！延迟 {_paddleTestResult.LatencyMs}ms", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"本地 PaddleOCR 状态异常: {_paddleTestResult.Message}", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            _paddleTestResult = new TestConnectionResult
+            {
+                IsSuccess = false,
+                Message = $"测试异常: {ex.Message}"
+            };
+            Snackbar.Add($"测试异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _testingPaddleOcr = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LogoutAndReloginAsync()
+    {
+        await UserSessionService.LogoutAsync();
+        Snackbar.Add("已退出登录，请使用超级管理员账号登录！", Severity.Info);
+        NavigationManager.NavigateTo("/", true);
+    }
+
+    private void PresetBaiduAccurate()
+    {
+        if (_currentUser == null) return;
+        _currentUser.BaiduOcrEndpoint = "https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic";
+        _baiduTestResult = null;
+        Snackbar.Add("已载入百度【通用文字识别 (高精度版)】接口端点！", Severity.Info);
+    }
+
+    private void PresetBaiduEdu()
+    {
+        if (_currentUser == null) return;
+        _currentUser.BaiduOcrEndpoint = "https://aip.baidubce.com/rest/2.0/ocr/v1/question";
+        _baiduTestResult = null;
+        Snackbar.Add("已载入百度【试题与试卷作业识别 (教育版)】接口端点！", Severity.Info);
+    }
+
+    private async Task TestBaiduOcrAsync()
+    {
+        if (_currentUser == null) return;
+        _testingBaiduOcr = true;
+        _baiduTestResult = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _baiduTestResult = await QuestionImportService.TestBaiduOcrConnectionAsync(_currentUser.BaiduApiKey, _currentUser.BaiduSecretKey, _currentUser.BaiduOcrEndpoint);
+            if (_baiduTestResult.Success)
+            {
+                Snackbar.Add($"🎉 百度 OCR 凭证鉴权成功！延迟 {_baiduTestResult.LatencyMs}ms", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"百度 OCR 鉴权失败: {_baiduTestResult.Message}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            _baiduTestResult = new TestConnectionResult
+            {
+                IsSuccess = false,
+                Message = $"测试异常: {ex.Message}"
+            };
+            Snackbar.Add($"测试异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _testingBaiduOcr = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void PresetGemini()
+    {
+        if (_currentUser == null) return;
+        _currentUser.LlmBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/";
+        _currentUser.LlmModelName = "gemini-1.5-flash";
+        _testResult = null;
+        Snackbar.Add("已载入 Google Gemini 预设参数，请填入 Gemini API Key 保存即可！", Severity.Info);
+    }
+
+    private void PresetOpenAi()
+    {
+        if (_currentUser == null) return;
+        _currentUser.LlmBaseUrl = "https://api.openai.com/v1";
+        _currentUser.LlmModelName = "gpt-4o-mini";
+        _testResult = null;
+        Snackbar.Add("已载入 OpenAI 预设参数！", Severity.Info);
+    }
+
+    private void PresetZhipu()
+    {
+        if (_currentUser == null) return;
+        _currentUser.LlmBaseUrl = "https://open.bigmodel.cn/api/paas/v4";
+        _currentUser.LlmModelName = "glm-4-flash";
+        _testResult = null;
+        Snackbar.Add("已载入 智谱清言 GLM 预设参数！", Severity.Info);
+    }
+
+    private void PresetDeepSeek()
+    {
+        if (_currentUser == null) return;
+        _currentUser.LlmBaseUrl = "https://api.deepseek.com";
+        _currentUser.LlmModelName = "deepseek-chat";
+        _testResult = null;
+        Snackbar.Add("已载入 DeepSeek 预设参数！", Severity.Info);
+    }
+
+    private async Task TestApiConnectionAsync()
+    {
+        if (_currentUser == null) return;
+        _testingConnection = true;
+        _testResult = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _testResult = await AiTutorService.TestConnectionAsync(_currentUser.LlmApiKey, _currentUser.LlmBaseUrl, _currentUser.LlmModelName);
+            if (_testResult.Success)
+            {
+                Snackbar.Add($"🎉 测试成功！延迟 {_testResult.LatencyMs}ms", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"测试失败: {_testResult.Message}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            _testResult = new TestConnectionResult
+            {
+                Success = false,
+                Message = $"测试异常: {ex.Message}"
+            };
+            Snackbar.Add($"测试异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _testingConnection = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private bool _showAliyunSecret = false;
+    private bool _testingSms = false;
+    private string _testSmsPhone = "13800000000";
+    private TestConnectionResult? _smsTestResult;
+
+    private async Task TestAliyunSmsAsync()
+    {
+        if (_currentUser == null) return;
+        _testingSms = true;
+        _smsTestResult = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _smsTestResult = await UserSessionService.TestAliyunSmsAsync(
+                _testSmsPhone,
+                _currentUser.AliyunAccessKeyId,
+                _currentUser.AliyunAccessKeySecret,
+                _currentUser.AliyunSmsSignName,
+                _currentUser.AliyunSmsTemplateCode,
+                _currentUser.AliyunSmsTemplateParam,
+                _currentUser.AliyunSmsEndpoint
+            );
+
+            if (_smsTestResult.IsSuccess)
+            {
+                Snackbar.Add($"🎉 阿里云短信发送成功！响应耗时 {_smsTestResult.LatencyMs}ms", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"阿里云短信发送失败: {_smsTestResult.Message}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            _smsTestResult = new TestConnectionResult
+            {
+                IsSuccess = false,
+                Message = $"测试异常: {ex.Message}"
+            };
+            Snackbar.Add($"测试异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _testingSms = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        if (_currentUser != null)
+        {
+            if (string.IsNullOrWhiteSpace(_currentUser.LlmBaseUrl))
+            {
+                _currentUser.LlmBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/";
+            }
+            if (string.IsNullOrWhiteSpace(_currentUser.LlmModelName))
+            {
+                _currentUser.LlmModelName = "gemini-1.5-flash";
+            }
+            if (string.IsNullOrWhiteSpace(_currentUser.AliyunSmsEndpoint))
+            {
+                _currentUser.AliyunSmsEndpoint = "dysmsapi.aliyuncs.com";
+            }
+            if (string.IsNullOrWhiteSpace(_currentUser.AliyunSmsTemplateParam))
+            {
+                _currentUser.AliyunSmsTemplateParam = "code";
+            }
+
+            await UserSessionService.UpdateUserSettingsAsync(_currentUser);
+            Snackbar.Add("阿里云短信、OCR 与系统安全配置已成功保存！", Severity.Success);
+        }
+    }
+
+    private async Task OnConfigGradeChanged(string newGrade)
+    {
+        _selectedConfigGrade = newGrade;
+        await LoadCurriculumForGradeAsync(newGrade);
+    }
+
+    private async Task LoadCurriculumForGradeAsync(string grade)
+    {
+        _gradeConfigs = await CurriculumConfigService.GetConfigsByGradeAsync(grade);
+        if (_gradeConfigs.Any())
+        {
+            if (_selectedConfig == null || !_gradeConfigs.Any(c => c.Id == _selectedConfig.Id))
+            {
+                SelectSubjectForEdit(_gradeConfigs.First());
+            }
+            else
+            {
+                var refreshed = _gradeConfigs.FirstOrDefault(c => c.Id == _selectedConfig.Id);
+                SelectSubjectForEdit(refreshed ?? _gradeConfigs.First());
+            }
+        }
+        else
+        {
+            _selectedConfig = null;
+            _selectedTopicsList.Clear();
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void SelectSubjectForEdit(CurriculumSubjectConfig config)
+    {
+        _selectedConfig = config;
+        try
+        {
+            _selectedTopicsList = System.Text.Json.JsonSerializer.Deserialize<List<string>>(config.TopicsJson) ?? new List<string>();
+        }
+        catch
+        {
+            _selectedTopicsList = new List<string> { "全部" };
+        }
+        if (!_selectedTopicsList.Contains("全部"))
+        {
+            _selectedTopicsList.Insert(0, "全部");
+        }
+    }
+
+    private int GetTopicCount(string topicsJson)
+    {
+        try
+        {
+            var list = System.Text.Json.JsonSerializer.Deserialize<List<string>>(topicsJson);
+            return list?.Count(t => t != "全部") ?? 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private void AddTopicToCurrentSubject()
+    {
+        if (string.IsNullOrWhiteSpace(_newTopicName)) return;
+        var clean = _newTopicName.Trim();
+        if (!_selectedTopicsList.Contains(clean))
+        {
+            _selectedTopicsList.Add(clean);
+            _newTopicName = string.Empty;
+            Snackbar.Add($"已添加考点【{clean}】，请点击【💾 保存专题修改】！", Severity.Info);
+        }
+        else
+        {
+            Snackbar.Add("该专题考点已存在！", Severity.Warning);
+        }
+    }
+
+    private void HandleTopicKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AddTopicToCurrentSubject();
+        }
+    }
+
+    private void RemoveTopic(string topic)
+    {
+        if (topic == "全部") return;
+        _selectedTopicsList.Remove(topic);
+        Snackbar.Add($"已移除专题【{topic}】，请点击【💾 保存专题修改】！", Severity.Info);
+    }
+
+    private async Task SaveCurrentSubjectTopicsAsync()
+    {
+        if (_selectedConfig == null) return;
+        _isSavingCurriculum = true;
+        try
+        {
+            var res = await CurriculumConfigService.SaveSubjectTopicsAsync(_selectedConfig.Id, _selectedTopicsList, _currentUser?.Id);
+            if (res.Success)
+            {
+                Snackbar.Add(res.Message, Severity.Success);
+                await LoadCurriculumForGradeAsync(_selectedConfigGrade);
+            }
+            else
+            {
+                Snackbar.Add(res.Message, Severity.Error);
+            }
+        }
+        finally
+        {
+            _isSavingCurriculum = false;
+        }
+    }
+
+    private async Task AddNewSubjectAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newSubjectName))
+        {
+            Snackbar.Add("请输入要添加的学科名称！", Severity.Warning);
+            return;
+        }
+
+        var res = await CurriculumConfigService.AddSubjectConfigAsync(
+            _selectedConfigGrade,
+            _newSubjectName.Trim(),
+            new List<string> { "全部", "基础概念", "核心考点", "综合提升" },
+            _currentUser?.Id
+        );
+
+        if (res.Success)
+        {
+            Snackbar.Add(res.Message, Severity.Success);
+            _newSubjectName = string.Empty;
+            await LoadCurriculumForGradeAsync(_selectedConfigGrade);
+        }
+        else
+        {
+            Snackbar.Add(res.Message, Severity.Warning);
+        }
+    }
+
+    private async Task DeleteSubjectAsync(CurriculumSubjectConfig config)
+    {
+        bool? confirmed = await DialogService.ShowMessageBox(
+            "🗑️ 删除学科确认",
+            (MarkupString)$"确定要在【{config.Grade}】中永久删除【{config.Subject}】学科及其配置的专题考点吗？",
+            yesText: "确认删除", cancelText: "取消");
+
+        if (confirmed == true)
+        {
+            var res = await CurriculumConfigService.DeleteSubjectConfigAsync(config.Id, _currentUser?.Id);
+            if (res.Success)
+            {
+                Snackbar.Add(res.Message, Severity.Success);
+                await LoadCurriculumForGradeAsync(_selectedConfigGrade);
+            }
+            else
+            {
+                Snackbar.Add(res.Message, Severity.Error);
+            }
+        }
+    }
+
+    private async Task ResetDefaultCurriculumAsync()
+    {
+        bool? confirmed = await DialogService.ShowMessageBox(
+            "⚠️ 恢复官方标准科目与专题确认",
+            (MarkupString)"确定要将全学段（小学、初中、高中、大学）的科目及主要考点专题全部重置为系统官方标准题纲体系吗？<br/><span style='color:red;'>注意：此操作将清除所有自定义增加的科目与专题！</span>",
+            yesText: "确认重置为官方默认", cancelText: "取消");
+
+        if (confirmed == true)
+        {
+            var res = await CurriculumConfigService.ResetToDefaultCurriculumAsync(_currentUser?.Id);
+            if (res.Success)
+            {
+                Snackbar.Add(res.Message, Severity.Success);
+                await LoadCurriculumForGradeAsync(_selectedConfigGrade);
+            }
+            else
+            {
+                Snackbar.Add(res.Message, Severity.Error);
+            }
+        }
+    }
+}

@@ -1,0 +1,367 @@
+@page "/achievements"
+@using Northtropic.Models
+@using Northtropic.Services
+@inject IGamificationService GamificationService
+@inject IUserSessionService UserSessionService
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>荣誉商城 - Northtropic</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-2 mb-10">
+    <!-- Header Banner -->
+    <div class="glass-card pa-6 mb-6">
+        <div class="d-flex align-center justify-space-between flex-wrap gap-4">
+            <div>
+                <div class="d-flex align-center gap-2 mb-2">
+                    <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Color="Color.Warning" Size="Size.Large" />
+                    <MudText Typo="Typo.h4" Class="font-weight-bold gradient-text">荣誉商城</MudText>
+                </div>
+                <MudText Typo="Typo.body1" Class="mud-text-secondary">
+                    解锁丰厚成就，用赚取的金币在商店兑换增益药水、连击保护符与专属霸气称号！
+                </MudText>
+            </div>
+            <div class="d-flex align-center gap-3">
+                <div class="d-flex align-center gap-2 px-4 py-2 glass-card" style="background: var(--sub-card-bg); border-radius: 20px;">
+                    <MudIcon Icon="@Icons.Material.Filled.MonetizationOn" Color="Color.Warning" />
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Warning">
+                        @(_currentUser?.Coins ?? 0) 金币
+                    </MudText>
+                </div>
+                @if (!string.IsNullOrEmpty(_currentUser?.ActiveTitle))
+                {
+                    <MudChip T="string" Color="Color.Secondary" Variant="Variant.Filled" Size="Size.Medium" Icon="@Icons.Material.Filled.MilitaryTech" Class="font-weight-bold">
+                        当前佩戴: @_currentUser.ActiveTitle
+                    </MudChip>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (_loading && _currentUser == null)
+    {
+        <div class="d-flex justify-center my-12">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+        </div>
+    }
+    else
+    {
+        <!-- 活跃增益 Buff 面板 -->
+        @if (_currentUser != null && ((_currentUser.ExpBoostUntil.HasValue && _currentUser.ExpBoostUntil.Value > DateTime.Now) || (_currentUser.GoldBoostUntil.HasValue && _currentUser.GoldBoostUntil.Value > DateTime.Now) || _currentUser.ComboShieldCount > 0))
+    {
+        <div class="glass-card pa-4 mb-6" style="border: 2px solid #8b5cf6; background: rgba(139, 92, 246, 0.08);">
+            <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-2 d-flex align-center gap-2" Color="Color.Secondary">
+                <MudIcon Icon="@Icons.Material.Filled.Bolt" /> 当前已激活的魔法增益 (Buff)
+            </MudText>
+            <div class="d-flex flex-wrap gap-3">
+                @if (_currentUser.ExpBoostUntil.HasValue && _currentUser.ExpBoostUntil.Value > DateTime.Now)
+                {
+                    <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Bolt" Class="font-weight-bold">
+                        ⚡ 2倍经验药水 生效中 (剩余 @Math.Max(1, (int)(_currentUser.ExpBoostUntil.Value - DateTime.Now).TotalMinutes) 分钟)
+                    </MudChip>
+                }
+                @if (_currentUser.GoldBoostUntil.HasValue && _currentUser.GoldBoostUntil.Value > DateTime.Now)
+                {
+                    <MudChip T="string" Color="Color.Warning" Variant="Variant.Filled" Icon="@Icons.Material.Filled.MonetizationOn" Class="font-weight-bold">
+                        💰 金币暴击符 生效中 (剩余 @Math.Max(1, (int)(_currentUser.GoldBoostUntil.Value - DateTime.Now).TotalMinutes) 分钟)
+                    </MudChip>
+                }
+                @if (_currentUser.ComboShieldCount > 0)
+                {
+                    <MudChip T="string" Color="Color.Info" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Shield" Class="font-weight-bold">
+                        🛡️ 连击保护符 剩余 @_currentUser.ComboShieldCount 张
+                    </MudChip>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- 专属称号穿戴区 -->
+    <div class="glass-card pa-6 mb-6">
+        <MudText Typo="Typo.h6" Class="font-weight-bold mb-3 d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.MilitaryTech" Color="Color.Secondary" /> 学霸专属称号衣橱 (佩戴彰显实力)
+        </MudText>
+        <div class="d-flex flex-wrap gap-2 align-center">
+            @foreach (var title in _availableTitles)
+            {
+                bool isEquipped = _currentUser?.ActiveTitle == title;
+                <MudButton Variant="@(isEquipped ? Variant.Filled : Variant.Outlined)"
+                           Color="@(isEquipped ? Color.Secondary : Color.Default)"
+                           Size="Size.Small"
+                           StartIcon="@(isEquipped ? Icons.Material.Filled.Check : Icons.Material.Filled.MilitaryTech)"
+                           OnClick="() => EquipTitleAsync(title)"
+                           Style="font-weight: 700; border-radius: 16px;">
+                    @title @(isEquipped ? "【已佩戴】" : "")
+                </MudButton>
+            }
+        </div>
+    </div>
+
+    <!-- 成就墙区域 -->
+    <MudText Typo="Typo.h6" Class="font-weight-bold mb-4 d-flex align-center gap-2">
+        <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Color="Color.Warning" /> 专属技能与成就解封
+    </MudText>
+
+    <MudGrid Class="mb-8">
+        @foreach (var ach in _allAchievements)
+        {
+            bool isUnlocked = _unlockedAchievementIds.Contains(ach.Id);
+            var prog = GetAchievementProgress(ach);
+            int pct = prog.target > 0 ? Math.Min(100, (int)((double)prog.current / prog.target * 100)) : 0;
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-4 text-center h-100 position-relative d-flex flex-column justify-space-between" style="@(isUnlocked ? "border-color: rgba(234, 179, 8, 0.4); background: var(--sub-card-bg);" : "opacity: 0.85;")">
+                    <div>
+                        <div class="mb-2">
+                            <MudAvatar Color="@(isUnlocked ? Color.Warning : Color.Dark)" Size="Size.Large" Variant="Variant.Filled">
+                                <MudIcon Icon="@(isUnlocked ? Icons.Material.Filled.EmojiEvents : Icons.Material.Filled.Lock)" />
+                            </MudAvatar>
+                        </div>
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">@ach.Title</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary my-2 d-block">
+                            @ach.Description
+                        </MudText>
+                        <div class="d-flex justify-center gap-2 mt-2">
+                            <MudChip T="string" Color="Color.Primary" Size="Size.Small">+@ach.RewardExp EXP</MudChip>
+                            <MudChip T="string" Color="Color.Warning" Size="Size.Small">+@ach.RewardCoins 金币</MudChip>
+                        </div>
+                    </div>
+                    @if (isUnlocked)
+                    {
+                        <div class="mt-3">
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small" Icon="@Icons.Material.Filled.CheckCircle">已解锁</MudChip>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mt-3 text-start pa-2 rounded" style="background: rgba(0, 0, 0, 0.2);">
+                            <div class="d-flex justify-space-between mud-text-secondary" style="font-size: 0.75rem;">
+                                <span>冲关进度</span>
+                                <span class="font-weight-bold" style="color: #f59e0b;">@prog.current / @prog.target @prog.unit (@pct%)</span>
+                            </div>
+                            <MudProgressLinear Color="Color.Warning" Value="@pct" Style="height: 4px; border-radius: 2px;" Class="mt-1" />
+                        </div>
+                    }
+                </div>
+            </MudItem>
+        }
+    </MudGrid>
+
+    <!-- 学霸道具商城 -->
+    <MudText Typo="Typo.h6" Class="font-weight-bold mb-4 d-flex align-center gap-2">
+        <MudIcon Icon="@Icons.Material.Filled.Storefront" Color="Color.Secondary" /> 学霸魔法道具商城
+    </MudText>
+
+    <MudGrid>
+        <MudItem xs="12" sm="6" md="3">
+            <div class="glass-card pa-6 h-100 d-flex flex-column justify-space-between" style="border: 1px solid rgba(59, 130, 246, 0.3);">
+                <div>
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudIcon Icon="@Icons.Material.Filled.Bolt" Color="Color.Primary" Size="Size.Large" />
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">2倍经验药水 (1小时)</MudText>
+                    </div>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                        服下后 1 小时内，刷题及改错获得的所有经验值翻倍（200% EXP）！
+                    </MudText>
+                </div>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ShoppingBag" OnClick="BuyExpPotionAsync">
+                    兑换 (40 金币)
+                </MudButton>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <div class="glass-card pa-6 h-100 d-flex flex-column justify-space-between" style="border: 1px solid rgba(245, 158, 11, 0.3);">
+                <div>
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudIcon Icon="@Icons.Material.Filled.MonetizationOn" Color="Color.Warning" Size="Size.Large" />
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">金币暴击符 (1小时)</MudText>
+                    </div>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                        使用后 1 小时内，答对每道题目金币收益额外提升 +50%！
+                    </MudText>
+                </div>
+                <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.ShoppingBag" OnClick="BuyGoldPotionAsync">
+                    兑换 (40 金币)
+                </MudButton>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <div class="glass-card pa-6 h-100 d-flex flex-column justify-space-between" style="border: 1px solid rgba(14, 165, 233, 0.3);">
+                <div>
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudIcon Icon="@Icons.Material.Filled.Shield" Color="Color.Info" Size="Size.Large" />
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">连击保护符 (1次)</MudText>
+                    </div>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                        刷题答错时自动消耗一张，免除清空连击数，保住高倍 Combo 加成！
+                    </MudText>
+                </div>
+                <MudButton Variant="Variant.Filled" Color="Color.Info" StartIcon="@Icons.Material.Filled.ShoppingBag" OnClick="BuyComboShieldAsync">
+                    兑换 (30 金币)
+                </MudButton>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <div class="glass-card pa-6 h-100 d-flex flex-column justify-space-between" style="border: 1px solid rgba(34, 197, 94, 0.3);">
+                <div>
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudIcon Icon="@Icons.Material.Filled.VerifiedUser" Color="Color.Success" Size="Size.Large" />
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">打卡断签补签卡</MudText>
+                    </div>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                        防止偶发忙碌导致连续打卡天数中断，保住你的打卡最高纪录与排位！
+                    </MudText>
+                </div>
+                <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.ShoppingBag" OnClick="BuyStreakRepairCardAsync">
+                    兑换 (50 金币)
+                </MudButton>
+            </div>
+        </MudItem>
+    </MudGrid>
+    }
+</MudContainer>
+
+@code {
+    private User? _currentUser;
+    private List<Achievement> _allAchievements = new List<Achievement>();
+    private HashSet<Guid> _unlockedAchievementIds = new HashSet<Guid>();
+    private List<string> _availableTitles = new List<string>
+    {
+        "初出茅庐", "刷题达人", "连击大师", "博学鸿儒", "收藏大师", "净化先锋", "极客学霸"
+    };
+
+    private bool _loading = true;
+    private int _favoritesCount = 0;
+    private int _aiExploredCount = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserSessionService.OnUserChanged += OnUserChangedHandler;
+        await LoadDataAsync();
+    }
+
+    private async void OnUserChangedHandler()
+    {
+        await LoadDataAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            _currentUser = await GamificationService.GetCurrentUserAsync();
+            if (_currentUser != null && _currentUser.Id != Guid.Empty)
+            {
+                var overview = await GamificationService.GetAchievementsOverviewAsync(_currentUser.Id);
+                _allAchievements = overview.AllAchievements;
+                _unlockedAchievementIds = overview.UnlockedAchievementIds;
+                _availableTitles = overview.AvailableTitles;
+                _favoritesCount = overview.FavoritesCount;
+                _aiExploredCount = overview.AiExploredCount;
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private (int current, int target, string unit) GetAchievementProgress(Achievement ach)
+    {
+        if (_currentUser == null) return (0, 1, "");
+        return ach.Code switch
+        {
+            "FIRST_BLOOD" => (_currentUser.TotalAnswered, 1, "题"),
+            "COMBO_5" => (_currentUser.MaxCombo, 5, "连击"),
+            "COMBO_10" => (_currentUser.MaxCombo, 10, "连击"),
+            "ERROR_KILLER_5" => (_currentUser.ResolvedErrorsCount, 5, "题净化"),
+            "AI_EXPLORER" => (_aiExploredCount, 5, "次解析"),
+            "STREAK_7" => (_currentUser.CurrentStreak, 7, "天打卡"),
+            "SCHOLAR_50" => (_currentUser.TotalAnswered, 50, "题"),
+            "FAVORITE_MASTER" => (_favoritesCount, 3, "题收藏"),
+            _ => (0, 1, "")
+        };
+    }
+
+    private async Task EquipTitleAsync(string title)
+    {
+        if (_currentUser == null) return;
+        await GamificationService.EquipTitleAsync(_currentUser.Id, title);
+        _currentUser = await GamificationService.GetCurrentUserAsync();
+        Snackbar.Add($"已成功佩戴称号：【{title}】！", Severity.Success);
+        StateHasChanged();
+    }
+
+    private async Task BuyExpPotionAsync()
+    {
+        if (_currentUser == null) return;
+        var (success, msg) = await GamificationService.BuyExpPotionAsync(_currentUser.Id);
+        if (success)
+        {
+            _currentUser = await GamificationService.GetCurrentUserAsync();
+            Snackbar.Add(msg, Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(msg, Severity.Warning);
+        }
+        StateHasChanged();
+    }
+
+    private async Task BuyGoldPotionAsync()
+    {
+        if (_currentUser == null) return;
+        var (success, msg) = await GamificationService.BuyGoldPotionAsync(_currentUser.Id);
+        if (success)
+        {
+            _currentUser = await GamificationService.GetCurrentUserAsync();
+            Snackbar.Add(msg, Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(msg, Severity.Warning);
+        }
+        StateHasChanged();
+    }
+
+    private async Task BuyComboShieldAsync()
+    {
+        if (_currentUser == null) return;
+        var (success, msg) = await GamificationService.BuyComboShieldAsync(_currentUser.Id);
+        if (success)
+        {
+            _currentUser = await GamificationService.GetCurrentUserAsync();
+            Snackbar.Add(msg, Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(msg, Severity.Warning);
+        }
+        StateHasChanged();
+    }
+
+    private async Task BuyStreakRepairCardAsync()
+    {
+        if (_currentUser == null) return;
+        var (success, msg) = await GamificationService.BuyStreakRepairCardAsync(_currentUser.Id);
+        if (success)
+        {
+            _currentUser = await GamificationService.GetCurrentUserAsync();
+            Snackbar.Add(msg, Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(msg, Severity.Warning);
+        }
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        UserSessionService.OnUserChanged -= OnUserChangedHandler;
+    }
+}

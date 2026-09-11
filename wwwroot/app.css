@@ -1,0 +1,526 @@
+@charset "UTF-8";
+
+/* Global Root Variables */
+:root {
+    --glass-card-bg: #ffffff;
+    --glass-card-border: rgba(0, 0, 0, 0.08);
+    --glass-card-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+    --glass-text-primary: #1d1d1f;
+    --glass-text-secondary: #6e6e73;
+    --sub-card-bg: #f5f5f7;
+    --accent-color: #0066cc;
+}
+
+body {
+    font-family: 'Outfit', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+}
+
+.mud-main-content {
+    padding-top: 88px !important;
+}
+
+/* ================= THEME 1: 现代科技 (Light Mode Pure White Cards) ================= */
+.theme-tech-gray {
+    --glass-card-bg: #ffffff;
+    --glass-card-border: rgba(0, 0, 0, 0.08);
+    --glass-card-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+    --glass-text-primary: #1d1d1f;
+    --glass-text-secondary: #6e6e73;
+    --sub-card-bg: #f5f5f7;
+    --accent-color: #0066cc;
+}
+
+.theme-tech-gray .glass-card,
+.theme-tech-gray .mud-paper,
+.theme-tech-gray .mud-card,
+.theme-tech-gray .mud-table,
+.theme-tech-gray .mud-table-container,
+.theme-tech-gray .mud-table-root,
+.theme-tech-gray .mud-table-row,
+.theme-tech-gray .mud-table-cell,
+.theme-tech-gray .mud-dialog {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #1d1d1f !important;
+    border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+.theme-tech-gray .mud-table-striped tbody tr:nth-of-type(odd),
+.theme-tech-gray .mud-table-head .mud-table-cell,
+.theme-tech-gray .exp-bar-container {
+    background-color: #f5f5f7 !important;
+    background: #f5f5f7 !important;
+}
+
+.theme-tech-gray .mud-text-secondary,
+.theme-tech-gray .mud-typography-body2,
+.theme-tech-gray .mud-typography-caption {
+    color: #6e6e73 !important;
+}
+
+.theme-tech-gray .mud-typography-h1,
+.theme-tech-gray .mud-typography-h2,
+.theme-tech-gray .mud-typography-h3,
+.theme-tech-gray .mud-typography-h4,
+.theme-tech-gray .mud-typography-h5,
+.theme-tech-gray .mud-typography-h6,
+.theme-tech-gray .mud-typography-subtitle1,
+.theme-tech-gray .mud-typography-subtitle2,
+.theme-tech-gray .mud-typography-body1 {
+    color: #1d1d1f !important;
+}
+
+.theme-tech-gray .option-btn {
+    background: #f5f5f7 !important;
+    color: #1d1d1f !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ================= THEME 2: 悠长夏日 (Light Mode Sky White Cards) ================= */
+.theme-vacation-blue {
+    --glass-card-bg: #ffffff;
+    --glass-card-border: rgba(2, 132, 199, 0.18);
+    --glass-card-shadow: 0 4px 20px rgba(2, 132, 199, 0.06);
+    --glass-text-primary: #0f172a;
+    --glass-text-secondary: #475569;
+    --sub-card-bg: #e0f2fe;
+    --accent-color: #0284c7;
+}
+
+.theme-vacation-blue .glass-card,
+.theme-vacation-blue .mud-paper,
+.theme-vacation-blue .mud-card,
+.theme-vacation-blue .mud-table,
+.theme-vacation-blue .mud-table-container,
+.theme-vacation-blue .mud-table-root,
+.theme-vacation-blue .mud-table-row,
+.theme-vacation-blue .mud-table-cell,
+.theme-vacation-blue .mud-dialog {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border-color: rgba(2, 132, 199, 0.18) !important;
+}
+
+.theme-vacation-blue .mud-table-striped tbody tr:nth-of-type(odd),
+.theme-vacation-blue .mud-table-head .mud-table-cell,
+.theme-vacation-blue .exp-bar-container {
+    background-color: #e0f2fe !important;
+    background: #e0f2fe !important;
+}
+
+.theme-vacation-blue .mud-text-secondary,
+.theme-vacation-blue .mud-typography-body2,
+.theme-vacation-blue .mud-typography-caption {
+    color: #475569 !important;
+}
+
+.theme-vacation-blue .mud-typography-h1,
+.theme-vacation-blue .mud-typography-h2,
+.theme-vacation-blue .mud-typography-h3,
+.theme-vacation-blue .mud-typography-h4,
+.theme-vacation-blue .mud-typography-h5,
+.theme-vacation-blue .mud-typography-h6,
+.theme-vacation-blue .mud-typography-subtitle1,
+.theme-vacation-blue .mud-typography-subtitle2,
+.theme-vacation-blue .mud-typography-body1 {
+    color: #0f172a !important;
+}
+
+.theme-vacation-blue .option-btn {
+    background: #e0f2fe !important;
+    color: #0f172a !important;
+    border: 1px solid rgba(2, 132, 199, 0.18) !important;
+}
+
+/* ================= THEME 3: 太空探秘 (Dark Mode Space Cards) ================= */
+.theme-space-dark {
+    --glass-card-bg: #151c2c;
+    --glass-card-border: rgba(139, 92, 246, 0.25);
+    --glass-card-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+    --glass-text-primary: #f8fafc;
+    --glass-text-secondary: #94a3b8;
+    --sub-card-bg: #090d16;
+    --accent-color: #8b5cf6;
+}
+
+.theme-space-dark .glass-card,
+.theme-space-dark .mud-paper,
+.theme-space-dark .mud-card,
+.theme-space-dark .mud-table,
+.theme-space-dark .mud-table-container,
+.theme-space-dark .mud-table-root,
+.theme-space-dark .mud-table-row,
+.theme-space-dark .mud-table-cell,
+.theme-space-dark .mud-dialog {
+    background-color: #151c2c !important;
+    background: #151c2c !important;
+    color: #f8fafc !important;
+    border-color: rgba(139, 92, 246, 0.25) !important;
+}
+
+.theme-space-dark .mud-table-striped tbody tr:nth-of-type(odd),
+.theme-space-dark .mud-table-head .mud-table-cell,
+.theme-space-dark .exp-bar-container {
+    background-color: #090d16 !important;
+    background: #090d16 !important;
+}
+
+.theme-space-dark .mud-text-secondary,
+.theme-space-dark .mud-typography-body2,
+.theme-space-dark .mud-typography-caption {
+    color: #94a3b8 !important;
+}
+
+.theme-space-dark .mud-typography-h1,
+.theme-space-dark .mud-typography-h2,
+.theme-space-dark .mud-typography-h3,
+.theme-space-dark .mud-typography-h4,
+.theme-space-dark .mud-typography-h5,
+.theme-space-dark .mud-typography-h6,
+.theme-space-dark .mud-typography-subtitle1,
+.theme-space-dark .mud-typography-subtitle2,
+.theme-space-dark .mud-typography-body1 {
+    color: #f8fafc !important;
+}
+
+.theme-space-dark .option-btn {
+    background: #090d16 !important;
+    color: #f8fafc !important;
+    border: 1px solid rgba(139, 92, 246, 0.25) !important;
+}
+
+/* Generic Fallback Classes */
+.glass-card {
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+    transition: all 0.25s ease-in-out;
+}
+
+.glass-card:hover {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+}
+
+.gradient-text {
+    color: var(--accent-color) !important;
+    font-weight: 800;
+}
+
+.option-btn {
+    border-radius: 12px;
+    padding: 14px 20px;
+    transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.5;
+    position: relative;
+    user-select: none;
+}
+
+.option-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(0, 102, 204, 0.12);
+    border-color: var(--accent-color) !important;
+}
+
+.option-btn:focus-visible {
+    outline: none;
+    border-color: var(--accent-color, #3b82f6) !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35);
+}
+
+.option-btn:active:not(:disabled) {
+    transform: scale(0.985);
+}
+
+.option-btn.selected {
+    border-color: #3b82f6 !important;
+    background: rgba(59, 130, 246, 0.12) !important;
+    font-weight: 700;
+}
+
+.option-btn.correct {
+    border-color: #22c55e !important;
+    background: rgba(34, 197, 94, 0.15) !important;
+    color: #15803d !important;
+    font-weight: 700;
+}
+
+.option-btn.wrong {
+    border-color: #ef4444 !important;
+    background: rgba(239, 68, 68, 0.15) !important;
+    color: #b91c1c !important;
+    font-weight: 700;
+}
+
+/* 快捷键 KBD 药丸标签 */
+kbd.shortcut-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #475569;
+    background-color: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+.theme-space-dark kbd.shortcut-badge {
+    background-color: #1e293b;
+    color: #94a3b8;
+    border-color: #334155;
+}
+
+/* 草稿本 Scratchpad Canvas 容器 */
+.scratchpad-container {
+    position: relative;
+    width: 100%;
+    height: 380px;
+    background-color: #0d1117;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+    background-size: 20px 20px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    overflow: hidden;
+    touch-action: none;
+}
+
+.scratchpad-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: crosshair;
+}
+
+/* 收藏动效 */
+.star-btn-fav {
+    color: #f59e0b !important;
+    transform: scale(1.1);
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* KaTeX 数学公式排版与移动端/窄屏响应式平滑滚动适配 */
+.katex-display {
+    margin: 0.8em 0 !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px 0;
+    max-width: 100%;
+    scrollbar-width: thin;
+}
+
+.math-preview-content,
+.practice-math-container {
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+
+.math-preview-content::-webkit-scrollbar,
+.katex-display::-webkit-scrollbar {
+    height: 4px;
+}
+
+.math-preview-content::-webkit-scrollbar-thumb,
+.katex-display::-webkit-scrollbar-thumb {
+    background: rgba(147, 197, 253, 0.4);
+    border-radius: 4px;
+}
+
+.katex {
+    font-size: 1.1em !important;
+    text-rendering: auto;
+}
+
+.theme-space-dark .katex {
+    color: #f8fafc !important;
+}
+
+/* 草稿纸画笔工具条与调色盘 */
+.scratchpad-toolbar {
+    background: rgba(13, 17, 23, 0.95);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.color-dot-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.color-dot-btn:hover {
+    transform: scale(1.2);
+}
+
+.color-dot-btn.active {
+    border-color: #ffffff;
+    box-shadow: 0 0 8px currentColor;
+    transform: scale(1.15);
+}
+
+/* 主观题多模态输入切换药丸组 (Segmented Control) */
+.mode-toggle-group {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 4px;
+}
+
+.mode-toggle-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    padding: 5px 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border-radius: 7px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    outline: none;
+}
+
+.mode-toggle-btn:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.mode-toggle-btn.active {
+    background: #3b82f6 !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+.mode-toggle-btn.active-hw {
+    background: #9333ea !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(147, 51, 234, 0.4);
+}
+
+.mode-toggle-btn.active-voice {
+    background: #ef4444 !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
+}
+
+/* 闯关胜利结报单 Victory Dialog */
+.victory-card-header {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.25));
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.victory-rank-badge {
+    font-size: 2.8rem;
+    font-weight: 900;
+    line-height: 1;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b, #ef4444);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* 打印复习卷特定样式 Print Stylesheet */
+@media print {
+    body {
+        background: #ffffff !important;
+        color: #000000 !important;
+    }
+
+    .mud-appbar,
+    .mud-drawer,
+    .mud-nav-menu,
+    .no-print,
+    .mud-button-root:not(.print-include),
+    .mud-dialog-actions,
+    .scratchpad-container,
+    .scratchpad-toolbar {
+        display: none !important;
+    }
+
+    .mud-main-content {
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    .printable-sheet {
+        box-shadow: none !important;
+        border: none !important;
+        background: transparent !important;
+        padding: 0 !important;
+        width: 100% !important;
+    }
+
+    .printable-question-item {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 24px;
+        padding-bottom: 16px;
+        border-bottom: 1px dashed #cccccc;
+    }
+
+    .print-answer-line {
+        height: 60px;
+        border-bottom: 1px solid #999999;
+        margin-top: 12px;
+    }
+
+    @page {
+        margin: 15mm;
+        size: A4 portrait;
+    }
+}
+
+/* 微动效与交互质感增强 */
+@keyframes pulseGlow {
+    0%, 100% {
+        box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.8);
+        transform: scale(1.03);
+    }
+}
+
+.matrix-chip-current {
+    animation: pulseGlow 2.5s infinite ease-in-out;
+}
+
+.katex-preview-box {
+    transition: all 0.2s ease;
+}
+
+.katex-preview-box:hover {
+    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.15);
+}
+

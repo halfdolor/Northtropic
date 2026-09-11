@@ -1,0 +1,665 @@
+@page "/user-management"
+@using Northtropic.Models
+@using Northtropic.Services
+@inject IUserSessionService UserSessionService
+@inject IGamificationService GamificationService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager NavigationManager
+
+<PageTitle>帐号管理与注册审批 - Northtropic</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-6 mb-12">
+    <!-- 头部 Header -->
+    <div class="glass-card pa-6 mb-6 d-flex align-center justify-space-between flex-wrap gap-4">
+        <div>
+            <div class="d-flex align-center gap-3 mb-1">
+                <MudIcon Icon="@Icons.Material.Filled.PeopleAlt" Color="Color.Primary" Size="Size.Large" />
+                <MudText Typo="Typo.h4" Class="font-weight-bold">帐号管理与注册审批</MudText>
+                <MudChip T="string" Color="Color.Primary" Size="Size.Small" Class="font-weight-bold">
+                    超级管理员专属
+                </MudChip>
+            </div>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                管理系统内所有用户档案，审批新用户自主注册申请（支持通过/驳回与理由填写），配置角色权限与安全重置。
+            </MudText>
+        </div>
+
+        @if (_currentUser != null && _currentUser.CanManageUsers)
+        {
+            <div class="d-flex align-center gap-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="OpenCreateUserDialog">
+                    快捷新增用户账号
+                </MudButton>
+            </div>
+        }
+    </div>
+
+    <!-- 权限校验卡控拦截 -->
+    @if (_currentUser == null)
+    {
+        <div class="d-flex justify-center my-12">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+        </div>
+    }
+    else if (!_currentUser.CanManageUsers)
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="pa-6 rounded-lg glass-card my-6">
+            <div class="d-flex flex-column align-center text-center gap-3">
+                <MudIcon Icon="@Icons.Material.Filled.GppBad" Size="Size.Large" Color="Color.Primary" />
+                <MudText Typo="Typo.h5" Class="font-weight-bold">权限不足：只有【超级管理员】允许访问用户管理控制台</MudText>
+                <MudText Typo="Typo.body1" Class="mud-text-secondary">
+                    当前登录账号：<strong>@_currentUser.Username</strong> (角色: <strong>@_currentUser.RoleDisplayName</strong>, 手机: @_currentUser.PhoneNumber)
+                    <br />根据权限安全规范，家长/老师与学生无用户管理权限。
+                </MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Logout" OnClick="LogoutAndReloginAsync">
+                    安全退出当前账号，以管理员身份重新登录
+                </MudButton>
+            </div>
+        </MudAlert>
+    }
+    else
+    {
+        <!-- 统计面板 (4 类角色 + 待审批数) -->
+        <MudGrid Class="mb-6">
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4 glass-card">
+                    <div class="d-flex align-center justify-space-between">
+                        <div>
+                            <MudText Typo="Typo.subtitle2" Color="Color.Error" Class="font-weight-bold">超级管理员 (SuperAdmin)</MudText>
+                            <MudText Typo="Typo.h4" Class="font-weight-bold">@_users.Count(u => u.Role == UserRole.SuperAdmin) 人</MudText>
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Color="Color.Error" Size="Size.Large" />
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">拥有所有全局管理权限</MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4 glass-card">
+                    <div class="d-flex align-center justify-space-between">
+                        <div>
+                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="font-weight-bold">家长用户 (Parent)</MudText>
+                            <MudText Typo="Typo.h4" Class="font-weight-bold">@_users.Count(u => u.Role == UserRole.Parent) 人</MudText>
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.FamilyRestroom" Color="Color.Secondary" Size="Size.Large" />
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">所属学生账号管理与子女学情分析权限</MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4 glass-card">
+                    <div class="d-flex align-center justify-space-between">
+                        <div>
+                            <MudText Typo="Typo.subtitle2" Color="Color.Warning" Class="font-weight-bold">老师用户 (Teacher)</MudText>
+                            <MudText Typo="Typo.h4" Class="font-weight-bold">@_users.Count(u => u.Role == UserRole.Teacher) 人</MudText>
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.School" Color="Color.Warning" Size="Size.Large" />
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">题库管理、试题录入与教学分析</MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4 glass-card" Style="border-left: 4px solid #3b82f6;">
+                    <div class="d-flex align-center justify-space-between">
+                        <div>
+                            <MudText Typo="Typo.subtitle2" Color="Color.Info" Class="font-weight-bold">待注册审批</MudText>
+                            <MudText Typo="Typo.h4" Class="font-weight-bold" Color="Color.Info">
+                                @_approvalList.Count(u => u.AccountStatus == UserAccountStatus.PendingApproval) 人
+                            </MudText>
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.PendingActions" Color="Color.Info" Size="Size.Large" />
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">自主注册申请等待审批中</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <!-- 主内容切换 Tabs -->
+        <MudTabs Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4" Color="Color.Primary">
+            <!-- Tab 1: 全量用户档案 -->
+            <MudTabPanel Text="👥 全量用户档案列表" Icon="@Icons.Material.Filled.ListAlt">
+                <!-- 搜索与筛选工具栏 -->
+                <div class="glass-card pa-4 mb-4">
+                    <MudGrid align-items="center">
+                        <MudItem xs="12" sm="4" md="4">
+                            <MudTextField T="string" @bind-Value="_userSearchQuery" Placeholder="搜索用户名、手机号或邮箱..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" />
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="3">
+                            <MudSelect T="string" @bind-Value="_selectedRoleFilter" Label="角色筛选" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("全部角色")">全部角色</MudSelectItem>
+                                <MudSelectItem Value="@("超级管理员")">超级管理员</MudSelectItem>
+                                <MudSelectItem Value="@("家长用户")">家长用户</MudSelectItem>
+                                <MudSelectItem Value="@("老师用户")">老师用户</MudSelectItem>
+                                <MudSelectItem Value="@("学生用户")">学生用户</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="3">
+                            <MudSelect T="string" @bind-Value="_selectedStatusFilter" Label="账号状态" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("全部状态")">全部状态</MudSelectItem>
+                                <MudSelectItem Value="@("正常可用")">正常可用</MudSelectItem>
+                                <MudSelectItem Value="@("待审批")">待审批</MudSelectItem>
+                                <MudSelectItem Value="@("已拒绝")">已拒绝</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="2" Class="d-flex justify-end">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary align-self-center">
+                                共显示 <strong>@FilteredUsers.Count</strong> 位用户
+                            </MudText>
+                        </MudItem>
+                    </MudGrid>
+                </div>
+
+                <MudTable Items="FilteredUsers" Hover="true" Striped="true" Elevation="0" Class="glass-card">
+                    <HeaderContent>
+                        <MudTh>用户姓名 / 昵称</MudTh>
+                        <MudTh>手机号码 (登录凭证)</MudTh>
+                        <MudTh>邮箱</MudTh>
+                        <MudTh>账号状态</MudTh>
+                        <MudTh>当前角色身份</MudTh>
+                        <MudTh>适用年级</MudTh>
+                        <MudTh>等级 & 金币</MudTh>
+                        <MudTh>最后活跃时间</MudTh>
+                        <MudTh Style="text-align: right;">管理操作</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="用户姓名">
+                            <div class="d-flex align-center gap-2">
+                                <div class="d-flex align-center justify-center rounded-circle" style="width: 34px; height: 34px; font-size: 1.3rem; background: rgba(59,130,246,0.15);">
+                                    @(!string.IsNullOrEmpty(context.Avatar) ? context.Avatar : "🎓")
+                                </div>
+                                <div>
+                                    <div class="font-weight-bold">@context.Username</div>
+                                    @if (context.Id == _currentUser.Id)
+                                    {
+                                        <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">当前登录</MudChip>
+                                    }
+                                </div>
+                            </div>
+                        </MudTd>
+                        <MudTd DataLabel="手机号码">
+                            <span class="font-mono">@(string.IsNullOrEmpty(context.PhoneNumber) ? "尚未绑定" : context.PhoneNumber)</span>
+                        </MudTd>
+                        <MudTd DataLabel="邮箱">
+                            <span class="mud-text-secondary font-mono">@(string.IsNullOrEmpty(context.Email) ? "-" : context.Email)</span>
+                        </MudTd>
+                        <MudTd DataLabel="账号状态">
+                            @if (context.AccountStatus == UserAccountStatus.Approved)
+                            {
+                                <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Outlined">正常可用</MudChip>
+                            }
+                            else if (context.AccountStatus == UserAccountStatus.PendingApproval)
+                            {
+                                <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled">待审批</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Outlined">已拒绝</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="当前角色身份">
+                            <MudSelect T="UserRole" Value="context.Role" ValueChanged="@(r => UpdateUserRoleAsync(context, r))" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 140px;">
+                                <MudSelectItem Value="UserRole.SuperAdmin">超级管理员</MudSelectItem>
+                                <MudSelectItem Value="UserRole.Parent">家长用户</MudSelectItem>
+                                <MudSelectItem Value="UserRole.Teacher">老师用户</MudSelectItem>
+                                <MudSelectItem Value="UserRole.Student">学生用户</MudSelectItem>
+                            </MudSelect>
+                        </MudTd>
+                        <MudTd DataLabel="适用年级">
+                            <MudSelect T="string" Value="context.Grade" ValueChanged="@(g => UpdateUserGradeAsync(context, g))" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 150px;">
+                                @foreach (var g in GradeSubjectProvider.AvailableGrades)
+                                {
+                                    <MudSelectItem Value="@g">@g</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudTd>
+                        <MudTd DataLabel="等级 & 金币">
+                            <MudChip T="string" Color="Color.Primary" Size="Size.Small">Lv.@context.Level</MudChip>
+                            <span style="font-weight: bold;" Class="ml-1">@context.Coins 金币</span>
+                        </MudTd>
+                        <MudTd DataLabel="最后活跃时间">@context.LastStudyDate.ToString("yyyy-MM-dd HH:mm")</MudTd>
+                        <MudTd DataLabel="管理操作" Style="text-align: right;">
+                            <div class="d-flex justify-end gap-1">
+                                <MudTooltip Text="编辑用户资料 (修改姓名/头像/联系方式)">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small" OnClick="() => OpenEditUserDialog(context)" />
+                                </MudTooltip>
+                                <MudTooltip Text="重置密码为 123456 (要求首次登录改密)">
+                                    <MudIconButton Icon="@Icons.Material.Filled.LockReset" Color="Color.Warning" Size="Size.Small" OnClick="() => ResetPasswordAsync(context)" />
+                                </MudTooltip>
+                                <MudTooltip Text="删除用户">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Default" Size="Size.Small" OnClick="() => DeleteUserAsync(context)" Disabled="@(context.Id == _currentUser?.Id)" />
+                                </MudTooltip>
+                            </div>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudTabPanel>
+
+            <!-- Tab 2: 用户自主注册审批 -->
+            <MudTabPanel Text="@($"📝 用户注册审批 ({_approvalList.Count(u => u.AccountStatus == UserAccountStatus.PendingApproval)})")" Icon="@Icons.Material.Filled.FactCheck">
+                <div class="glass-card pa-4 mb-4 d-flex align-center justify-space-between flex-wrap gap-3">
+                    <div class="d-flex align-center gap-2">
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">
+                            待审批与历史审批申请列表
+                        </MudText>
+                        <MudChip T="string" Color="Color.Info" Size="Size.Small">共 @_approvalList.Count 条记录</MudChip>
+                    </div>
+                    <div class="d-flex align-center gap-2">
+                        @if (_approvalList.Any(u => u.AccountStatus == UserAccountStatus.PendingApproval))
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.DoneAll" Size="Size.Small" OnClick="BatchApprovePendingRegistrationsAsync">
+                                ⚡ 一键批量通过全部待审批 (@_approvalList.Count(u => u.AccountStatus == UserAccountStatus.PendingApproval))
+                            </MudButton>
+                        }
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" Size="Size.Small" OnClick="LoadDataAsync">
+                            刷新审批列表
+                        </MudButton>
+                    </div>
+                </div>
+
+                @if (_approvalList.Count == 0)
+                {
+                    <div class="glass-card pa-12 text-center my-6">
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircleOutline" Color="Color.Success" Size="Size.Large" Class="mb-3" />
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">暂无待审批的注册申请</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                            当新用户通过手机验证码提交注册后，申请记录将自动汇集在此处供管理员审批。
+                        </MudText>
+                    </div>
+                }
+                else
+                {
+                    <MudTable Items="_approvalList" Hover="true" Striped="true" Elevation="0" Class="glass-card">
+                        <HeaderContent>
+                            <MudTh>申请人姓名</MudTh>
+                            <MudTh>申请角色</MudTh>
+                            <MudTh>手机号码</MudTh>
+                            <MudTh>电子邮箱</MudTh>
+                            <MudTh>年级/学段</MudTh>
+                            <MudTh>注册申请时间</MudTh>
+                            <MudTh>审批状态</MudTh>
+                            <MudTh>审核详情 / 拒绝理由</MudTh>
+                            <MudTh Style="text-align: right;">审批操作</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="申请人姓名">
+                                <div class="font-weight-bold">@context.Username</div>
+                            </MudTd>
+                            <MudTd DataLabel="申请角色">
+                                <MudChip T="string" Color="@GetRoleChipColor(context.Role)" Size="Size.Small">
+                                    @context.RoleDisplayName
+                                </MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="手机号码">
+                                <span class="font-mono font-weight-bold">@context.PhoneNumber</span>
+                            </MudTd>
+                            <MudTd DataLabel="电子邮箱">
+                                <span class="font-mono">@(string.IsNullOrEmpty(context.Email) ? "-" : context.Email)</span>
+                            </MudTd>
+                            <MudTd DataLabel="年级/学段">@context.Grade</MudTd>
+                            <MudTd DataLabel="注册申请时间">
+                                @context.RegisteredAt.ToString("yyyy-MM-dd HH:mm")
+                            </MudTd>
+                            <MudTd DataLabel="审批状态">
+                                @if (context.AccountStatus == UserAccountStatus.PendingApproval)
+                                {
+                                    <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled">🟡 等待审批</MudChip>
+                                }
+                                else if (context.AccountStatus == UserAccountStatus.Rejected)
+                                {
+                                    <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Filled">🔴 已拒绝</MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled">🟢 已通过</MudChip>
+                                }
+                            </MudTd>
+                            <MudTd DataLabel="审核详情 / 拒绝理由">
+                                @if (context.AccountStatus == UserAccountStatus.Rejected)
+                                {
+                                    <span class="mud-text-secondary" style="color: var(--mud-palette-error);">
+                                        <strong>拒绝理由：</strong>@context.RejectReason
+                                    </span>
+                                }
+                                else if (context.AccountStatus == UserAccountStatus.Approved)
+                                {
+                                    <span class="mud-text-secondary">
+                                        已于 @(context.ApprovedAt?.ToString("yyyy-MM-dd HH:mm") ?? "之前") 批准入驻
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="mud-text-secondary">待管理员复核身份</span>
+                                }
+                            </MudTd>
+                            <MudTd DataLabel="审批操作" Style="text-align: right;">
+                                <div class="d-flex justify-end gap-2">
+                                    @if (context.AccountStatus == UserAccountStatus.PendingApproval || context.AccountStatus == UserAccountStatus.Rejected)
+                                    {
+                                        <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Check"
+                                                   OnClick="() => ApproveRegistrationAsync(context)">
+                                            通过审批
+                                        </MudButton>
+                                    }
+                                    @if (context.AccountStatus == UserAccountStatus.PendingApproval)
+                                    {
+                                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.Close"
+                                                   OnClick="() => OpenRejectDialog(context)">
+                                            拒绝申请
+                                        </MudButton>
+                                    }
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Default" Size="Size.Small" OnClick="() => DeleteUserAsync(context)" />
+                                </div>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+        </MudTabs>
+    }
+</MudContainer>
+
+<!-- 拒绝申请原因输入模态框 -->
+<MudDialog @bind-Visible="_showRejectDialog" Options="_rejectDialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.CancelPresentation" Color="Color.Error" />
+            <MudText Typo="Typo.h6" Class="font-weight-bold">拒绝用户注册申请</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_targetRejectUser != null)
+        {
+            <div class="d-flex flex-column gap-3 py-2">
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+                    您正在拒绝 <strong>@_targetRejectUser.Username</strong> (手机: @_targetRejectUser.PhoneNumber, 申请角色: @_targetRejectUser.RoleDisplayName) 的注册申请。
+                    <br />输入的拒绝理由将在该用户下次尝试登录时直接呈现给用户。
+                </MudAlert>
+
+                <MudText Typo="Typo.subtitle2" Class="font-weight-bold">快捷选择拒绝理由模板：</MudText>
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    <MudChip T="string" Color="Color.Default" Size="Size.Small" OnClick='() => SelectRejectTemplate("姓名或联系方式填写不完整")'>信息填写不完整</MudChip>
+                    <MudChip T="string" Color="Color.Default" Size="Size.Small" OnClick='() => SelectRejectTemplate("手机号码未通过实名认证核验")'>手机号未实名</MudChip>
+                    <MudChip T="string" Color="Color.Default" Size="Size.Small" OnClick='() => SelectRejectTemplate("申请教师角色需联系教研组长提供工号证明")'>需提供教师工号证明</MudChip>
+                    <MudChip T="string" Color="Color.Default" Size="Size.Small" OnClick='() => SelectRejectTemplate("当前年级名额已满，暂未开放自主入驻")'>暂不符合入驻条件</MudChip>
+                </div>
+
+                <MudTextField T="string" @bind-Value="_rejectReasonInput" Label="拒绝理由说明 *" Variant="Variant.Outlined" Lines="3"
+                              Placeholder="请输入具体的拒绝原因，便于用户整改后重新申请..." />
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _showRejectDialog = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="ConfirmRejectRegistrationAsync">
+            确认拒绝
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private User? _currentUser;
+    private List<User> _users = new List<User>();
+    private List<User> _approvalList = new List<User>();
+
+    // 过滤与筛选
+    private string _userSearchQuery = string.Empty;
+    private string _selectedRoleFilter = "全部角色";
+    private string _selectedStatusFilter = "全部状态";
+
+    // 拒绝弹窗状态
+    private bool _showRejectDialog = false;
+    private User? _targetRejectUser;
+    private string _rejectReasonInput = string.Empty;
+    private DialogOptions _rejectDialogOptions = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+
+    private List<User> FilteredUsers
+    {
+        get
+        {
+            var res = _users.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(_userSearchQuery))
+            {
+                res = res.Where(u => (!string.IsNullOrEmpty(u.Username) && u.Username.Contains(_userSearchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                                     (!string.IsNullOrEmpty(u.PhoneNumber) && u.PhoneNumber.Contains(_userSearchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                                     (!string.IsNullOrEmpty(u.Email) && u.Email.Contains(_userSearchQuery, StringComparison.OrdinalIgnoreCase)));
+            }
+            if (_selectedRoleFilter != "全部角色")
+            {
+                res = res.Where(u => u.RoleDisplayName == _selectedRoleFilter);
+            }
+            if (_selectedStatusFilter == "正常可用")
+            {
+                res = res.Where(u => u.AccountStatus == UserAccountStatus.Approved);
+            }
+            else if (_selectedStatusFilter == "待审批")
+            {
+                res = res.Where(u => u.AccountStatus == UserAccountStatus.PendingApproval);
+            }
+            else if (_selectedStatusFilter == "已拒绝")
+            {
+                res = res.Where(u => u.AccountStatus == UserAccountStatus.Rejected);
+            }
+            return res.ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserSessionService.OnUserChanged += OnUserChangedHandler;
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _currentUser = await UserSessionService.GetActiveUserAsync();
+        _users = await UserSessionService.GetAllUsersAsync();
+        _approvalList = await UserSessionService.GetPendingApprovalUsersAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task BatchApprovePendingRegistrationsAsync()
+    {
+        if (_currentUser == null) return;
+        var pendingUsers = _approvalList.Where(u => u.AccountStatus == UserAccountStatus.PendingApproval).ToList();
+        if (!pendingUsers.Any()) return;
+
+        bool? confirm = await DialogService.ShowMessageBox("批量审批通过确认", $"确定要一键通过全部 {pendingUsers.Count} 位用户的注册申请吗？", yesText: "确认一键全部通过", cancelText: "取消");
+        if (confirm == true)
+        {
+            int successCount = 0;
+            foreach (var user in pendingUsers)
+            {
+                var res = await UserSessionService.ApproveUserRegistrationAsync(user.Id, _currentUser.Id);
+                if (res.Success) successCount++;
+            }
+            Snackbar.Add($"🎉 批量审批完成！已成功通过 {successCount} 位新用户的入驻申请！", Severity.Success);
+            await LoadDataAsync();
+        }
+    }
+
+    private async void OnUserChangedHandler()
+    {
+        await LoadDataAsync();
+    }
+
+    private Color GetRoleChipColor(UserRole role) => role switch
+    {
+        UserRole.SuperAdmin => Color.Error,
+        UserRole.Parent => Color.Secondary,
+        UserRole.Teacher => Color.Warning,
+        UserRole.Student => Color.Primary,
+        _ => Color.Default
+    };
+
+    private async Task LogoutAndReloginAsync()
+    {
+        await UserSessionService.LogoutAsync();
+        Snackbar.Add("已退出登录，请使用超级管理员账号登录！", Severity.Info);
+        NavigationManager.NavigateTo("/", true);
+    }
+
+    private async Task UpdateUserRoleAsync(User user, UserRole newRole)
+    {
+        var success = await UserSessionService.UpdateUserRoleAsync(user.Id, newRole);
+        if (success)
+        {
+            user.Role = newRole;
+            Snackbar.Add($"已将 【{user.Username}】 角色更新为 【{user.RoleDisplayName}】", Severity.Success);
+        }
+    }
+
+    private async Task UpdateUserGradeAsync(User user, string newGrade)
+    {
+        var success = await UserSessionService.UpdateUserGradeAsync(user.Id, newGrade);
+        if (success)
+        {
+            user.Grade = newGrade;
+            Snackbar.Add($"已将 【{user.Username}】 的适用年级更新为 【{newGrade}】", Severity.Success);
+        }
+    }
+
+    private async Task OpenEditUserDialog(User user)
+    {
+        var parameters = new DialogParameters<Northtropic.Components.Dialogs.EditProfileDialog>
+        {
+            { x => x.CurrentUser, user }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<Northtropic.Components.Dialogs.EditProfileDialog>("", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task ResetPasswordAsync(User user)
+    {
+        bool? confirmed = await DialogService.ShowMessageBox(
+            title: "🔑 密码重置确认",
+            markupMessage: new MarkupString(
+                $"确定要将用户 <strong>【{user.Username}】</strong> 的登录密码重置为初始密码 <code>123456</code> 吗？<br/><br/>" +
+                $"• 手机号码：<code>{(string.IsNullOrEmpty(user.PhoneNumber) ? "尚未绑定" : user.PhoneNumber)}</code><br/>" +
+                $"• 角色身份：<strong>{user.RoleDisplayName}</strong><br/><br/>" +
+                $"重置后该用户下次登录时将被系统强制要求修改新密码。"
+            ),
+            yesText: "确认重置密码",
+            cancelText: "取消"
+        );
+
+        if (confirmed != true) return;
+
+        var success = await UserSessionService.ResetUserPasswordAsync(user.Id, "123456");
+        if (success)
+        {
+            user.Password = "123456";
+            user.MustChangePassword = true;
+            Snackbar.Add($"已成功重置 【{user.Username}】 的密码为 123456，该用户下次登录时必须修改密码。", Severity.Success);
+        }
+    }
+
+    private async Task DeleteUserAsync(User user)
+    {
+        if (user.Id == _currentUser?.Id)
+        {
+            Snackbar.Add("无法删除当前正在登录的管理员账户！", Severity.Warning);
+            return;
+        }
+
+        bool? confirmed = await DialogService.ShowMessageBox(
+            title: "⚠️ 危险操作：确认永久删除账号？",
+            markupMessage: new MarkupString(
+                $"确定要永久删除用户 <strong>【{user.Username}】</strong> 吗？<br/><br/>" +
+                $"• 手机号码：<code>{(string.IsNullOrEmpty(user.PhoneNumber) ? "尚未绑定" : user.PhoneNumber)}</code><br/>" +
+                $"• 角色身份：<strong>{user.RoleDisplayName}</strong> ｜ 适用年级：<strong>{user.Grade}</strong><br/><br/>" +
+                $"<span style='color: #ef4444; font-weight: bold;'>⚠️ 警告：此操作将永久清理该用户的所有做题记录、错题本与绑定关系，数据不可恢复！</span>"
+            ),
+            yesText: "确认永久删除",
+            cancelText: "取消"
+        );
+
+        if (confirmed != true) return;
+
+        var success = await UserSessionService.DeleteUserAsync(user.Id);
+        if (success)
+        {
+            _users.Remove(user);
+            _approvalList.Remove(user);
+            Snackbar.Add($"已成功永久删除用户：{user.Username}", Severity.Success);
+            await LoadDataAsync();
+        }
+        else
+        {
+            Snackbar.Add("删除用户失败，请稍后重试！", Severity.Error);
+        }
+    }
+
+    private async Task ApproveRegistrationAsync(User user)
+    {
+        if (_currentUser == null) return;
+        var res = await UserSessionService.ApproveUserRegistrationAsync(user.Id, _currentUser.Id);
+        if (res.Success)
+        {
+            Snackbar.Add(res.Message, Severity.Success);
+            await LoadDataAsync();
+        }
+        else
+        {
+            Snackbar.Add(res.Message, Severity.Error);
+        }
+    }
+
+    private void OpenRejectDialog(User user)
+    {
+        _targetRejectUser = user;
+        _rejectReasonInput = "注册信息审核不符合规范，请核对信息后重试。";
+        _showRejectDialog = true;
+    }
+
+    private void SelectRejectTemplate(string template)
+    {
+        _rejectReasonInput = template;
+    }
+
+    private async Task ConfirmRejectRegistrationAsync()
+    {
+        if (_targetRejectUser == null || _currentUser == null) return;
+
+        if (string.IsNullOrWhiteSpace(_rejectReasonInput))
+        {
+            Snackbar.Add("请输入拒绝理由！", Severity.Warning);
+            return;
+        }
+
+        var res = await UserSessionService.RejectUserRegistrationAsync(_targetRejectUser.Id, _currentUser.Id, _rejectReasonInput);
+        if (res.Success)
+        {
+            Snackbar.Add(res.Message, Severity.Warning);
+            _showRejectDialog = false;
+            await LoadDataAsync();
+        }
+        else
+        {
+            Snackbar.Add(res.Message, Severity.Error);
+        }
+    }
+
+    private async Task OpenCreateUserDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<Northtropic.Components.Dialogs.SmsLoginDialog>("", options);
+        var res = await dialog.Result;
+        if (res != null && !res.Canceled)
+        {
+            await LoadDataAsync();
+        }
+    }
+
+    public void Dispose()
+    {
+        UserSessionService.OnUserChanged -= OnUserChangedHandler;
+    }
+}

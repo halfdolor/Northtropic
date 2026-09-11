@@ -1,0 +1,1460 @@
+@page "/error-book"
+@using Northtropic.Models
+@using Northtropic.Services
+@using Microsoft.EntityFrameworkCore
+@inject IErrorBookService ErrorBookService
+@inject IPracticeService PracticeService
+@inject IGamificationService GamificationService
+@inject IAiTutorService AiTutorService
+@inject IUserSessionService UserSessionService
+@inject IDialogService DialogService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>净化副本 - Northtropic</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-2 mb-10">
+    <!-- 副本 Header Banner -->
+    <div class="glass-card pa-6 mb-6">
+        <MudGrid>
+            <MudItem xs="12" md="7">
+                <div class="d-flex align-center gap-3 mb-2">
+                    <MudIcon Icon="@Icons.Material.Filled.AutoFixHigh" Color="Color.Error" Size="Size.Large" />
+                    <MudText Typo="Typo.h4" Class="font-weight-bold gradient-text">
+                        净化副本
+                    </MudText>
+                </div>
+                <MudText Typo="Typo.body1" Class="mud-text-secondary">
+                    将错题与重难点题转化为绝杀技巧！改错净化成功可享受 <strong style="color: #f59e0b;">1.5 倍高额经验值</strong> 与 <strong style="color: #a855f7;">AI 巩固变式考验</strong>。
+                </MudText>
+            </MudItem>
+            <MudItem xs="12" md="5" Class="d-flex align-center justify-end gap-2 flex-wrap">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Print" OnClick="OpenPrintWorksheetModal" Style="font-weight: 700; border-radius: 12px;" Class="no-print">
+                    🖨️ 导出/打印
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Large" StartIcon="@Icons.Material.Filled.Bolt" OnClick="NavigateToEbbinghausSprintAsync" Style="font-weight: 700; border-radius: 12px; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);" Class="no-print">
+                    ⚡ 艾宾浩斯抗遗忘特训
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Large" StartIcon="@Icons.Material.Filled.SportsKabaddi" OnClick="NavigateToSprintPractice" Style="font-weight: 700; border-radius: 12px; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);" Class="no-print">
+                    ⚔️ 错题专练 @(_unmasteredItems.Count > 0 ? $"({_unmasteredItems.Count})" : "")
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </div>
+
+    <!-- 副本主选项卡 -->
+    <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4 glass-card" Color="Color.Primary">
+        <!-- 待净化错题 Tab -->
+        <MudTabPanel Text="待净化错题" Icon="@Icons.Material.Filled.BugReport" BadgeData="@(_unmasteredItems.Count > 0 ? _unmasteredItems.Count : null)" BadgeColor="Color.Error">
+            <!-- 错因分布归因概览 Card (透视分析) -->
+            @if (_unmasteredItems.Count > 0)
+            {
+                int conceptCount = _unmasteredItems.Count(i => i.ErrorReasonCategory == "概念模糊");
+                int carelessCount = _unmasteredItems.Count(i => i.ErrorReasonCategory == "审题粗心");
+                int formulaCount = _unmasteredItems.Count(i => i.ErrorReasonCategory == "公式记错");
+                int calcCount = _unmasteredItems.Count(i => i.ErrorReasonCategory == "逻辑计算错误");
+                int unknownCount = _unmasteredItems.Count(i => string.IsNullOrWhiteSpace(i.ErrorReasonCategory) || i.ErrorReasonCategory == "完全不会" || i.ErrorReasonCategory == "未归因");
+                int totalCount = _unmasteredItems.Count;
+
+                <div class="pa-4 glass-card mb-4 no-print" style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.7) 100%); border-left: 4px solid var(--mud-palette-primary);">
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.PieChart" Color="Color.Primary" />
+                            <MudText Typo="Typo.subtitle1" Class="font-weight-bold">
+                                错因全景透视归因分布 (@totalCount 道待净化)
+                            </MudText>
+                        </div>
+                        <div class="d-flex align-center gap-2 flex-wrap">
+                            @if (unknownCount > 0)
+                            {
+                                <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick="BatchAutoClassifyErrorsAsync" Disabled="@_isAutoClassifying" Style="font-weight: 700;">
+                                    @if (_isAutoClassifying)
+                                    {
+                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" Style="width: 14px; height: 14px;" />
+                                        <span>智能归因中...</span>
+                                    }
+                                    else
+                                    {
+                                        <span>🤖 AI 一键智能归因待分类错题 (@unknownCount)</span>
+                                    }
+                                </MudButton>
+                            }
+                        </div>
+                    </div>
+
+                    <MudGrid Class="gap-y-2">
+                        <MudItem xs="6" sm="4" md="2">
+                            <div class="pa-2 rounded text-center cursor-pointer" style="background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); transition: transform 0.2s;" @onclick='() => SetFilterReason("概念模糊")' onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">
+                                <MudText Typo="Typo.caption" Style="color: #c084fc; font-weight: 700;">概念模糊</MudText>
+                                <MudText Typo="Typo.h6" Class="font-weight-bold" Style="color: #c084fc;">@conceptCount <span style="font-size: 0.75rem;">(@(totalCount > 0 ? (conceptCount * 100 / totalCount) : 0)%)</span></MudText>
+                                @if (conceptCount > 0)
+                                {
+                                    <span @onclick:stopPropagation="true">
+                                        <MudButton Variant="Variant.Text" Size="Size.Small" Style="font-size: 0.72rem; color: #c084fc; font-weight: 700; padding: 0 4px; min-height: 20px;" OnClick='() => StartSprintForReason("概念模糊")'>
+                                            ⚡ 专项特训
+                                        </MudButton>
+                                    </span>
+                                }
+                            </div>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <div class="pa-2 rounded text-center cursor-pointer" style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); transition: transform 0.2s;" @onclick='() => SetFilterReason("审题粗心")' onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">
+                                <MudText Typo="Typo.caption" Style="color: #fbbf24; font-weight: 700;">审题粗心</MudText>
+                                <MudText Typo="Typo.h6" Class="font-weight-bold" Style="color: #fbbf24;">@carelessCount <span style="font-size: 0.75rem;">(@(totalCount > 0 ? (carelessCount * 100 / totalCount) : 0)%)</span></MudText>
+                                @if (carelessCount > 0)
+                                {
+                                    <span @onclick:stopPropagation="true">
+                                        <MudButton Variant="Variant.Text" Size="Size.Small" Style="font-size: 0.72rem; color: #fbbf24; font-weight: 700; padding: 0 4px; min-height: 20px;" OnClick='() => StartSprintForReason("审题粗心")'>
+                                            ⚡ 专项特训
+                                        </MudButton>
+                                    </span>
+                                }
+                            </div>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <div class="pa-2 rounded text-center cursor-pointer" style="background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); transition: transform 0.2s;" @onclick='() => SetFilterReason("公式记错")' onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">
+                                <MudText Typo="Typo.caption" Style="color: #60a5fa; font-weight: 700;">公式记错</MudText>
+                                <MudText Typo="Typo.h6" Class="font-weight-bold" Style="color: #60a5fa;">@formulaCount <span style="font-size: 0.75rem;">(@(totalCount > 0 ? (formulaCount * 100 / totalCount) : 0)%)</span></MudText>
+                                @if (formulaCount > 0)
+                                {
+                                    <span @onclick:stopPropagation="true">
+                                        <MudButton Variant="Variant.Text" Size="Size.Small" Style="font-size: 0.72rem; color: #60a5fa; font-weight: 700; padding: 0 4px; min-height: 20px;" OnClick='() => StartSprintForReason("公式记错")'>
+                                            ⚡ 专项特训
+                                        </MudButton>
+                                    </span>
+                                }
+                            </div>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <div class="pa-2 rounded text-center cursor-pointer" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); transition: transform 0.2s;" @onclick='() => SetFilterReason("逻辑计算错误")' onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">
+                                <MudText Typo="Typo.caption" Style="color: #f87171; font-weight: 700;">逻辑/计算错误</MudText>
+                                <MudText Typo="Typo.h6" Class="font-weight-bold" Style="color: #f87171;">@calcCount <span style="font-size: 0.75rem;">(@(totalCount > 0 ? (calcCount * 100 / totalCount) : 0)%)</span></MudText>
+                                @if (calcCount > 0)
+                                {
+                                    <span @onclick:stopPropagation="true">
+                                        <MudButton Variant="Variant.Text" Size="Size.Small" Style="font-size: 0.72rem; color: #f87171; font-weight: 700; padding: 0 4px; min-height: 20px;" OnClick='() => StartSprintForReason("逻辑计算错误")'>
+                                            ⚡ 专项特训
+                                        </MudButton>
+                                    </span>
+                                }
+                            </div>
+                        </MudItem>
+                        <MudItem xs="12" sm="8" md="4">
+                            <div class="pa-2 rounded text-center cursor-pointer" style="background: rgba(148, 163, 184, 0.15); border: 1px solid rgba(148, 163, 184, 0.3); transition: transform 0.2s;" @onclick='() => SetFilterReason("完全不会")' onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-weight: 700;">完全不会 / 待归因</MudText>
+                                <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Default">@unknownCount <span style="font-size: 0.75rem;">(@(totalCount > 0 ? (unknownCount * 100 / totalCount) : 0)%)</span></MudText>
+                                @if (unknownCount > 0)
+                                {
+                                    <span @onclick:stopPropagation="true">
+                                        <MudButton Variant="Variant.Text" Size="Size.Small" Style="font-size: 0.72rem; font-weight: 700; padding: 0 4px; min-height: 20px;" Color="Color.Default" OnClick='() => StartSprintForReason("完全不会")'>
+                                            ⚡ 专项特训
+                                        </MudButton>
+                                    </span>
+                                }
+                            </div>
+                        </MudItem>
+                    </MudGrid>
+                </div>
+            }
+
+            <!-- 筛选与搜索工具条 -->
+            <div class="pa-4 glass-card mb-4 no-print d-flex align-center gap-3 flex-wrap">
+                <MudSelect T="string" Label="学科筛选" @bind-Value="_filterSubject" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 150px;" AnchorOrigin="Origin.BottomCenter">
+                    <MudSelectItem Value="@("全部学科")">全部学科 (@_unmasteredItems.Count)</MudSelectItem>
+                    @foreach (var sub in GetFilterSubjects())
+                    {
+                        int count = _unmasteredItems.Count(i => i.Question != null && (i.Question.Subject == sub || i.Question.Category.Contains(sub)));
+                        <MudSelectItem Value="@sub">@sub @(count > 0 ? $"({count})" : "")</MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudSelect T="string" Label="错因归因" @bind-Value="_filterReason" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 150px;">
+                    <MudSelectItem Value="@("全部错因")">全部错因 (@_unmasteredItems.Count)</MudSelectItem>
+                    <MudSelectItem Value="@("概念模糊")">概念模糊 (@(_unmasteredItems.Count(i => i.ErrorReasonCategory == "概念模糊")))</MudSelectItem>
+                    <MudSelectItem Value="@("审题粗心")">审题粗心 (@(_unmasteredItems.Count(i => i.ErrorReasonCategory == "审题粗心")))</MudSelectItem>
+                    <MudSelectItem Value="@("公式记错")">公式记错 (@(_unmasteredItems.Count(i => i.ErrorReasonCategory == "公式记错")))</MudSelectItem>
+                    <MudSelectItem Value="@("逻辑计算错误")">逻辑计算错误 (@(_unmasteredItems.Count(i => i.ErrorReasonCategory == "逻辑计算错误")))</MudSelectItem>
+                    <MudSelectItem Value="@("完全不会")">完全不会 (@(_unmasteredItems.Count(i => i.ErrorReasonCategory == "完全不会")))</MudSelectItem>
+                </MudSelect>
+
+                <MudSelect T="string" Label="排序方式" @bind-Value="_sortBy" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 170px;" AnchorOrigin="Origin.BottomCenter">
+                    <MudSelectItem Value="@("艾宾浩斯紧迫度优先")">⚡ 艾宾浩斯紧迫度优先</MudSelectItem>
+                    <MudSelectItem Value="@("错误频次降序")">🔥 错误频次降序</MudSelectItem>
+                    <MudSelectItem Value="@("最新添加")">🕒 最新添加</MudSelectItem>
+                    <MudSelectItem Value="@("最旧未消灭")">⏳ 最久未消灭</MudSelectItem>
+                    <MudSelectItem Value="@("难度从高到低")">⭐ 难度从高到低</MudSelectItem>
+                    <MudSelectItem Value="@("难度从低到高")">✨ 难度从低到高</MudSelectItem>
+                </MudSelect>
+
+                <MudTextField T="string" @bind-Value="_searchQuery" Label="搜索错题关键词..." Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Style="min-width: 200px; flex-grow: 1;" />
+
+                <div class="d-flex align-center gap-2 flex-wrap">
+                    <MudChip T="bool" Color="@(_onlyEbbinghausDue ? Color.Error : Color.Default)" Variant="@(_onlyEbbinghausDue ? Variant.Filled : Variant.Outlined)" OnClick="() => _onlyEbbinghausDue = !_onlyEbbinghausDue" Style="font-weight: 700;">
+                        ⏰ 仅看急需复习 (@GetEbbinghausDueCount())
+                    </MudChip>
+                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Bolt" OnClick="NavigateToEbbinghausSprintAsync" Style="font-weight: 700; border-radius: 8px;">
+                        ⚡ 遗忘临界特训
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.SelectAll" OnClick="ToggleSelectAll">
+                        @(PagedUnmasteredItems.Count > 0 && PagedUnmasteredItems.All(i => _selectedItemIds.Contains(i.Id)) ? "取消全选本页" : "全选当前页")
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" StartIcon="@Icons.Material.Filled.SwapHoriz" OnClick="ToggleInvertSelection">
+                        反选本页
+                    </MudButton>
+                    @if (_filterSubject != "全部学科" || _filterReason != "全部错因" || _onlyEbbinghausDue || !string.IsNullOrWhiteSpace(_searchQuery))
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" StartIcon="@Icons.Material.Filled.ClearAll" OnClick="ResetFilters">
+                            清除筛选
+                        </MudButton>
+                    }
+                </div>
+            </div>
+
+            <!-- 生效中的过滤器 Chip 组 (UX 专家优化：提升过滤状态可见性) -->
+            @if (_filterSubject != "全部学科" || _filterReason != "全部错因" || _onlyEbbinghausDue || !string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                <div class="d-flex align-center gap-2 flex-wrap mb-4 px-2 no-print">
+                    <span class="text-caption font-weight-bold mud-text-secondary">当前过滤条件：</span>
+                    @if (_filterSubject != "全部学科")
+                    {
+                        <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined" OnClose="@(() => _filterSubject = "全部学科")">
+                            学科: @_filterSubject
+                        </MudChip>
+                    }
+                    @if (_filterReason != "全部错因")
+                    {
+                        <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Outlined" OnClose="@(() => _filterReason = "全部错因")">
+                            错因: @_filterReason
+                        </MudChip>
+                    }
+                    @if (_onlyEbbinghausDue)
+                    {
+                        <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => _onlyEbbinghausDue = false">
+                            ⏳ 艾宾浩斯需复习
+                        </MudChip>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                    {
+                        <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => _searchQuery = string.Empty">
+                            关键词: @_searchQuery
+                        </MudChip>
+                    }
+                    <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small" StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetFilters">
+                        全部重置
+                    </MudButton>
+                </div>
+            }
+
+            <!-- 批量操作悬浮高能工具条 (当有勾选试题时触发) -->
+            @if (_selectedItemIds.Count > 0)
+            {
+                <div class="pa-4 glass-card mb-4 no-print d-flex align-center justify-space-between flex-wrap gap-3" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.25);">
+                    <div class="d-flex align-center gap-3">
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Secondary" Size="Size.Medium" />
+                        <div>
+                            <MudText Typo="Typo.subtitle1" Class="font-weight-bold" Color="Color.Secondary">
+                                已选中 @_selectedItemIds.Count 道待消灭错题
+                            </MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                可一键生成专属靶向强化试卷，或直接批量标记/归档
+                            </MudText>
+                        </div>
+                    </div>
+                    <div class="d-flex align-center gap-2 flex-wrap">
+                        <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.FlashOn" OnClick="StartCustomSprintPractice" Class="font-weight-bold" Style="border-radius: 8px; box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);">
+                            ⚡ 一键组成错题靶向强化卷 (@_selectedItemIds.Count 题) ➔
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.DoneAll" OnClick="BatchMarkMasteredAsync">
+                            批量标记已掌握
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" StartIcon="@Icons.Material.Filled.DeleteSweep" OnClick="BatchDeleteErrorItemsAsync">
+                            批量移出
+                        </MudButton>
+                        <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small" OnClick="ClearSelection">
+                            清空选择
+                        </MudButton>
+                    </div>
+                </div>
+            }
+
+            @if (_loading)
+            {
+                <div class="d-flex flex-column gap-4 pa-4">
+                    @for (int i = 0; i < 3; i++)
+                    {
+                        <div class="glass-card pa-6" style="border-left: 4px solid #ef4444;">
+                            <div class="d-flex align-center justify-space-between mb-3 flex-wrap gap-2">
+                                <div class="d-flex align-center gap-2">
+                                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="20px" Height="20px" Class="rounded" />
+                                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="90px" Height="24px" Class="rounded-pill" />
+                                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="60px" Height="24px" Class="rounded-pill" />
+                                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="75px" Height="24px" Class="rounded-pill" />
+                                </div>
+                                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="120px" Height="32px" Class="rounded" />
+                            </div>
+                            <MudSkeleton SkeletonType="SkeletonType.Text" Width="90%" Height="28px" Class="mb-2" />
+                            <MudSkeleton SkeletonType="SkeletonType.Text" Width="65%" Height="24px" Class="mb-3" />
+                            <div class="pa-3 mb-4 rounded" style="background: rgba(239, 68, 68, 0.06);">
+                                <MudSkeleton SkeletonType="SkeletonType.Text" Width="35%" Height="20px" />
+                            </div>
+                            <div class="d-flex align-center gap-2">
+                                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="110px" Height="32px" Class="rounded" />
+                                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="100px" Height="32px" Class="rounded" />
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else if (FilteredUnmasteredItems.Count == 0)
+            {
+                <div class="pa-10 glass-card text-center my-4" style="border: 2px dashed rgba(16, 185, 129, 0.3); border-radius: 16px;">
+                    @if (_unmasteredItems.Count == 0)
+                    {
+                        <div class="d-inline-flex align-center justify-center rounded-circle mb-3" style="width: 72px; height: 72px; background: rgba(16, 185, 129, 0.15); border: 2px solid #10b981;">
+                            <MudIcon Icon="@Icons.Material.Filled.EmojiEvents" Color="Color.Success" Style="font-size: 2.5rem;" />
+                        </div>
+                        <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Success">
+                            🎉 完美绝杀！当前没有任何待净化的错题！
+                        </MudText>
+                        <MudText Typo="Typo.body1" Class="mud-text-secondary mt-2 mb-4" Style="max-width: 600px; margin: 0 auto;">
+                            所有收录的错题与薄弱点均已成功掌握攻克。继续保持高昂势头，去刷题中心开启全新的中考专项冲刺与模拟挑战吧！
+                        </MudText>
+                        <div class="d-flex justify-center gap-3 flex-wrap">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.PlayArrow" OnClick='() => NavigationManager.NavigateTo("/practice")' Style="font-weight: 700; border-radius: 12px;">
+                                🎮 前往刷题中心探索新挑战
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Large" StartIcon="@Icons.Material.Filled.AutoStories" OnClick='() => NavigationManager.NavigateTo("/practice?mode=mock")' Style="font-weight: 700; border-radius: 12px;">
+                                📝 全真模拟考场
+                            </MudButton>
+                        </div>
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.FilterAltOff" Color="Color.Warning" Size="Size.Large" Class="mb-3" />
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">
+                            未找到符合当前筛选条件的错题
+                        </MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+                            可以尝试调整或清除以下生效的筛选条件：
+                        </MudText>
+                        <div class="d-flex align-center justify-center gap-2 flex-wrap mb-4">
+                            @if (_filterSubject != "全部学科")
+                            {
+                                <MudChip T="string" Color="Color.Primary" Size="Size.Small" OnClose='() => _filterSubject = "全部学科"'>学科: @_filterSubject</MudChip>
+                            }
+                            @if (_filterReason != "全部错因")
+                            {
+                                <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClose='() => _filterReason = "全部错因"'>错因: @_filterReason</MudChip>
+                            }
+                            @if (_onlyEbbinghausDue)
+                            {
+                                <MudChip T="string" Color="Color.Error" Size="Size.Small" OnClose="() => _onlyEbbinghausDue = false">仅艾宾浩斯临界</MudChip>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                            {
+                                <MudChip T="string" Color="Color.Info" Size="Size.Small" OnClose="() => _searchQuery = string.Empty">搜索: @_searchQuery</MudChip>
+                            }
+                        </div>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetFilters" Style="font-weight: 700;">
+                            一键重置所有筛选条件
+                        </MudButton>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="d-flex flex-column gap-4 pa-4">
+                    @foreach (var item in PagedUnmasteredItems)
+                    {
+                        var q = item.Question;
+                        if (q == null) continue;
+                        bool isSelected = _selectedItemIds.Contains(item.Id);
+                        double healthScore = ErrorBookService.CalculateRetentionHealthScore(item);
+                        bool isDue = IsEbbinghausReviewDue(item);
+                        string borderStyle = isSelected 
+                            ? "border-left: 5px solid #a855f7; background: rgba(168, 85, 247, 0.08);" 
+                            : (isDue || healthScore < 50 
+                                ? "border-left: 5px solid #ef4444; background: rgba(239, 68, 68, 0.03);" 
+                                : (healthScore < 80 
+                                    ? "border-left: 5px solid #f59e0b;" 
+                                    : "border-left: 5px solid #10b981;"));
+
+                        <div class="glass-card pa-6" style="@borderStyle">
+                            <div class="d-flex align-center justify-space-between mb-3 flex-wrap gap-2">
+                                <div class="d-flex align-center gap-2 flex-wrap">
+                                    <MudCheckBox T="bool" Value="@isSelected" ValueChanged="@((bool val) => ToggleSelectItem(item.Id, val))" Color="Color.Secondary" Dense="true" Class="no-print mr-1" />
+                                    <MudChip T="string" Color="Color.Error" Size="Size.Small">错题编号 #@item.Id.ToString().Substring(0, 6)</MudChip>
+                                    <MudChip T="string" Color="Color.Info" Size="Size.Small">@q.GradeTarget</MudChip>
+                                    <MudChip T="string" Color="Color.Primary" Size="Size.Small">@q.Category</MudChip>
+                                    <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined" Size="Size.Small">@q.TypeDisplayName</MudChip>
+                                    <MudChip T="string" Color="Color.Warning" Size="Size.Small">错误次数: @item.ErrorCount 次</MudChip>
+                                    @{
+                                        Color healthColor = healthScore >= 80 ? Color.Success : (healthScore >= 50 ? Color.Warning : Color.Error);
+                                        string healthText = healthScore >= 80 ? "🔥 牢固记忆期" : (healthScore >= 50 ? "⏳ 最佳复习期" : "⚠️ 临界遗忘");
+                                    }
+                                    @if (IsEbbinghausReviewDue(item))
+                                    {
+                                        <MudChip T="string" Color="Color.Error" Variant="Variant.Filled" Size="Size.Small" Icon="@Icons.Material.Filled.Alarm">⏰ 遗忘临界·建议今日复习</MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small" Icon="@Icons.Material.Filled.CheckCircle">🌱 记忆巩固期 (第 @(item.RevisionCount + 1) 轮)</MudChip>
+                                    }
+                                    @{
+                                        var baseTime = item.LastRevisedAt ?? item.CreatedAt;
+                                        if (baseTime == default) baseTime = DateTime.Now;
+                                        var elapsedHours = Math.Max(0, (DateTime.Now - baseTime).TotalHours);
+                                        var intervalHours = ErrorBookService.GetRecommendedReviewInterval(item.RevisionCount).TotalHours;
+                                        string tooltipText = $"🧠 艾宾浩斯抗遗忘记忆留存率: {healthScore}%\n⏱️ 距上次温习: {elapsedHours:F1}小时 / 推荐半衰期: {intervalHours:F0}小时\n📊 记忆状态: {healthText}";
+                                    }
+                                    <MudTooltip Text="@tooltipText" Placement="Placement.Top" Arrow="true">
+                                        <div class="d-inline-flex align-center gap-2 px-2 py-1 rounded-pill" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); cursor: help;">
+                                            <span style="font-size: 0.75rem; font-weight: 700; color: var(--mud-palette-text-secondary);">🧠 记忆存留:</span>
+                                            <span style="font-size: 0.8rem; font-weight: 800; color: @(healthScore >= 80 ? "#22c55e" : (healthScore >= 50 ? "#f59e0b" : "#ef4444"));">
+                                                @healthScore%
+                                            </span>
+                                            <div style="width: 56px; height: 7px; background: rgba(255,255,255,0.15); border-radius: 4px; overflow: hidden; display: inline-block; vertical-align: middle;">
+                                                <div style="width: @(healthScore)%; height: 100%; background: @(healthScore >= 80 ? "linear-gradient(90deg, #10b981, #22c55e)" : (healthScore >= 50 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #dc2626, #ef4444)")); border-radius: 4px; transition: width 0.4s ease;"></div>
+                                            </div>
+                                        </div>
+                                    </MudTooltip>
+                                    <MudTooltip Text="@($"艾宾浩斯抗遗忘记忆强化轨迹：当前已连续巩固 {item.RevisionCount}/3 次。第 3 次答对将正式融会贯通，净化归档！")">
+                                        <MudChip T="string" Color="@(item.RevisionCount switch { 0 => Color.Default, 1 => Color.Info, _ => Color.Success })" Variant="Variant.Filled" Size="Size.Small">
+                                            @(item.RevisionCount switch {
+                                                0 => "🌱 阶段 1/3: 初始巩固",
+                                                1 => "🌿 阶段 2/3: 强化记忆",
+                                                _ => "🌲 阶段 3/3: 临界净化"
+                                            })
+                                        </MudChip>
+                                    </MudTooltip>
+                                </div>
+                                <div class="d-flex align-center gap-2 no-print">
+                                    <!-- 错因标签归因选择器 -->
+                                    <MudSelect T="string" Value="@item.ErrorReasonCategory" ValueChanged="@((string cat) => OnErrorReasonChanged(item.Id, cat))" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 130px; font-size: 0.85rem;">
+                                        <MudSelectItem Value="@("概念模糊")">概念模糊</MudSelectItem>
+                                        <MudSelectItem Value="@("审题粗心")">审题粗心</MudSelectItem>
+                                        <MudSelectItem Value="@("公式记错")">公式记错</MudSelectItem>
+                                        <MudSelectItem Value="@("逻辑计算错误")">逻辑错误</MudSelectItem>
+                                        <MudSelectItem Value="@("完全不会")">完全不会</MudSelectItem>
+                                    </MudSelect>
+                                </div>
+                            </div>
+
+                            <!-- 题干 -->
+                            <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-3">
+                                @q.Stem
+                            </MudText>
+
+                            <div class="pa-3 mb-4 rounded" style="background: rgba(239, 68, 68, 0.1); border: 1px dashed rgba(239, 68, 68, 0.3);">
+                                <MudText Typo="Typo.caption" Color="Color.Error">
+                                    你的历史错误答案: <strong>@item.UserWrongAnswer</strong>
+                                </MudText>
+                            </div>
+
+                            <!-- 内嵌 AI 导师错因深度剖析卡片 -->
+                            @if (_expandedAiHelpIds.Contains(item.Id))
+                            {
+                                <div class="pa-4 my-3 glass-card" style="background: var(--sub-card-bg); border-left: 4px solid #8b5cf6;">
+                                    <div class="d-flex align-center gap-2 mb-2">
+                                        <MudIcon Icon="@Icons.Material.Filled.Psychology" Color="Color.Secondary" />
+                                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Secondary">AI 导师错因深度剖析与破壁建议</MudText>
+                                    </div>
+                                    @if (_aiHelpLoadingIds.Contains(item.Id))
+                                    {
+                                        <div class="d-flex align-center gap-2 py-2">
+                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Secondary" />
+                                            <MudText Typo="Typo.caption" Class="mud-text-secondary">大模型深度诊断推理中...</MudText>
+                                        </div>
+                                    }
+                                    else if (_aiHelpDict.ContainsKey(item.Id))
+                                    {
+                                        var advice = _aiHelpDict[item.Id];
+                                        <MudText Typo="Typo.body2" Class="mb-2"><strong>诊断总结：</strong> @advice.Summary</MudText>
+                                        <MudText Typo="Typo.body2" Class="mud-text-secondary"><strong>剖析指导：</strong> @advice.WhyWrongAnalysis</MudText>
+                                    }
+                                </div>
+                            }
+
+                            <!-- 动作按钮 -->
+                            <div class="d-flex align-center justify-space-between pt-2 flex-wrap gap-2 no-print">
+                                <div class="d-flex align-center gap-2 flex-wrap">
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Psychology" OnClick="() => ToggleAiHelpAsync(item)">
+                                        @(_expandedAiHelpIds.Contains(item.Id) ? "收起导师诊断" : "AI 导师错因剖析")
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.CheckCircleOutline" OnClick="() => MarkAsMasteredDirectAsync(item.Id)">
+                                        标记已掌握
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.DeleteOutline" OnClick="() => DeleteErrorItemAsync(item.Id)">
+                                        移出错题本
+                                    </MudButton>
+                                </div>
+
+                                <div class="d-flex align-center gap-2 flex-wrap">
+                                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Shuffle" OnClick="() => OpenVariantDialogAsync(item)" Style="font-weight: 700;">
+                                        🎯 AI 变式强化
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick="() => OpenReviseDialogAsync(item)" Style="font-weight: 700;">
+                                        重新练习消灭 (+35 EXP)
+                                    </MudButton>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @if (ErrorTotalPages > 1)
+                {
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-4 mt-4 pa-4 glass-card no-print">
+                        <div class="d-flex align-center gap-3">
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">每页容量：</MudText>
+                            <MudSelect T="int" Value="_errorPageSize" ValueChanged="OnErrorPageSizeChanged" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" Style="width: 105px;">
+                                @foreach (var size in _errorPageSizeOptions)
+                                {
+                                    <MudSelectItem Value="@size">@size 条/页</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                第 @(_errorPage) / @(ErrorTotalPages) 页 (共 @FilteredUnmasteredItems.Count 道待净化错题)
+                            </MudText>
+                        </div>
+                        <MudPagination Count="@ErrorTotalPages" Selected="@_errorPage" SelectedChanged="OnErrorPageChanged" Color="Color.Error" Variant="Variant.Filled" ShowFirstButton="true" ShowLastButton="true" />
+                    </div>
+                }
+            }
+        </MudTabPanel>
+
+        <!-- 我的典藏试题 Tab -->
+        <MudTabPanel Text="我的典藏试题" Icon="@Icons.Material.Filled.Star" BadgeData="@(_favoriteQuestions.Count > 0 ? _favoriteQuestions.Count : null)" BadgeColor="Color.Warning">
+            @if (_loading)
+            {
+                <div class="d-flex justify-center my-8">
+                    <MudProgressCircular Color="Color.Warning" Indeterminate="true" />
+                </div>
+            }
+            else if (_favoriteQuestions.Count == 0)
+            {
+                <div class="pa-12 text-center">
+                    <MudIcon Icon="@Icons.Material.Filled.StarOutline" Color="Color.Warning" Size="Size.Large" Class="mb-3" />
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">
+                        暂无收藏的经典试题
+                    </MudText>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                        在刷题过程中点击右上角五角星 ⭐ 即可收藏典型题与压轴题！
+                    </MudText>
+                </div>
+            }
+            else
+            {
+                <div class="d-flex flex-column gap-4 pa-4">
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-3 glass-card pa-4" style="background: rgba(245, 158, 11, 0.08); border: 1.5px solid rgba(245, 158, 11, 0.3); border-radius: 12px;">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Stars" Color="Color.Warning" Size="Size.Medium" />
+                            <div>
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold" Style="color: #f59e0b;">
+                                    我的典藏高频好题 (@_favoriteQuestions.Count 题)
+                                </MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    随时一键组卷回练，强化解题思路与攻坚思维。
+                                </MudText>
+                            </div>
+                        </div>
+                        <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.SportsEsports" OnClick="NavigateToFavoritePractice" Class="font-weight-bold">
+                            🚀 开启典藏好题专练
+                        </MudButton>
+                    </div>
+
+                    @foreach (var q in _favoriteQuestions)
+                    {
+                        <div class="glass-card pa-6" style="border-left: 4px solid #f59e0b;">
+                            <div class="d-flex align-center justify-space-between mb-3 flex-wrap gap-2">
+                                <div class="d-flex align-center gap-2">
+                                    <MudChip T="string" Color="Color.Warning" Size="Size.Small" Icon="@Icons.Material.Filled.Star">已典藏</MudChip>
+                                    <MudChip T="string" Color="Color.Info" Size="Size.Small">@q.GradeTarget</MudChip>
+                                    <MudChip T="string" Color="Color.Primary" Size="Size.Small">@q.Category</MudChip>
+                                    <MudChip T="string" Color="Color.Secondary" Size="Size.Small">难度: @q.Difficulty</MudChip>
+                                </div>
+                                <div>
+                                    <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.StarBorder" OnClick="() => RemoveFavoriteAsync(q.Id)">
+                                        取消收藏
+                                    </MudButton>
+                                </div>
+                            </div>
+
+                            <!-- 题干 -->
+                            <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-3">
+                                @q.Stem
+                            </MudText>
+
+                            @if (q.OptionsJson != null && q.Options.Count > 0)
+                            {
+                                <div class="d-flex flex-column gap-1 mb-3">
+                                    @for (int i = 0; i < q.Options.Count; i++)
+                                    {
+                                        char optKey = (char)('A' + i);
+                                        <div class="pa-2 rounded" style="background: var(--sub-card-bg); font-size: 0.9rem;">
+                                            <strong>@optKey. </strong> @q.Options[i]
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <!-- 解析与正确答案展示 -->
+                            <div class="pa-3 mb-3 rounded" style="background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.2);">
+                                <MudText Typo="Typo.body2" Color="Color.Success" Class="font-weight-bold mb-1">
+                                    ✅ 官方标准答案：@q.CorrectAnswer
+                                </MudText>
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                    📖 考点剖析：@(string.IsNullOrWhiteSpace(q.Explanation) ? "暂无详细文字解析" : q.Explanation)
+                                </MudText>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </MudTabPanel>
+
+        <!-- 已净化法典 Tab -->
+        <MudTabPanel Text="已净化法典" Icon="@Icons.Material.Filled.DoneAll">
+            <div class="d-flex flex-column gap-4 pa-4">
+                @if (_masteredItems.Count == 0)
+                {
+                    <div class="pa-8 text-center">
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">暂无已消灭的错题记录，改错消灭后将永久收录在此法典中！</MudText>
+                    </div>
+                }
+                else
+                {
+                    <div class="d-flex align-center justify-space-between mb-2 flex-wrap gap-2">
+                        <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">
+                            🏆 累计已净化消灭 <strong>@_masteredItems.Count</strong> 道历史错题
+                        </MudText>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.DeleteSweep" OnClick="ClearMasteredErrorsAsync">
+                            清空已净化记录
+                        </MudButton>
+                    </div>
+
+                    @foreach (var item in _masteredItems)
+                    {
+                        var q = item.Question;
+                        if (q == null) continue;
+
+                        <div class="glass-card pa-4" style="border-left: 4px solid #22c55e; opacity: 0.9;">
+                            <div class="d-flex align-center justify-space-between mb-2 flex-wrap gap-2">
+                                <div class="d-flex align-center gap-2">
+                                    <MudChip T="string" Color="Color.Success" Size="Size.Small">已净化</MudChip>
+                                    <MudChip T="string" Color="Color.Primary" Size="Size.Small">@q.Subject</MudChip>
+                                    <MudChip T="string" Color="Color.Info" Size="Size.Small">@q.Category</MudChip>
+                                </div>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">净化时间: @(item.LastRevisedAt?.ToString("yyyy-MM-dd HH:mm") ?? "已掌握")</MudText>
+                            </div>
+                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">@q.Stem</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Success">✅ 正确答案：@q.CorrectAnswer</MudText>
+                        </div>
+                    }
+                }
+            </div>
+        </MudTabPanel>
+    </MudTabs>
+</MudContainer>
+
+<!-- 导出/打印错题复习卷 Modal -->
+<MudDialog @bind-Visible="_showPrintWorksheetModal" Options="_printSheetDialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center justify-space-between flex-wrap gap-2 no-print">
+            <div class="d-flex align-center gap-2">
+                <MudIcon Icon="@Icons.Material.Filled.Print" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="font-weight-bold">🖨️ 错题净化复习卷 · 打印预览与导出</MudText>
+            </div>
+            <div class="d-flex align-center gap-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Print" OnClick="TriggerPrintAsync" Class="font-weight-bold" Style="border-radius: 8px;">
+                    立即调用打印机 / 导出 PDF
+                </MudButton>
+            </div>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <!-- 打印配置选项条 (非打印时可见) -->
+        <div class="pa-4 rounded-lg mb-4 no-print" style="background: rgba(255,255,255,0.04); border: 1px dashed var(--mud-palette-primary);">
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" @bind-Value="_printTitle" Label="试卷主标题" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" @bind-Value="_printSubtitle" Label="副标题 / 考试须知" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="例如：※ 闭卷考试，满分100分，请在答题区域规范作答" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudSelect T="string" Label="排版字号" @bind-Value="_printFontSize" Margin="Margin.Dense" Variant="Variant.Outlined">
+                        <MudSelectItem Value="@("14px")">14px (标准紧凑)</MudSelectItem>
+                        <MudSelectItem Value="@("16px")">16px (护眼清晰大字)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudSelect T="string" Label="版面布局" @bind-Value="_printLayout" Margin="Margin.Dense" Variant="Variant.Outlined">
+                        <MudSelectItem Value="@("单栏")">单栏排版 (标准卷)</MudSelectItem>
+                        <MudSelectItem Value="@("双栏")">双栏排版 (紧凑省纸)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6" Class="d-flex align-center gap-4 flex-wrap">
+                    <MudSwitch T="bool" @bind-Value="_printIncludeAnswerAnalysis" Label="包含答案与官方解析 (讲评/订正版)" Color="Color.Primary" />
+                    <MudSwitch T="bool" @bind-Value="_printIncludeErrorReason" Label="标记错因与历史失分点" Color="Color.Secondary" />
+                    <MudSwitch T="bool" @bind-Value="_printWritingLines" Label="包含线下手写作答横线/演算区" Color="Color.Info" />
+                </MudItem>
+            </MudGrid>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
+                💡 提示：若用于学生自主纸质闭卷重练，请关闭【包含答案与官方解析】；若用于家长/家教对照讲评，可开启该开关。
+            </MudText>
+        </div>
+
+        <!-- 真实 A4 试卷排版呈现区域 -->
+        <div class="printable-sheet pa-6" style="background: #ffffff; color: #111827; border-radius: 8px; font-family: 'Outfit', 'Noto Sans SC', -apple-system, serif; font-size: @_printFontSize;">
+            <!-- 卷头信息 -->
+            <div style="text-align: center; border-bottom: 2px solid #111827; padding-bottom: 12px; margin-bottom: 20px;">
+                <h2 style="margin: 0 0 6px 0; font-size: 1.5rem; font-weight: 800; color: #000000;">@_printTitle</h2>
+                @if (!string.IsNullOrWhiteSpace(_printSubtitle))
+                {
+                    <div style="font-size: 0.88rem; color: #4b5563; margin-bottom: 6px; font-weight: 500;">@_printSubtitle</div>
+                }
+                <!-- 真实考场级标准考试栏目 -->
+                <div style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #111827; padding: 6px 14px; margin-top: 10px; font-size: 0.88rem; background: #fafafa; flex-wrap: wrap; gap: 8px;">
+                    <span>学科/学段：<strong>@(_filterSubject == "全部学科" ? (_currentUser?.Grade ?? "初中") : _filterSubject)</strong></span>
+                    <span>姓名：<strong>@(_currentUser?.Username ?? "________")</strong></span>
+                    <span>班级：<strong>____________</strong></span>
+                    <span>准考证/座号：<strong>____________</strong></span>
+                    <span>考试时间：<strong>45 分钟</strong></span>
+                    <span>满分：<strong>100 分</strong></span>
+                    <span style="border-left: 1px solid #d1d5db; padding-left: 8px;">得分：<strong>_______</strong></span>
+                    <span>评卷人：<strong>_______</strong></span>
+                </div>
+            </div>
+
+            <!-- 试题清单 -->
+            @{
+                var printItems = _selectedItemIds.Count > 0 
+                    ? _unmasteredItems.Where(i => _selectedItemIds.Contains(i.Id) && i.Question != null).ToList() 
+                    : FilteredUnmasteredItems;
+            }
+
+            @if (printItems.Count == 0)
+            {
+                <div class="pa-8 text-center text-secondary">当前无任何可供排版打印的错题。</div>
+            }
+            else
+            {
+                <div style="font-size: 0.85rem; color: #6b7280; margin-bottom: 16px; font-style: italic;">
+                    ※ 本卷共 @printItems.Count 道错题精选。请认真审题，在答题区域书写完整解答过程与最终结论。
+                </div>
+
+                <div style="@(_printLayout == "双栏" ? "display: grid; grid-template-columns: 1fr 1fr; gap: 20px;" : "")">
+                    @{ int qIndex = 1; }
+                    @foreach (var item in printItems)
+                    {
+                        var q = item.Question;
+                        if (q == null) continue;
+
+                        <div class="printable-question-item" style="margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px dashed #d1d5db; page-break-inside: avoid;">
+                            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+                                <span style="font-weight: 700; font-size: 1rem; color: #111827;">
+                                    第 @(qIndex) 题. 
+                                    <span style="font-size: 0.85rem; font-weight: normal; color: #4b5563;">
+                                        【@(q.Type == QuestionType.SingleChoice ? "单选题" : q.Type == QuestionType.MultipleChoice ? "多选题" : q.Type == QuestionType.FillInBlank ? "填空题" : "解答题") · 考点: @q.Category】
+                                    </span>
+                                </span>
+                                @if (_printIncludeErrorReason && !string.IsNullOrWhiteSpace(item.ErrorReasonCategory))
+                                {
+                                    <span style="font-size: 0.78rem; color: #dc2626; border: 1px solid #fca5a5; padding: 1px 6px; border-radius: 4px;">
+                                        ⚠️ 历史错因: @item.ErrorReasonCategory (曾错 @item.ErrorCount 次)
+                                    </span>
+                                }
+                            </div>
+
+                            <!-- 题干 -->
+                            <div style="font-size: 0.95rem; line-height: 1.6; color: #1f2937; margin-bottom: 8px;">
+                                @q.Stem
+                            </div>
+
+                            <!-- 选择题选项 -->
+                            @if (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
+                            {
+                                var options = q.Options;
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 6px; margin-bottom: 8px; font-size: 0.9rem; color: #374151;">
+                                    @foreach (var opt in options)
+                                    {
+                                        <div style="padding: 4px 8px; background: #f9fafb; border-radius: 4px;">@opt</div>
+                                    }
+                                </div>
+                            }
+
+                            <!-- 答题留白与手写横线区 (当不含答案或填空/解答题时) -->
+                            @if (!_printIncludeAnswerAnalysis || q.Type == QuestionType.ShortAnswer || q.Type == QuestionType.EssayAnalysis || q.Type == QuestionType.FillInBlank)
+                            {
+                                <div class="print-answer-area" style="margin-top: 10px; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 8px 12px; min-height: @(q.Type == QuestionType.EssayAnalysis ? "110px" : (q.Type == QuestionType.ShortAnswer ? "80px" : "45px")); background: #fafafa;">
+                                    <span style="font-size: 0.75rem; color: #64748b; font-weight: 600;">【作答/演算区】：</span>
+                                    @if (_printWritingLines)
+                                    {
+                                        <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 20px; padding: 4px 0;">
+                                            <div style="border-bottom: 1px dashed #cbd5e1; height: 0;"></div>
+                                            <div style="border-bottom: 1px dashed #cbd5e1; height: 0;"></div>
+                                            @if (q.Type == QuestionType.EssayAnalysis || q.Type == QuestionType.ShortAnswer)
+                                            {
+                                                <div style="border-bottom: 1px dashed #cbd5e1; height: 0;"></div>
+                                                <div style="border-bottom: 1px dashed #cbd5e1; height: 0;"></div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <!-- 答案与官方解析 (订正版展示) -->
+                            @if (_printIncludeAnswerAnalysis)
+                            {
+                                <div style="margin-top: 10px; padding: 8px 12px; background: #f0fdf4; border-left: 3px solid #22c55e; border-radius: 4px; font-size: 0.85rem; color: #166534;">
+                                    <div style="font-weight: 700; margin-bottom: 2px;">✅ 参考答案：@q.CorrectAnswer</div>
+                                    <div style="color: #374151; line-height: 1.5;"><strong>📖 详细解析：</strong> @q.StandardAnalysis</div>
+                                </div>
+                            }
+                        </div>
+                        qIndex++;
+                    }
+                </div>
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <div class="d-flex justify-end gap-2 w-100 no-print flex-wrap">
+            <MudButton OnClick="() => _showPrintWorksheetModal = false">关闭</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="CopyWorksheetTextAsync" Class="font-weight-bold">
+                📋 复制纯文本题单
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Print" OnClick="TriggerPrintAsync" Class="font-weight-bold">
+                立即打印 / 导出 PDF
+            </MudButton>
+        </div>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private bool _loading = true;
+    private User? _currentUser;
+    private List<ErrorItem> _unmasteredItems = new List<ErrorItem>();
+    private List<ErrorItem> _masteredItems = new List<ErrorItem>();
+    private List<Question> _favoriteQuestions = new List<Question>();
+    private HashSet<Guid> _selectedItemIds = new HashSet<Guid>();
+
+    private int _errorPage = 1;
+    private int _errorPageSize = 10;
+    private readonly int[] _errorPageSizeOptions = new[] { 10, 20, 50 };
+
+    private int ErrorTotalPages => Math.Max(1, (int)Math.Ceiling((double)FilteredUnmasteredItems.Count / _errorPageSize));
+
+    private List<ErrorItem> PagedUnmasteredItems
+    {
+        get
+        {
+            var filtered = FilteredUnmasteredItems;
+            if (_errorPage > ErrorTotalPages)
+            {
+                _errorPage = ErrorTotalPages;
+            }
+            return filtered.Skip((_errorPage - 1) * _errorPageSize).Take(_errorPageSize).ToList();
+        }
+    }
+
+    private void OnErrorPageChanged(int newPage)
+    {
+        _errorPage = newPage;
+    }
+
+    private void OnErrorPageSizeChanged(int newSize)
+    {
+        _errorPageSize = newSize;
+        _errorPage = 1;
+    }
+
+    private void ToggleSelectItem(Guid itemId, bool isSelected)
+    {
+        if (isSelected)
+        {
+            _selectedItemIds.Add(itemId);
+        }
+        else
+        {
+            _selectedItemIds.Remove(itemId);
+        }
+    }
+
+    private void ToggleSelectAll()
+    {
+        var currentItems = PagedUnmasteredItems;
+        if (currentItems.Count > 0 && currentItems.All(i => _selectedItemIds.Contains(i.Id)))
+        {
+            foreach (var item in currentItems)
+            {
+                _selectedItemIds.Remove(item.Id);
+            }
+        }
+        else
+        {
+            foreach (var item in currentItems)
+            {
+                _selectedItemIds.Add(item.Id);
+            }
+        }
+    }
+
+    private void ToggleInvertSelection()
+    {
+        var currentItems = PagedUnmasteredItems;
+        foreach (var item in currentItems)
+        {
+            if (_selectedItemIds.Contains(item.Id))
+            {
+                _selectedItemIds.Remove(item.Id);
+            }
+            else
+            {
+                _selectedItemIds.Add(item.Id);
+            }
+        }
+    }
+
+    private void ClearSelection()
+    {
+        _selectedItemIds.Clear();
+    }
+
+    private async Task BatchMarkMasteredAsync()
+    {
+        if (_selectedItemIds.Count == 0) return;
+
+        var result = await ErrorBookService.BatchMarkErrorsAsMasteredAsync(_selectedItemIds, _currentUser?.Id);
+        _selectedItemIds.Clear();
+
+        if (result.MarkedCount > 0)
+        {
+            Snackbar.Add($"🎉 成功将 {result.MarkedCount} 道错题批量标记为熟练掌握！斩获 +{result.EarnedExp} EXP 与 +{result.EarnedCoins} 金币奖励！", Severity.Success);
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("playRewardAudio", "correct");
+                await JSRuntime.InvokeVoidAsync("triggerConfetti");
+            }
+            catch { }
+        }
+        else
+        {
+            Snackbar.Add("未能批量标记选中的错题，请确认题目掌握状态或权限！", Severity.Info);
+        }
+
+        await LoadErrorBookAsync();
+    }
+
+    private async Task BatchDeleteErrorItemsAsync()
+    {
+        if (_selectedItemIds.Count == 0) return;
+
+        bool? confirm = await DialogService.ShowMessageBox(
+            "确认批量移出错题本",
+            $"确定要将选中的 {_selectedItemIds.Count} 道错题从错题本中批量移除吗？",
+            yesText: "确认移除", cancelText: "取消");
+
+        if (confirm == true)
+        {
+            int deletedCount = await ErrorBookService.BatchDeleteErrorItemsAsync(_selectedItemIds, _currentUser?.Id);
+            _selectedItemIds.Clear();
+            Snackbar.Add($"已成功批量移除 {deletedCount} 道错题！", Severity.Info);
+            await LoadErrorBookAsync();
+        }
+    }
+
+    private void StartCustomSprintPractice()
+    {
+        if (_selectedItemIds.Count == 0) return;
+
+        var selectedQuestionIds = _unmasteredItems
+            .Where(i => _selectedItemIds.Contains(i.Id) && i.Question != null)
+            .Select(i => i.Question!.Id.ToString())
+            .ToList();
+
+        if (selectedQuestionIds.Count == 0) return;
+
+        string idsParam = string.Join(",", selectedQuestionIds);
+        NavigationManager.NavigateTo($"/practice?mode=sprint&questionIds={Uri.EscapeDataString(idsParam)}");
+    }
+
+    private void StartSprintForReason(string reasonCategory)
+    {
+        var matched = _unmasteredItems
+            .Where(i => i.ErrorReasonCategory == reasonCategory && i.Question != null)
+            .Select(i => i.Question!.Id.ToString())
+            .Take(15)
+            .ToList();
+
+        if (matched.Count == 0)
+        {
+            Snackbar.Add($"【{reasonCategory}】分类下暂无待净化的错题！", Severity.Info);
+            return;
+        }
+
+        string idsParam = string.Join(",", matched);
+        Snackbar.Add($"⚡ 已为您组建【{reasonCategory}】错因专项突破卷（共 {matched.Count} 题），立即攻坚！", Severity.Success);
+        NavigationManager.NavigateTo($"/practice?mode=sprint&questionIds={Uri.EscapeDataString(idsParam)}");
+    }
+
+    private string _filterSubject = "全部学科";
+    private string _filterReason = "全部错因";
+    private string _sortBy = "错误频次降序";
+    private string _searchQuery = string.Empty;
+    private bool _onlyEbbinghausDue = false;
+
+    private bool _showPrintWorksheetModal = false;
+    private string _printTitle = "Northtropic 错题净化专项冲刺卷";
+    private string _printSubtitle = string.Empty;
+    private string _printFontSize = "14px";
+    private string _printLayout = "单栏";
+    private bool _printIncludeAnswerAnalysis = false;
+    private bool _printIncludeErrorReason = true;
+    private bool _printWritingLines = true;
+    private DialogOptions _printSheetDialogOptions = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true };
+
+    public bool IsEbbinghausReviewDue(ErrorItem item)
+    {
+        return ErrorBookService.IsReviewDue(item);
+    }
+
+    private int GetEbbinghausDueCount()
+    {
+        return _unmasteredItems.Count(i => IsEbbinghausReviewDue(i));
+    }
+
+    private void ResetFilters()
+    {
+        _filterSubject = "全部学科";
+        _filterReason = "全部错因";
+        _sortBy = "错误频次降序";
+        _searchQuery = string.Empty;
+        _onlyEbbinghausDue = false;
+        _errorPage = 1;
+    }
+
+    private List<ErrorItem> FilteredUnmasteredItems
+    {
+        get
+        {
+            var query = _unmasteredItems.AsEnumerable();
+
+            if (_onlyEbbinghausDue)
+            {
+                query = query.Where(i => IsEbbinghausReviewDue(i));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_filterSubject) && _filterSubject != "全部学科")
+            {
+                query = query.Where(i => i.Question != null && (i.Question.Subject == _filterSubject || i.Question.Category.Contains(_filterSubject)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_filterReason) && _filterReason != "全部错因")
+            {
+                query = query.Where(i => i.ErrorReasonCategory == _filterReason);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var qText = _searchQuery.Trim();
+                query = query.Where(i => i.Question != null && (i.Question.Stem.Contains(qText, StringComparison.OrdinalIgnoreCase) || i.Question.Category.Contains(qText, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            query = _sortBy switch
+            {
+                "艾宾浩斯紧迫度优先" => query.OrderBy(i => ErrorBookService.CalculateRetentionHealthScore(i)).ThenByDescending(i => i.ErrorCount),
+                "错误频次降序" => query.OrderByDescending(i => i.ErrorCount).ThenByDescending(i => i.CreatedAt),
+                "最新添加" => query.OrderByDescending(i => i.CreatedAt),
+                "最旧未消灭" => query.OrderBy(i => i.CreatedAt),
+                "难度从高到低" => query.OrderByDescending(i => i.Question?.Difficulty ?? 0).ThenByDescending(i => i.ErrorCount),
+                "难度从低到高" => query.OrderBy(i => i.Question?.Difficulty ?? 0).ThenByDescending(i => i.ErrorCount),
+                _ => query.OrderByDescending(i => i.ErrorCount)
+            };
+
+            return query.ToList();
+        }
+    }
+
+    private List<string> GetFilterSubjects()
+    {
+        if (_currentUser != null && !string.IsNullOrWhiteSpace(_currentUser.Grade))
+        {
+            return GradeSubjectProvider.GetSubjectsByGrade(_currentUser.Grade);
+        }
+        return GradeSubjectProvider.GetAllSubjects();
+    }
+
+    private HashSet<Guid> _expandedAiHelpIds = new HashSet<Guid>();
+    private HashSet<Guid> _aiHelpLoadingIds = new HashSet<Guid>();
+    private Dictionary<Guid, AiExplanationResult> _aiHelpDict = new Dictionary<Guid, AiExplanationResult>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserSessionService.OnUserChanged += OnUserChangedHandler;
+        await ReloadDataAsync();
+    }
+
+    private async Task ReloadDataAsync()
+    {
+        _currentUser = await GamificationService.GetCurrentUserAsync();
+        await LoadErrorBookAsync();
+    }
+
+    private async void OnUserChangedHandler()
+    {
+        await ReloadDataAsync();
+    }
+
+    private async Task LoadErrorBookAsync()
+    {
+        _loading = true;
+        _unmasteredItems = await ErrorBookService.GetUnmasteredErrorsAsync();
+        _masteredItems = await ErrorBookService.GetMasteredErrorsAsync();
+        if (_currentUser != null)
+        {
+            _favoriteQuestions = await PracticeService.GetFavoriteQuestionsAsync(_currentUser.Id);
+        }
+        _loading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PrintErrorsAsync()
+    {
+        OpenPrintWorksheetModal();
+        await Task.CompletedTask;
+    }
+
+    private bool _isAutoClassifying = false;
+
+    private void SetFilterReason(string reason)
+    {
+        _filterReason = reason;
+        _errorPage = 1;
+    }
+
+    private async Task BatchAutoClassifyErrorsAsync()
+    {
+        var unclassified = _unmasteredItems.Where(i => string.IsNullOrWhiteSpace(i.ErrorReasonCategory) || i.ErrorReasonCategory == "完全不会" || i.ErrorReasonCategory == "未归因").ToList();
+        if (unclassified.Count == 0)
+        {
+            Snackbar.Add("所有错题均已完成错因归因！", Severity.Info);
+            return;
+        }
+
+        _isAutoClassifying = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            foreach (var item in unclassified)
+            {
+                string reason = "概念模糊";
+                if (item.Question != null)
+                {
+                    if (item.Question.Type == QuestionType.SingleChoice || item.Question.Type == QuestionType.MultipleChoice)
+                    {
+                        if (string.IsNullOrWhiteSpace(item.UserWrongAnswer)) reason = "完全不会";
+                        else if (item.UserWrongAnswer.Length == 1 && item.Question.CorrectAnswer.Length == 1) reason = "审题粗心";
+                        else reason = "概念模糊";
+                    }
+                    else if (item.Question.Type == QuestionType.FillInBlank)
+                    {
+                        if (item.Question.Subject.Contains("数") || item.Question.Subject.Contains("物") || item.Question.Subject.Contains("化"))
+                        {
+                            reason = item.UserWrongAnswer.Any(char.IsDigit) ? "逻辑计算错误" : "公式记错";
+                        }
+                        else
+                        {
+                            reason = "审题粗心";
+                        }
+                    }
+                    else
+                    {
+                        reason = "逻辑计算错误";
+                    }
+                }
+
+                await ErrorBookService.UpdateErrorReasonAsync(item.Id, reason);
+            }
+
+            await LoadErrorBookAsync();
+            Snackbar.Add($"🎉 成功利用 AI 智能推理完成 {unclassified.Count} 道错题的精准错因归纳！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"归因处理异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isAutoClassifying = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task OnErrorReasonChanged(Guid itemId, string category)
+    {
+        await ErrorBookService.UpdateErrorReasonAsync(itemId, category, _currentUser?.Id);
+        Snackbar.Add($"已将错因归集更新为：【{category}】", Severity.Info);
+    }
+
+    private async Task RemoveFavoriteAsync(Guid questionId)
+    {
+        if (_currentUser == null) return;
+        await PracticeService.ToggleFavoriteAsync(_currentUser.Id, questionId);
+        _favoriteQuestions = await PracticeService.GetFavoriteQuestionsAsync(_currentUser.Id);
+        Snackbar.Add("已从我的典藏试题中移除", Severity.Info);
+        StateHasChanged();
+    }
+
+    private void NavigateToFavoritePractice()
+    {
+        NavigationManager.NavigateTo("/practice?mode=favorites");
+    }
+
+    private async Task ToggleAiHelpAsync(ErrorItem item)
+    {
+        if (_expandedAiHelpIds.Contains(item.Id))
+        {
+            _expandedAiHelpIds.Remove(item.Id);
+            return;
+        }
+
+        _expandedAiHelpIds.Add(item.Id);
+        if (!_aiHelpDict.ContainsKey(item.Id) && item.Question != null)
+        {
+            _aiHelpLoadingIds.Add(item.Id);
+            var advice = await AiTutorService.GetExplanationAsync(item.Question, item.UserWrongAnswer);
+            _aiHelpDict[item.Id] = advice;
+            _aiHelpLoadingIds.Remove(item.Id);
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OpenReviseDialogAsync(ErrorItem item)
+    {
+        var parameters = new DialogParameters { ["Item"] = item, ["ErrorItem"] = item, ["AutoStartVariant"] = false };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<Northtropic.Components.Dialogs.ReviseErrorDialog>("⚔️ 错题消灭副本对决", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadErrorBookAsync();
+        }
+    }
+
+    private async Task OpenVariantDialogAsync(ErrorItem item)
+    {
+        var parameters = new DialogParameters { ["Item"] = item, ["ErrorItem"] = item, ["AutoStartVariant"] = true };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<Northtropic.Components.Dialogs.ReviseErrorDialog>("🎯 错题同考点 AI 变式强化", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadErrorBookAsync();
+        }
+    }
+
+    private async Task MarkAsMasteredDirectAsync(Guid itemId)
+    {
+        await ErrorBookService.MarkErrorAsMasteredAsync(itemId);
+        Snackbar.Add("🎉 已直接标记该题为已掌握，已归档至已净化法典！", Severity.Success);
+        await LoadErrorBookAsync();
+    }
+
+    private async Task DeleteErrorItemAsync(Guid itemId)
+    {
+        bool? confirm = await DialogService.ShowMessageBox(
+            "确认移出错题本",
+            "确定要将这道错题从错题本中移除吗？",
+            yesText: "确认移除", cancelText: "取消");
+        if (confirm == true)
+        {
+            bool success = await ErrorBookService.DeleteErrorItemAsync(itemId, _currentUser?.Id);
+            if (success)
+            {
+                Snackbar.Add("已成功将该错题从错题本移除", Severity.Info);
+                await LoadErrorBookAsync();
+            }
+        }
+    }
+
+    private async Task ClearMasteredErrorsAsync()
+    {
+        if (_currentUser == null || _masteredItems.Count == 0) return;
+        bool? confirm = await DialogService.ShowMessageBox(
+            "确认清空法典记录", 
+            "确定要清空所有已净化错题记录吗？清空后将从法典列表中彻底清除。", 
+            yesText: "确认清空", cancelText: "取消");
+        if (confirm == true)
+        {
+            int clearedCount = await ErrorBookService.ClearMasteredErrorsAsync(_currentUser?.Id);
+            _masteredItems.Clear();
+            Snackbar.Add($"🏆 已成功清空 {clearedCount} 条已净化法典记录！", Severity.Success);
+        }
+    }
+
+    private void OpenPrintWorksheetModal()
+    {
+        if (_unmasteredItems.Count == 0)
+        {
+            Snackbar.Add("当前错题本为空，暂无可导出的错题！", Severity.Info);
+            return;
+        }
+        string subText = _filterSubject != "全部学科" ? _filterSubject : (_currentUser?.Grade ?? "全学科");
+        _printTitle = $"{_currentUser?.Username ?? "学生"} - {subText} 错题净化冲刺练习卷";
+        _showPrintWorksheetModal = true;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            try { await JSRuntime.InvokeVoidAsync("renderAllMath"); } catch { }
+        });
+    }
+
+    private async Task TriggerPrintAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("renderAllMath");
+            await Task.Delay(50);
+            await JSRuntime.InvokeVoidAsync("printCurrentPage");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"调起打印异常: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private async Task CopyWorksheetTextAsync()
+    {
+        var printItems = _selectedItemIds.Count > 0 
+            ? _unmasteredItems.Where(i => _selectedItemIds.Contains(i.Id) && i.Question != null).ToList() 
+            : FilteredUnmasteredItems;
+
+        if (printItems.Count == 0)
+        {
+            Snackbar.Add("当前没有可供复制的错题！", Severity.Warning);
+            return;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"【Northtropic 错题净化专项巩固卷】");
+        sb.AppendLine($"学科：{_filterSubject} | 题量：{printItems.Count} 题 | 生成时间：{DateTime.Now:yyyy-MM-dd HH:mm}");
+        sb.AppendLine(new string('=', 40));
+        sb.AppendLine();
+
+        int idx = 1;
+        foreach (var item in printItems)
+        {
+            var q = item.Question;
+            if (q == null) continue;
+
+            string typeName = q.Type == QuestionType.SingleChoice ? "单选题" :
+                              q.Type == QuestionType.MultipleChoice ? "多选题" :
+                              q.Type == QuestionType.FillInBlank ? "填空题" : "解答题";
+
+            sb.AppendLine($"第 {idx} 题 【{typeName} · 考点：{q.Category}】");
+            if (_printIncludeErrorReason && !string.IsNullOrWhiteSpace(item.ErrorReasonCategory))
+            {
+                sb.AppendLine($"[历史错因：{item.ErrorReasonCategory} (曾错 {item.ErrorCount} 次)]");
+            }
+            sb.AppendLine(q.Stem);
+
+            if (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
+            {
+                var options = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson) ?? new List<string>();
+                foreach (var opt in options)
+                {
+                    sb.AppendLine($"  {opt}");
+                }
+            }
+
+            if (_printIncludeAnswerAnalysis)
+            {
+                sb.AppendLine($"【参考答案】：{q.CorrectAnswer}");
+                sb.AppendLine($"【详细解析】：{q.StandardAnalysis}");
+            }
+            sb.AppendLine();
+            idx++;
+        }
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
+            Snackbar.Add($"📋 已成功复制 {printItems.Count} 道错题题单到剪贴板！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"复制到剪贴板失败: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private void NavigateToSprintPractice()
+    {
+        if (_unmasteredItems.Count == 0)
+        {
+            Snackbar.Add("太棒了！当前暂无待净化的错题，去刷题中心开启新挑战吧！", Severity.Info);
+            NavigationManager.NavigateTo("/practice");
+            return;
+        }
+
+        var targetList = _selectedItemIds.Count > 0 
+            ? _unmasteredItems.Where(i => _selectedItemIds.Contains(i.Id) && i.QuestionId != Guid.Empty).Select(i => i.QuestionId).ToList()
+            : _unmasteredItems.Where(i => i.QuestionId != Guid.Empty).Select(i => i.QuestionId).Take(10).ToList();
+
+        if (targetList.Count > 0)
+        {
+            string qIds = string.Join(",", targetList);
+            NavigationManager.NavigateTo($"/practice?QuestionIds={qIds}");
+        }
+        else
+        {
+            string url = "/practice?mode=sprint";
+            if (!string.IsNullOrWhiteSpace(_filterSubject) && _filterSubject != "全部学科")
+            {
+                url += $"&subject={Uri.EscapeDataString(_filterSubject)}";
+            }
+            NavigationManager.NavigateTo(url);
+        }
+    }
+
+    private async Task NavigateToEbbinghausSprintAsync()
+    {
+        if (_currentUser == null || _currentUser.Id == Guid.Empty) return;
+
+        var queue = await ErrorBookService.GetEbbinghausReviewQueueAsync(_currentUser.Id, _filterSubject != "全部学科" ? _filterSubject : null);
+        if (queue.Count == 0)
+        {
+            // 若今日全部复习尚未到期，则优选记忆健康度最低、最易遗忘的题目进入强化冲刺
+            queue = _unmasteredItems.OrderBy(i => ErrorBookService.CalculateRetentionHealthScore(i)).Take(10).ToList();
+        }
+
+        var targetQIds = queue.Where(i => i.QuestionId != Guid.Empty).Select(i => i.QuestionId).Take(10).ToList();
+        if (targetQIds.Count == 0)
+        {
+            Snackbar.Add("🎉 恭喜！当前暂无临界遗忘错题，艾宾浩斯记忆曲线处于极佳状态！", Severity.Success);
+            return;
+        }
+
+        string qIds = string.Join(",", targetQIds);
+        Snackbar.Add($"⚡ 已为您组建【艾宾浩斯抗遗忘特训卷】({targetQIds.Count} 题)，直击记忆临界薄弱点！", Severity.Warning);
+        NavigationManager.NavigateTo($"/practice?QuestionIds={qIds}");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("renderAllMath");
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        UserSessionService.OnUserChanged -= OnUserChangedHandler;
+    }
+}

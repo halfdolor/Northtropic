@@ -1,0 +1,442 @@
+@using Northtropic.Services
+@using Northtropic.Models
+@using System.Text.RegularExpressions
+@inject IUserSessionService UserSessionService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-3 pa-4" style="background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(139,92,246,0.1)); border-bottom: 1px solid var(--glass-card-border);">
+            <MudIcon Icon="@Icons.Material.Filled.LockPerson" Color="Color.Primary" Size="Size.Large" />
+            <div>
+                <MudText Typo="Typo.h6" Class="font-weight-bold gradient-text">用户安全鉴权登录</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">支持密码登录、短信验证码登录与新用户注册申请</MudText>
+            </div>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex flex-column gap-3 pa-5">
+            <!-- 登录模式切换 Tabs -->
+            <MudTabs Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4" Color="Color.Primary" SliderColor="Color.Secondary">
+                <!-- Tab 1: 密码登录 -->
+                <MudTabPanel Text="🔑 密码登录" Icon="@Icons.Material.Filled.Password">
+                    <div class="d-flex flex-column gap-4">
+                        <MudTextField T="string" @bind-Value="_passwordAccount" Label="手机号 / 账号名" Variant="Variant.Outlined"
+                                      Placeholder="请输入 11 位手机号或账号名..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AccountCircle" />
+
+                        <MudTextField T="string" @bind-Value="_passwordValue" Label="登录密码" Variant="Variant.Outlined"
+                                      InputType="@(_showPassword ? InputType.Text : InputType.Password)"
+                                      Placeholder="请输入登录密码 (初始默认密码为 123456)..."
+                                      Adornment="Adornment.End" AdornmentIcon="@(_showPassword ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff)"
+                                      OnAdornmentClick="() => _showPassword = !_showPassword" />
+
+                        <MudAlert Severity="Severity.Info" Variant="Variant.Text" Class="py-1">
+                            提示：所有新开通账号初始默认密码均为 <code>123456</code>，登录后系统将要求修改密码。
+                        </MudAlert>
+
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Login"
+                                   OnClick="SubmitPasswordLoginAsync" Disabled="@_isLoggingIn" Class="font-weight-bold py-3" Style="border-radius: 8px;">
+                            @if (_isLoggingIn)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                <span>验证登录中...</span>
+                            }
+                            else
+                            {
+                                <span>安全密码登录</span>
+                            }
+                        </MudButton>
+                    </div>
+                </MudTabPanel>
+
+                <!-- Tab 2: 短信验证码登录 -->
+                <MudTabPanel Text="📱 短信登录" Icon="@Icons.Material.Filled.PhonelinkRing">
+                    <div class="d-flex flex-column gap-3">
+                        <div class="d-flex align-center gap-2">
+                            <MudTextField T="string" @bind-Value="_smsPhoneNumber" Label="手机号码 (11位)" Variant="Variant.Outlined"
+                                          Placeholder="请输入 11 位手机号码..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.PhoneAndroid"
+                                          Immediate="true" Class="flex-grow-1" />
+
+                            <MudButton Variant="Variant.Filled" Color="Color.Secondary" Disabled="@(_countdown > 0 || _isSendingCode)"
+                                       OnClick="SendSmsCodeAsync" Style="height: 56px; min-width: 130px;">
+                                @if (_isSendingCode)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                    <span>发送中...</span>
+                                }
+                                else if (_countdown > 0)
+                                {
+                                    <span>@(_countdown)s 倒计时</span>
+                                }
+                                else
+                                {
+                                    <span>获取验证码</span>
+                                }
+                            </MudButton>
+                        </div>
+
+                        <MudTextField T="string" @bind-Value="_smsCode" Label="6位短信验证码" Variant="Variant.Outlined"
+                                      Placeholder="输入收到的 6 位短信验证码..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.LockClock"
+                                      MaxLength="6" Immediate="true" />
+
+                        <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Login"
+                                   OnClick="SubmitSmsLoginAsync" Disabled="@_isLoggingIn" Class="font-weight-bold py-3 mt-2" Style="border-radius: 8px;">
+                            @if (_isLoggingIn)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                <span>验证登录中...</span>
+                            }
+                            else
+                            {
+                                <span>短信验证码登录</span>
+                            }
+                        </MudButton>
+                    </div>
+                </MudTabPanel>
+
+                <!-- Tab 3: 自主注册申请 -->
+                <MudTabPanel Text="📝 新用户注册" Icon="@Icons.Material.Filled.PersonAdd">
+                    @if (!string.IsNullOrEmpty(_regSuccessMessage))
+                    {
+                        <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="rounded-lg pa-3 my-2">
+                            <div class="font-weight-bold mb-1">🎉 注册申请已提交！</div>
+                            <div>@_regSuccessMessage</div>
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-column gap-3">
+                            <div class="d-flex align-center justify-space-between pb-1 border-b">
+                                <MudRadioGroup T="int" @bind-Value="_regMode" Class="d-flex gap-4">
+                                    <MudRadio T="int" Value="0" Color="Color.Primary" Dense="true">📱 短信验证码注册</MudRadio>
+                                    <MudRadio T="int" Value="1" Color="Color.Secondary" Dense="true">🔐 手工设置密码注册</MudRadio>
+                                </MudRadioGroup>
+                            </div>
+
+                            @if (_regSmsFailed && _regMode == 0)
+                            {
+                                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="py-1">
+                                    短信发送未成功？建议直接点击
+                                    <MudLink Underline="Underline.Always" Color="Color.Secondary" Class="font-weight-bold cursor-pointer" OnClick="() => _regMode = 1">【切换为手工设置密码注册】</MudLink>
+                                    提交申请！
+                                </MudAlert>
+                            }
+
+                            <MudGrid>
+                                <MudItem xs="12" sm="6">
+                                    <MudTextField T="string" @bind-Value="_regName" Label="姓名 *" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="请输入真实姓名..." />
+                                </MudItem>
+                                <MudItem xs="12" sm="6">
+                                    <MudSelect T="UserRole" @bind-Value="_regUserRole" Label="注册身份 *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                        <MudSelectItem Value="UserRole.Student">🎒 学生用户</MudSelectItem>
+                                        <MudSelectItem Value="UserRole.Parent">👨‍👩‍👧 家长用户</MudSelectItem>
+                                        <MudSelectItem Value="UserRole.Teacher">👩‍🏫 老师用户</MudSelectItem>
+                                    </MudSelect>
+                                </MudItem>
+                            </MudGrid>
+
+                            <MudGrid>
+                                <MudItem xs="12" sm="6">
+                                    <MudTextField T="string" @bind-Value="_regPhone" Label="手机号 (11位) *" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="11 位手机号码..." />
+                                </MudItem>
+                                <MudItem xs="12" sm="6">
+                                    <MudTextField T="string" @bind-Value="_regUserEmail" Label="电子邮箱 *" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="如: user@example.com" />
+                                </MudItem>
+                            </MudGrid>
+
+                            <MudSelect T="string" @bind-Value="_regUserGrade" Label="年级/学段" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("小学五年级")">小学五年级</MudSelectItem>
+                                <MudSelectItem Value="@("小学六年级")">小学六年级</MudSelectItem>
+                                <MudSelectItem Value="@("初中一年级")">初中一年级</MudSelectItem>
+                                <MudSelectItem Value="@("初中二年级")">初中二年级</MudSelectItem>
+                                <MudSelectItem Value="@("初中三年级")">初中三年级</MudSelectItem>
+                                <MudSelectItem Value="@("高中一年级")">高中一年级</MudSelectItem>
+                                <MudSelectItem Value="@("高中二年级")">高中二年级</MudSelectItem>
+                                <MudSelectItem Value="@("大学/职业软件工程")">大学/职业软件工程</MudSelectItem>
+                            </MudSelect>
+
+                            @if (_regMode == 0)
+                            {
+                                <div class="d-flex align-center gap-2">
+                                    <MudTextField T="string" @bind-Value="_regCode" Label="短信验证码 *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                  Placeholder="请输入收到的 6 位验证码..." MaxLength="6" Class="flex-grow-1" />
+                                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" Disabled="@(_regCountdown > 0 || _isRegSendingCode)"
+                                               OnClick="SendRegSmsCodeAsync" Style="height: 40px; min-width: 110px;">
+                                        @if (_isRegSendingCode)
+                                        {
+                                            <span>发送中...</span>
+                                        }
+                                        else if (_regCountdown > 0)
+                                        {
+                                            <span>@(_regCountdown)s</span>
+                                        }
+                                        else
+                                        {
+                                            <span>发送验证码</span>
+                                        }
+                                    </MudButton>
+                                </div>
+
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.HowToReg"
+                                           OnClick="SubmitSelfRegistrationAsync" Disabled="@_isRegistering" Class="font-weight-bold py-3 mt-2" Style="border-radius: 8px;">
+                                    <span>验证短信并提交申请 (待审核)</span>
+                                </MudButton>
+                            }
+                            else
+                            {
+                                <MudAlert Severity="Severity.Normal" Variant="Variant.Text" Class="py-1">
+                                    🔒 密码复杂度要求：长度 $\ge 8$ 位，须同时包含英文字母与阿拉伯数字。
+                                </MudAlert>
+
+                                <MudTextField T="string" @bind-Value="_regPassword" Label="设置登录密码 *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                              InputType="@(_showRegPassword ? InputType.Text : InputType.Password)"
+                                              Placeholder="至少 8 位，包含字母与数字..."
+                                              Adornment="Adornment.End" AdornmentIcon="@(_showRegPassword ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff)"
+                                              OnAdornmentClick="() => _showRegPassword = !_showRegPassword" />
+
+                                <MudTextField T="string" @bind-Value="_regConfirmPassword" Label="确认登录密码 *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                              InputType="@(_showRegPassword ? InputType.Text : InputType.Password)"
+                                              Placeholder="请再次输入上方密码以确认..." />
+
+                                <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large" StartIcon="@Icons.Material.Filled.LockPerson"
+                                           OnClick="SubmitManualPasswordRegistrationAsync" Disabled="@_isRegistering" Class="font-weight-bold py-3 mt-2" Style="border-radius: 8px;">
+                                    <span>提交密码注册申请 (待审核)</span>
+                                </MudButton>
+                            }
+                        </div>
+                    }
+                </MudTabPanel>
+            </MudTabs>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">关闭</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public bool IsMandatory { get; set; } = false;
+
+    // 密码登录表单
+    private string _passwordAccount = string.Empty;
+    private string _passwordValue = string.Empty;
+    private bool _showPassword = false;
+
+    // 短信登录表单
+    private string _smsPhoneNumber = string.Empty;
+    private string _smsCode = string.Empty;
+    private bool _isSendingCode = false;
+    private int _countdown = 0;
+    private bool _isLoggingIn = false;
+
+    // 自主注册表单
+    private int _regMode = 0; // 0: 短信注册, 1: 手工密码注册
+    private bool _regSmsFailed = false;
+    private string _regName = string.Empty;
+    private UserRole _regUserRole = UserRole.Student;
+    private string _regUserEmail = string.Empty;
+    private string _regUserGrade = "初中二年级";
+    private string _regPhone = string.Empty;
+    private string _regCode = string.Empty;
+    private string _regPassword = string.Empty;
+    private string _regConfirmPassword = string.Empty;
+    private bool _showRegPassword = false;
+    private int _regCountdown = 0;
+    private bool _isRegSendingCode = false;
+    private bool _isRegistering = false;
+    private string _regSuccessMessage = string.Empty;
+
+    private async Task SubmitPasswordLoginAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_passwordAccount) || string.IsNullOrWhiteSpace(_passwordValue))
+        {
+            Snackbar.Add("账号与密码不能为空！", Severity.Warning);
+            return;
+        }
+
+        _isLoggingIn = true;
+        await InvokeAsync(StateHasChanged);
+
+        var (success, user, message) = await UserSessionService.LoginWithPasswordAsync(_passwordAccount, _passwordValue);
+
+        _isLoggingIn = false;
+        if (success && user != null)
+        {
+            Snackbar.Add(message, Severity.Success);
+            MudDialog.Close(DialogResult.Ok(user));
+        }
+        else
+        {
+            Snackbar.Add(message, Severity.Error);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SendSmsCodeAsync()
+    {
+        if (!Regex.IsMatch(_smsPhoneNumber.Trim(), @"^1[3-9]\d{9}$"))
+        {
+            Snackbar.Add("请输入正确的 11 位手机号码！", Severity.Warning);
+            return;
+        }
+
+        _isSendingCode = true;
+        var res = await UserSessionService.SendSmsCodeAsync(_smsPhoneNumber);
+        _isSendingCode = false;
+
+        if (res.Success)
+        {
+            Snackbar.Add(res.Message, Severity.Success);
+            _smsCode = string.Empty; // 不自动回填，必须等待用户查收短信后自行输入
+            StartCountdown();
+        }
+        else
+        {
+            Snackbar.Add(res.Message, Severity.Warning);
+        }
+    }
+
+    private async void StartCountdown()
+    {
+        _countdown = 60;
+        while (_countdown > 0)
+        {
+            await Task.Delay(1000);
+            _countdown--;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SendRegSmsCodeAsync()
+    {
+        if (!Regex.IsMatch(_regPhone.Trim(), @"^1[3-9]\d{9}$"))
+        {
+            Snackbar.Add("请输入正确的 11 位手机号码！", Severity.Warning);
+            return;
+        }
+
+        _isRegSendingCode = true;
+        var res = await UserSessionService.SendSmsCodeAsync(_regPhone);
+        _isRegSendingCode = false;
+
+        if (res.Success)
+        {
+            _regSmsFailed = false;
+            Snackbar.Add(res.Message, Severity.Success);
+            _regCode = string.Empty; // 不自动回填，必须等待用户查收短信后自行输入
+            _regCountdown = 60;
+            StartRegCountdown();
+        }
+        else
+        {
+            _regSmsFailed = true;
+            Snackbar.Add(res.Message, Severity.Warning);
+        }
+    }
+
+    private async void StartRegCountdown()
+    {
+        while (_regCountdown > 0)
+        {
+            await Task.Delay(1000);
+            _regCountdown--;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SubmitSmsLoginAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_smsPhoneNumber) || string.IsNullOrWhiteSpace(_smsCode))
+        {
+            Snackbar.Add("手机号与验证码不能为空！", Severity.Warning);
+            return;
+        }
+
+        _isLoggingIn = true;
+        await InvokeAsync(StateHasChanged);
+
+        var (success, user, message) = await UserSessionService.LoginOrRegisterWithSmsAsync(_smsPhoneNumber, _smsCode);
+
+        _isLoggingIn = false;
+        if (success && user != null)
+        {
+            Snackbar.Add(message, Severity.Success);
+            MudDialog.Close(DialogResult.Ok(user));
+        }
+        else
+        {
+            Snackbar.Add(message, Severity.Error);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SubmitSelfRegistrationAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_regName) || string.IsNullOrWhiteSpace(_regPhone) || string.IsNullOrWhiteSpace(_regUserEmail) || string.IsNullOrWhiteSpace(_regCode))
+        {
+            Snackbar.Add("请完整填写所有带 * 的必填项！", Severity.Warning);
+            return;
+        }
+
+        _isRegistering = true;
+        var (success, user, message) = await UserSessionService.RegisterWithSmsAsync(_regName, _regUserRole, _regPhone, _regUserEmail, _regCode, _regUserGrade);
+        _isRegistering = false;
+
+        if (success)
+        {
+            _regSuccessMessage = message;
+            Snackbar.Add("🎉 注册申请已成功提交！", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(message, Severity.Error);
+        }
+    }
+
+    private async Task SubmitManualPasswordRegistrationAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_regName) || string.IsNullOrWhiteSpace(_regPhone) || string.IsNullOrWhiteSpace(_regUserEmail))
+        {
+            Snackbar.Add("请完整填写所有带 * 的必填项！", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_regPassword))
+        {
+            Snackbar.Add("请设置登录密码！", Severity.Warning);
+            return;
+        }
+        if (_regPassword.Length < 8)
+        {
+            Snackbar.Add("密码长度不能少于 8 位！", Severity.Warning);
+            return;
+        }
+        if (!Regex.IsMatch(_regPassword, @"[a-zA-Z]") || !Regex.IsMatch(_regPassword, @"[0-9]"))
+        {
+            Snackbar.Add("密码必须同时包含英文字母与阿拉伯数字！", Severity.Warning);
+            return;
+        }
+        if (_regPassword != _regConfirmPassword)
+        {
+            Snackbar.Add("两次输入的密码不一致！", Severity.Warning);
+            return;
+        }
+
+        _isRegistering = true;
+        var (success, user, message) = await UserSessionService.RegisterWithPasswordAsync(_regName, _regUserRole, _regPhone, _regUserEmail, _regPassword, _regConfirmPassword, _regUserGrade);
+        _isRegistering = false;
+
+        if (success)
+        {
+            _regSuccessMessage = message;
+            Snackbar.Add("🎉 密码注册申请提交成功！", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(message, Severity.Error);
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

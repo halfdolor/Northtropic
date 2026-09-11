@@ -1,0 +1,352 @@
+@using Northtropic.Models
+@using Northtropic.Services
+@using System.Text.Json
+@inject IQuestionManagementService QuestionManagementService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.EditNote" Color="Color.Primary" Size="Size.Large" />
+            <MudText Typo="Typo.h6" Class="font-weight-bold">@(ExistingQuestion != null ? "✏️ 修改编辑试题" : "✍️ 手动单题录入与精细配置")</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex flex-column gap-4 py-2">
+            <MudGrid>
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="string" Value="_gradeTarget" ValueChanged="OnGradeTargetChanged" Label="目标适用年级" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                        @foreach (var g in GradeSubjectProvider.AvailableGrades)
+                        {
+                            <MudSelectItem Value="@g">@g</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="string" Value="_subject" ValueChanged="OnSubjectChanged" Label="学科领域" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                        @foreach (var s in GetCurrentSubjects())
+                        {
+                            <MudSelectItem Value="@s">@s</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="QuestionType" @bind-Value="_questionType" Label="题目类型" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem Value="QuestionType.SingleChoice">单选题</MudSelectItem>
+                        <MudSelectItem Value="QuestionType.MultipleChoice">不定项选择题</MudSelectItem>
+                        <MudSelectItem Value="QuestionType.FillInBlank">填空题</MudSelectItem>
+                        <MudSelectItem Value="QuestionType.ShortAnswer">简答题</MudSelectItem>
+                        <MudSelectItem Value="QuestionType.EssayAnalysis">问答解析大题</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <MudGrid>
+                <MudItem xs="12" sm="8">
+                    <MudAutocomplete T="string" @bind-Value="_category" Label="知识点考点/专题章节" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     SearchFunc="SearchCategoryTopics" ResetValueOnEmptyText="false" CoerceText="true" CoerceValue="true"
+                                     Placeholder="点击下拉选择或手动输入专题考点..." />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudRating @bind-SelectedValue="_difficulty" MaxValue="5" Color="Color.Warning" Size="Size.Medium" Class="mt-1" />
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">题目难度等级: @(_difficulty) 星</MudText>
+                </MudItem>
+            </MudGrid>
+
+            <!-- 题干文本 -->
+            <div>
+                <MudTextField T="string" Value="@_stem" ValueChanged="OnStemChanged" Label="题目题干 (Stem)" Variant="Variant.Outlined" Lines="3" Placeholder="请输入清晰、严谨的题目描述，支持 $LaTeX$ 数学物理公式..." Required="true" />
+                @if (!string.IsNullOrWhiteSpace(_stem))
+                {
+                    <div class="mt-2 pa-3 rounded" style="background: rgba(15, 23, 42, 0.4); border-left: 3px solid var(--mud-palette-info);">
+                        <div class="d-flex align-center justify-space-between mb-1">
+                            <MudText Typo="Typo.caption" Color="Color.Info" Class="font-weight-bold">
+                                📐 实时排版渲染预览 (支持 KaTeX 国际标准公式渲染)：
+                            </MudText>
+                        </div>
+                        <MudText Typo="Typo.body2" Style="white-space: pre-wrap; line-height: 1.6;">
+                            @_stem
+                        </MudText>
+                    </div>
+                }
+            </div>
+
+            <!-- 选项编辑 (单选与多选) -->
+            @if (_questionType == QuestionType.SingleChoice || _questionType == QuestionType.MultipleChoice)
+            {
+                <MudPaper Class="pa-4 glass-card" Style="background: var(--sub-card-bg);">
+                    <div class="d-flex align-center justify-space-between mb-3 flex-wrap gap-2">
+                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Info">
+                            动态选项配置：
+                        </MudText>
+                        <div class="d-flex align-center gap-2 flex-wrap">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">快速套用模板：</MudText>
+                            <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Outlined" OnClick="ApplyStandard4Options" Style="cursor: pointer;">四选 (A-D)</MudChip>
+                            <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Outlined" OnClick="ApplyTrueFalseOptions" Style="cursor: pointer;">判断 (对/错)</MudChip>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="AddOption">
+                                添加选项
+                            </MudButton>
+                        </div>
+                    </div>
+
+                    @for (int i = 0; i < _options.Count; i++)
+                    {
+                        int index = i;
+                        <div class="d-flex align-center gap-2 mb-2">
+                            <MudChip T="string" Color="Color.Secondary" Size="Size.Small">@((char)('A' + index))</MudChip>
+                            <MudTextField T="string" Value="@_options[index]" ValueChanged="@(val => _options[index] = val)" Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1" Placeholder="输入选项内容..." />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="() => RemoveOption(index)" Disabled="@(_options.Count <= 2)" />
+                        </div>
+                    }
+                </MudPaper>
+            }
+
+            <!-- 正确答案与官方解析 -->
+            <MudGrid>
+                <MudItem xs="12" sm="4">
+                    <MudTextField T="string" @bind-Value="_correctAnswer" Label="正确答案" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="如: A 或 A,B 或 具体填空数值" Required="true" />
+                </MudItem>
+                <MudItem xs="12" sm="8">
+                    <MudTextField T="string" @bind-Value="_standardAnalysis" Label="标准官方解析" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" Placeholder="详细考点分析与解题步骤推导..." />
+                </MudItem>
+            </MudGrid>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveQuestionAsync">
+            @(ExistingQuestion != null ? "保存试题修改" : "确认保存至系统题库")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Guid? UserId { get; set; }
+    [Parameter] public Question? ExistingQuestion { get; set; }
+
+    private string _subject = "初中物理";
+    private string _gradeTarget = "初中二年级";
+    private QuestionType _questionType = QuestionType.SingleChoice;
+    private string _category = "综合知识考查";
+    private int _difficulty = 3;
+    private string _stem = string.Empty;
+    private string _correctAnswer = "A";
+    private string _standardAnalysis = string.Empty;
+
+    private List<string> _options = new List<string>
+    {
+        "A. 选项示例一",
+        "B. 选项示例二",
+        "C. 选项示例三",
+        "D. 选项示例四"
+    };
+
+    protected override void OnInitialized()
+    {
+        if (ExistingQuestion != null)
+        {
+            _subject = ExistingQuestion.Subject;
+            _gradeTarget = ExistingQuestion.GradeTarget;
+            _questionType = ExistingQuestion.Type;
+            _category = ExistingQuestion.Category;
+            _difficulty = ExistingQuestion.Difficulty;
+            _stem = ExistingQuestion.Stem;
+            _correctAnswer = ExistingQuestion.CorrectAnswer;
+            _standardAnalysis = ExistingQuestion.StandardAnalysis;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(ExistingQuestion.OptionsJson) && ExistingQuestion.OptionsJson != "[]")
+                {
+                    var opts = JsonSerializer.Deserialize<List<string>>(ExistingQuestion.OptionsJson);
+                    if (opts != null && opts.Count > 0)
+                    {
+                        _options = opts;
+                    }
+                }
+            }
+            catch { }
+        }
+        else
+        {
+            var subjects = GradeSubjectProvider.GetSubjectsByGrade(_gradeTarget);
+            if (subjects.Any())
+            {
+                _subject = subjects.First();
+            }
+        }
+    }
+
+    private List<string> GetCurrentSubjects()
+    {
+        var list = GradeSubjectProvider.GetSubjectsByGrade(_gradeTarget);
+        if (!string.IsNullOrWhiteSpace(_subject) && !list.Contains(_subject))
+        {
+            list.Add(_subject);
+        }
+        return list;
+    }
+
+    private void OnGradeTargetChanged(string newGrade)
+    {
+        _gradeTarget = newGrade;
+        var subjects = GradeSubjectProvider.GetSubjectsByGrade(newGrade);
+        if (subjects.Any() && !subjects.Contains(_subject))
+        {
+            _subject = subjects.First();
+        }
+    }
+
+    private void OnSubjectChanged(string newSubject)
+    {
+        _subject = newSubject;
+    }
+
+    private async Task<IEnumerable<string>> SearchCategoryTopics(string value, CancellationToken token)
+    {
+        var topics = GradeSubjectProvider.GetCategoriesBySubject(_subject)
+            .Where(t => t != "全部")
+            .ToList();
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return topics;
+        }
+
+        return topics.Where(x => x.Contains(value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task OnStemChanged(string val)
+    {
+        _stem = val;
+        await TriggerMathRenderAsync();
+    }
+
+    private void ApplyStandard4Options()
+    {
+        _options = new List<string>
+        {
+            "A. 选项一",
+            "B. 选项二",
+            "C. 选项三",
+            "D. 选项四"
+        };
+        _correctAnswer = "A";
+    }
+
+    private void ApplyTrueFalseOptions()
+    {
+        _options = new List<string>
+        {
+            "A. 正确",
+            "B. 错误"
+        };
+        _correctAnswer = "A";
+    }
+
+    private async Task TriggerMathRenderAsync()
+    {
+        try
+        {
+            await Task.Delay(50);
+            await JSRuntime.InvokeVoidAsync("renderAllMath");
+        }
+        catch { }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await TriggerMathRenderAsync();
+    }
+
+    private void AddOption()
+    {
+        char prefix = (char)('A' + _options.Count);
+        _options.Add($"{prefix}. 新选项内容");
+    }
+
+    private void RemoveOption(int index)
+    {
+        if (_options.Count > 2 && index >= 0 && index < _options.Count)
+        {
+            _options.RemoveAt(index);
+        }
+    }
+
+    private async Task SaveQuestionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_stem))
+        {
+            Snackbar.Add("题干内容不能为空！", Severity.Warning);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_correctAnswer))
+        {
+            Snackbar.Add("正确答案不能为空！", Severity.Warning);
+            return;
+        }
+
+        if (ExistingQuestion != null)
+        {
+            ExistingQuestion.Subject = _subject;
+            ExistingQuestion.GradeTarget = _gradeTarget;
+            ExistingQuestion.Category = string.IsNullOrWhiteSpace(_category) ? "通用" : _category;
+            ExistingQuestion.Type = _questionType;
+            ExistingQuestion.Stem = _stem.Trim();
+            ExistingQuestion.OptionsJson = (_questionType == QuestionType.SingleChoice || _questionType == QuestionType.MultipleChoice)
+                          ? JsonSerializer.Serialize(_options)
+                          : "[]";
+            ExistingQuestion.CorrectAnswer = _correctAnswer.Trim();
+            ExistingQuestion.StandardAnalysis = _standardAnalysis.Trim();
+            ExistingQuestion.Difficulty = _difficulty;
+            ExistingQuestion.BaseExpReward = _questionType == QuestionType.EssayAnalysis ? 40 : 25;
+
+            var updateSuccess = await QuestionManagementService.UpdateQuestionAsync(ExistingQuestion, UserId);
+            if (updateSuccess)
+            {
+                Snackbar.Add("试题修改已成功保存！", Severity.Success);
+                MudDialog.Close(DialogResult.Ok(ExistingQuestion));
+            }
+            else
+            {
+                Snackbar.Add("试题修改失败，请检查操作权限或试题是否存在！", Severity.Error);
+            }
+            return;
+        }
+
+        var newQ = new Question
+        {
+            Id = Guid.NewGuid(),
+            Subject = _subject,
+            GradeTarget = _gradeTarget,
+            Category = string.IsNullOrWhiteSpace(_category) ? "通用" : _category,
+            Type = _questionType,
+            Stem = _stem.Trim(),
+            OptionsJson = (_questionType == QuestionType.SingleChoice || _questionType == QuestionType.MultipleChoice)
+                          ? JsonSerializer.Serialize(_options)
+                          : "[]",
+            CorrectAnswer = _correctAnswer.Trim(),
+            StandardAnalysis = _standardAnalysis.Trim(),
+            Difficulty = _difficulty,
+            BaseExpReward = _questionType == QuestionType.EssayAnalysis ? 40 : 25,
+            CreatedByUserId = UserId,
+            IsPublic = false,
+            PublishStatus = PublishStatusEnum.Private
+        };
+
+        var (success, msg, savedQ) = await QuestionManagementService.AddQuestionAsync(newQ, UserId);
+        if (success && savedQ != null)
+        {
+            Snackbar.Add("试题已成功保存至题库！", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(savedQ));
+        }
+        else
+        {
+            Snackbar.Add($"试题保存失败: {msg}", Severity.Error);
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

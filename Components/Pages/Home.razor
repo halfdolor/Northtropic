@@ -1,0 +1,1475 @@
+@page "/"
+@using Northtropic.Models
+@using Northtropic.Services
+@using Microsoft.EntityFrameworkCore
+@inject IGamificationService GamificationService
+@inject IErrorBookService ErrorBookService
+@inject IStudentEvolutionService StudentEvolutionService
+@inject IPracticeService PracticeService
+@inject IUserSessionService UserSession
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IQuestionManagementService QuestionManagementService
+@implements IDisposable
+
+<PageTitle>主面板 - Northtropic</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-2 mb-10">
+    @if (_isInitialLoading)
+    {
+        <!-- 骨架屏占位：消除页面加载抖动与累积布局偏移 (CLS) -->
+        <div class="glass-card pa-6 mb-6">
+            <div class="d-flex align-center gap-4">
+                <MudSkeleton SkeletonType="SkeletonType.Circle" Width="60px" Height="60px" />
+                <div class="flex-grow-1">
+                    <MudSkeleton Width="35%" Height="32px" Class="mb-2" />
+                    <MudSkeleton Width="55%" Height="20px" />
+                </div>
+            </div>
+        </div>
+
+        <MudGrid Class="mb-6">
+            @for (int i = 0; i < 4; i++)
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <div class="glass-card pa-5">
+                        <MudSkeleton Width="40%" Height="18px" Class="mb-2" />
+                        <MudSkeleton Width="60%" Height="36px" Class="mb-2" />
+                        <MudSkeleton Width="50%" Height="16px" />
+                    </div>
+                </MudItem>
+            }
+        </MudGrid>
+
+        <MudGrid>
+            <MudItem xs="12" md="8">
+                <div class="glass-card pa-6 mb-6">
+                    <MudSkeleton Width="25%" Height="28px" Class="mb-4" />
+                    <MudSkeleton Width="100%" Height="180px" />
+                </div>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <div class="glass-card pa-6 mb-6">
+                    <MudSkeleton Width="45%" Height="28px" Class="mb-4" />
+                    <MudSkeleton Width="100%" Height="180px" />
+                </div>
+            </MudItem>
+        </MudGrid>
+    }
+    else if (_currentUser?.Role == UserRole.Parent)
+    {
+        <!-- 家长专属智能协同大盘 -->
+        <div class="glass-card pa-6 mb-6">
+            <MudGrid align-items="center">
+                <MudItem xs="12" md="7">
+                    <div class="d-flex align-center gap-3">
+                        <div class="d-flex align-center justify-center rounded-circle" style="width: 56px; height: 56px; font-size: 2rem; background: linear-gradient(135deg, rgba(236,72,153,0.2), rgba(168,85,247,0.2)); border: 2px solid var(--mud-palette-secondary);">
+                            👨‍👩‍👧
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-center gap-2 flex-wrap">
+                                <MudText Typo="Typo.h5" Class="font-weight-bold">
+                                    欢迎进入家长协同空间，<span class="gradient-text">@_currentUser?.Username</span>！
+                                </MudText>
+                                <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Filled" Style="font-weight: 800;">
+                                    👨‍👩‍👧 家长守护者
+                                </MudChip>
+                            </div>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                                实时同步子女每日刷题进度、诊断错因短板、布置针对性作业并发送暖心鼓励。
+                            </MudText>
+                        </div>
+                    </div>
+                </MudItem>
+                <MudItem xs="12" md="5" Class="d-flex justify-md-end gap-2 flex-wrap align-center">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AssignmentInd" OnClick='() => NavigationManager.NavigateTo("/parent-dashboard")'>
+                        子女账号管理
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Dashboard" Class="px-6 py-3 font-weight-bold" Style="border-radius: 12px;" OnClick='() => NavigationManager.NavigateTo("/parent-dashboard")'>
+                        进入完整学情大盘
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </div>
+
+        @if (_selectedChild != null)
+        {
+            <!-- 子女学情概览卡片 -->
+            <div class="glass-card pa-6 mb-6" style="border-left: 5px solid #ec4899;">
+                <div class="d-flex align-center justify-space-between mb-4 flex-wrap gap-2">
+                    <div class="d-flex align-center gap-3">
+                        <div class="d-flex align-center justify-center rounded-circle" style="width: 48px; height: 48px; font-size: 1.8rem; background: rgba(59,130,246,0.15); border: 2px solid #3b82f6;">
+                            @(!string.IsNullOrEmpty(_selectedChild.Avatar) ? _selectedChild.Avatar : "🎒")
+                        </div>
+                        <div>
+                            <div class="d-flex align-center gap-2">
+                                <MudText Typo="Typo.h6" Class="font-weight-bold">@_selectedChild.Username 的学情动态</MudText>
+                                <MudChip T="string" Color="Color.Primary" Size="Size.Small">@_selectedChild.Grade</MudChip>
+                                <MudChip T="string" Color="Color.Warning" Size="Size.Small">Lv.@_selectedChild.Level</MudChip>
+                            </div>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                最近学习时间：@_selectedChild.LastStudyDate.ToString("yyyy-MM-dd HH:mm")
+                            </MudText>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.EditNote" OnClick="OpenParentNoteDialog">
+                            ✍️ 修改暖心寄语
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PostAdd" OnClick='() => NavigationManager.NavigateTo("/parent-dashboard")'>
+                            📋 布置专属作业
+                        </MudButton>
+                    </div>
+                </div>
+
+                <!-- 4 大核心指标卡片 -->
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" sm="6" md="3">
+                        <div class="glass-card pa-4 text-center" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 12px;">
+                            <MudIcon Icon="@Icons.Material.Filled.MenuBook" Color="Color.Primary" Size="Size.Medium" />
+                            <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Primary">@_selectedChild.TotalAnswered</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">累计作答题量</MudText>
+                        </div>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <div class="glass-card pa-4 text-center" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 12px;">
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Medium" />
+                            <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Success">@GetChildAccuracyRate()%</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">综合答题正确率</MudText>
+                        </div>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <div class="glass-card pa-4 text-center" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 12px;">
+                            <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Error" Size="Size.Medium" />
+                            <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Error">@_childUnmasteredCount</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">待消灭错题副本</MudText>
+                        </div>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <div class="glass-card pa-4 text-center" style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 12px;">
+                            <MudIcon Icon="@Icons.Material.Filled.Whatshot" Color="Color.Warning" Size="Size.Medium" />
+                            <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Warning">@_selectedChild.CurrentStreak 天</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">连续坚持学习</MudText>
+                        </div>
+                    </MudItem>
+                </MudGrid>
+            </div>
+
+            <!-- 当前寄语展示与作业待办状态 -->
+            <MudGrid Spacing="3" Class="mb-6">
+                <MudItem xs="12" md="6">
+                    <div class="glass-card pa-5 h-100" style="background: linear-gradient(135deg, rgba(236,72,153,0.06), rgba(244,63,94,0.1)); border: 1px solid rgba(236,72,153,0.3); border-radius: 12px;">
+                        <div class="d-flex align-center justify-space-between mb-3">
+                            <div class="d-flex align-center gap-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Favorite" Color="Color.Secondary" />
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">当前显示在孩子首页的暖心寄语</MudText>
+                            </div>
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Secondary" OnClick="OpenParentNoteDialog">编辑</MudButton>
+                        </div>
+                        <div class="pa-4 rounded-lg" style="background: rgba(15, 23, 42, 0.3); border-left: 4px solid #ec4899;">
+                            <MudText Typo="Typo.body1" Style="font-style: italic; line-height: 1.6;">
+                                "@(!string.IsNullOrEmpty(_selectedChild.ParentEncouragementNote) ? _selectedChild.ParentEncouragementNote : "孩子，每天进步一小步，就是卓越的一大步！爸爸妈妈永远支持你！")"
+                            </MudText>
+                            <div class="text-right mt-2">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    更新于：@(_selectedChild.ParentNoteUpdatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "今天")
+                                </MudText>
+                            </div>
+                        </div>
+                    </div>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <div class="glass-card pa-5 h-100" style="border: 1px solid rgba(59,130,246,0.3); border-radius: 12px;">
+                        <div class="d-flex align-center justify-space-between mb-3">
+                            <div class="d-flex align-center gap-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Assignment" Color="Color.Primary" />
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">最近布置的专属作业 (@_childAssignments.Count)</MudText>
+                            </div>
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick='() => NavigationManager.NavigateTo("/parent-dashboard")'>布置新作业</MudButton>
+                        </div>
+                        @if (_childAssignments.Any())
+                        {
+                            <div class="d-flex flex-column gap-2" style="max-height: 140px; overflow-y: auto;">
+                                @foreach (var a in _childAssignments.Take(3))
+                                {
+                                    <div class="d-flex align-center justify-space-between pa-2 rounded" style="background: rgba(255,255,255,0.04); font-size: 0.85rem;">
+                                        <span>【@a.Subject】@a.Category (@a.QuestionCount 题)</span>
+                                        @if (a.IsCompleted)
+                                        {
+                                            <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled">已完成 (@a.CorrectCount/@a.QuestionCount)</MudChip>
+                                        }
+                                        else
+                                        {
+                                            <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Outlined">进行中</MudChip>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-center py-4 mud-text-secondary">
+                                <MudText Typo="Typo.body2">暂无已布置的作业，快去为孩子布置今日第一份作业吧！</MudText>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Class="mt-2" OnClick='() => NavigationManager.NavigateTo("/parent-dashboard")'>
+                                    去布置作业
+                                </MudButton>
+                            </div>
+                        }
+                    </div>
+                </MudItem>
+            </MudGrid>
+        }
+        else
+        {
+            <div class="glass-card pa-8 text-center mb-6">
+                <MudIcon Icon="@Icons.Material.Filled.FamilyRestroom" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+                <MudText Typo="Typo.h6" Class="font-weight-bold">您尚未关联绑定的子女账号</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1 mb-4">
+                    请输入学生账号的 8 位专属绑定码（如 STU6380），即可在此实时守护学情。
+                </MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Link" OnClick='() => NavigationManager.NavigateTo("/parent-dashboard")'>
+                    前往关联子女账号
+                </MudButton>
+            </div>
+        }
+    }
+    else if (_currentUser?.Role == UserRole.Teacher)
+    {
+        <!-- 教师教研与智能题库工作台 -->
+        <div class="glass-card pa-6 mb-6">
+            <MudGrid align-items="center">
+                <MudItem xs="12" md="7">
+                    <div class="d-flex align-center gap-3">
+                        <div class="d-flex align-center justify-center rounded-circle" style="width: 56px; height: 56px; font-size: 2rem; background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(234,88,12,0.2)); border: 2px solid var(--mud-palette-warning);">
+                            👩‍🏫
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-center gap-2 flex-wrap">
+                                <MudText Typo="Typo.h5" Class="font-weight-bold">
+                                    欢迎使用名师备课与智能题库工作台，<span class="gradient-text">@_currentUser?.Username</span>！
+                                </MudText>
+                                <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled" Style="font-weight: 800;">
+                                    👩‍🏫 教研名师
+                                </MudChip>
+                            </div>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                                支持全学科题库录入、OCR 拍照识题、批量导入、分层作业分发与 AI 智能组卷。
+                            </MudText>
+                        </div>
+                    </div>
+                </MudItem>
+                <MudItem xs="12" md="5" Class="d-flex justify-md-end gap-2 flex-wrap align-center">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PostAdd" OnClick='() => NavigationManager.NavigateTo("/question-management")'>
+                        手动录入新题
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Large" StartIcon="@Icons.Material.Filled.LibraryBooks" Class="px-6 py-3 font-weight-bold" Style="border-radius: 12px;" OnClick='() => NavigationManager.NavigateTo("/question-management")'>
+                        进入题库管理
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </div>
+
+        <!-- 题库关键指标 -->
+        <MudGrid Spacing="3" Class="mb-6">
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-4 text-center" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 12px;">
+                    <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Color="Color.Primary" Size="Size.Medium" />
+                    <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Primary">@_totalQuestionsCount</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">系统题库总题量</MudText>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-4 text-center" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 12px;">
+                    <MudIcon Icon="@Icons.Material.Filled.Public" Color="Color.Success" Size="Size.Medium" />
+                    <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Success">@_publicQuestionsCount</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">公开共享题库</MudText>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-4 text-center" style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 12px;">
+                    <MudIcon Icon="@Icons.Material.Filled.PersonPin" Color="Color.Warning" Size="Size.Medium" />
+                    <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Warning">@_myQuestionsCount</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">我录入的试题</MudText>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-4 text-center" style="background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 12px;">
+                    <MudIcon Icon="@Icons.Material.Filled.School" Color="Color.Secondary" Size="Size.Medium" />
+                    <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Secondary">全学科</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">初高中 9 大主科覆盖</MudText>
+                </div>
+            </MudItem>
+        </MudGrid>
+
+        <!-- 教学核心工具矩阵 -->
+        <MudText Typo="Typo.h6" Class="font-weight-bold mb-3 d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Build" Color="Color.Warning" />
+            名师备课与出题核心通道
+        </MudText>
+        <MudGrid Spacing="3" Class="mb-6">
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-5 d-flex flex-column justify-space-between h-100" style="cursor: pointer; border: 1px solid rgba(59,130,246,0.3); border-radius: 12px; transition: transform 0.2s;" @onclick='() => NavigationManager.NavigateTo("/question-management")'>
+                    <div>
+                        <div class="d-inline-flex pa-3 rounded-lg mb-3" style="background: rgba(59,130,246,0.15); color: #3b82f6;">
+                            <MudIcon Icon="@Icons.Material.Filled.PostAdd" Size="Size.Medium" />
+                        </div>
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">手动录入试题</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                            规范录入题干、选项、正确答案、深度解析及 KaTeX 理科公式。
+                        </MudText>
+                    </div>
+                    <div class="mt-4 text-right">
+                        <MudText Typo="Typo.button" Color="Color.Primary" Class="font-weight-bold">去录题 →</MudText>
+                    </div>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-5 d-flex flex-column justify-space-between h-100" style="cursor: pointer; border: 1px solid rgba(16,185,129,0.3); border-radius: 12px; transition: transform 0.2s;" @onclick='() => NavigationManager.NavigateTo("/question-management")'>
+                    <div>
+                        <div class="d-inline-flex pa-3 rounded-lg mb-3" style="background: rgba(16,185,129,0.15); color: #10b981;">
+                            <MudIcon Icon="@Icons.Material.Filled.UploadFile" Size="Size.Medium" />
+                        </div>
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">批量文件导入</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                            支持标准 JSON、CSV、TXT 试题模板文件一键批量解析入库。
+                        </MudText>
+                    </div>
+                    <div class="mt-4 text-right">
+                        <MudText Typo="Typo.button" Color="Color.Success" Class="font-weight-bold">批量导入 →</MudText>
+                    </div>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-5 d-flex flex-column justify-space-between h-100" style="cursor: pointer; border: 1px solid rgba(245,158,11,0.3); border-radius: 12px; transition: transform 0.2s;" @onclick='() => NavigationManager.NavigateTo("/question-management")'>
+                    <div>
+                        <div class="d-inline-flex pa-3 rounded-lg mb-3" style="background: rgba(245,158,11,0.15); color: #f59e0b;">
+                            <MudIcon Icon="@Icons.Material.Filled.CameraAlt" Size="Size.Medium" />
+                        </div>
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">OCR 拍照智能识题</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                            通过 PaddleOCR 引擎智能提取试卷与手写试题，自动切分题目。
+                        </MudText>
+                    </div>
+                    <div class="mt-4 text-right">
+                        <MudText Typo="Typo.button" Color="Color.Warning" Class="font-weight-bold">拍照识题 →</MudText>
+                    </div>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-5 d-flex flex-column justify-space-between h-100" style="cursor: pointer; border: 1px solid rgba(139,92,246,0.3); border-radius: 12px; transition: transform 0.2s;" @onclick='() => NavigationManager.NavigateTo("/practice")'>
+                    <div>
+                        <div class="d-inline-flex pa-3 rounded-lg mb-3" style="background: rgba(139,92,246,0.15); color: #8b5cf6;">
+                            <MudIcon Icon="@Icons.Material.Filled.PlayCircleOutline" Size="Size.Medium" />
+                        </div>
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">试题实测与模拟答题</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                            以答题视角检验试题公式渲染、手写草稿纸与即时评测准确性。
+                        </MudText>
+                    </div>
+                    <div class="mt-4 text-right">
+                        <MudText Typo="Typo.button" Color="Color.Secondary" Class="font-weight-bold">进入练习 →</MudText>
+                    </div>
+                </div>
+            </MudItem>
+        </MudGrid>
+    }
+    else if (_currentUser?.Role == UserRole.SuperAdmin)
+    {
+        <!-- 超级管理员系统总控台 -->
+        <div class="glass-card pa-6 mb-6">
+            <MudGrid align-items="center">
+                <MudItem xs="12" md="7">
+                    <div class="d-flex align-center gap-3">
+                        <div class="d-flex align-center justify-center rounded-circle" style="width: 56px; height: 56px; font-size: 2rem; background: linear-gradient(135deg, rgba(239,68,68,0.2), rgba(220,38,38,0.2)); border: 2px solid var(--mud-palette-error);">
+                            🛡️
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-center gap-2 flex-wrap">
+                                <MudText Typo="Typo.h5" Class="font-weight-bold">
+                                    欢迎进入系统总控台，<span class="gradient-text">超级管理员</span>！
+                                </MudText>
+                                <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Filled" Style="font-weight: 800;">
+                                    🛡️ 最高权限
+                                </MudChip>
+                            </div>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                                全局监管用户权限、注册审批、系统配置、大模型 API 调度与题库运维。
+                            </MudText>
+                        </div>
+                    </div>
+                </MudItem>
+                <MudItem xs="12" md="5" Class="d-flex justify-md-end gap-2 flex-wrap align-center">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Settings" OnClick='() => NavigationManager.NavigateTo("/settings")'>
+                        系统与大模型配置
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Large" StartIcon="@Icons.Material.Filled.AdminPanelSettings" Class="px-6 py-3 font-weight-bold" Style="border-radius: 12px;" OnClick='() => NavigationManager.NavigateTo("/user-management")'>
+                        用户与注册审批
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </div>
+
+        <!-- 核心运维关键指标 -->
+        <MudGrid Spacing="3" Class="mb-6">
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-4 text-center" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 12px;">
+                    <MudIcon Icon="@Icons.Material.Filled.People" Color="Color.Primary" Size="Size.Medium" />
+                    <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Primary">@_totalUsersCount</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">平台注册用户数</MudText>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-4 text-center" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 12px;">
+                    <MudIcon Icon="@Icons.Material.Filled.PendingActions" Color="Color.Error" Size="Size.Medium" />
+                    <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Error">@_pendingUsersCount</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">待审批注册申请</MudText>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-4 text-center" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 12px;">
+                    <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Color="Color.Success" Size="Size.Medium" />
+                    <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Success">@_adminQuestionsCount</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">题库试题总规模</MudText>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-4 text-center" style="background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 12px;">
+                    <MudIcon Icon="@Icons.Material.Filled.Memory" Color="Color.Secondary" Size="Size.Medium" />
+                    <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Secondary">多模型</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">AI 与 OCR 实时在线</MudText>
+                </div>
+            </MudItem>
+        </MudGrid>
+
+        <!-- 管理员三大核心运维通道 -->
+        <MudGrid Spacing="3" Class="mb-6">
+            <MudItem xs="12" md="4">
+                <div class="glass-card pa-5 d-flex flex-column justify-space-between h-100" style="border: 1px solid rgba(239,68,68,0.3); border-radius: 12px;">
+                    <div>
+                        <div class="d-inline-flex pa-3 rounded-lg mb-3" style="background: rgba(239,68,68,0.15); color: #ef4444;">
+                            <MudIcon Icon="@Icons.Material.Filled.GroupAdd" Size="Size.Medium" />
+                        </div>
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">用户与注册审批中心</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                            审批学员、家长与名师注册申请，管理用户角色权限、安全封禁或重置密码。
+                        </MudText>
+                    </div>
+                    <div class="mt-4">
+                        <MudButton Variant="Variant.Filled" Color="Color.Error" FullWidth="true" OnClick='() => NavigationManager.NavigateTo("/user-management")'>
+                            进入用户管理 (@_pendingUsersCount 待审批)
+                        </MudButton>
+                    </div>
+                </div>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <div class="glass-card pa-5 d-flex flex-column justify-space-between h-100" style="border: 1px solid rgba(59,130,246,0.3); border-radius: 12px;">
+                    <div>
+                        <div class="d-inline-flex pa-3 rounded-lg mb-3" style="background: rgba(59,130,246,0.15); color: #3b82f6;">
+                            <MudIcon Icon="@Icons.Material.Filled.Tune" Size="Size.Medium" />
+                        </div>
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">系统与 AI 大模型配置</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                            配置大模型 API Key、Endpoint、模型类型、OCR 引擎以及各学科考点参数。
+                        </MudText>
+                    </div>
+                    <div class="mt-4">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick='() => NavigationManager.NavigateTo("/settings")'>
+                            前往系统配置
+                        </MudButton>
+                    </div>
+                </div>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <div class="glass-card pa-5 d-flex flex-column justify-space-between h-100" style="border: 1px solid rgba(16,185,129,0.3); border-radius: 12px;">
+                    <div>
+                        <div class="d-inline-flex pa-3 rounded-lg mb-3" style="background: rgba(16,185,129,0.15); color: #10b981;">
+                            <MudIcon Icon="@Icons.Material.Filled.FolderSpecial" Size="Size.Medium" />
+                        </div>
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">全网题库统一运维</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                            全景检索与监管教师录入的试题，批量设置公开共享属性，导出全库试题数据。
+                        </MudText>
+                    </div>
+                    <div class="mt-4">
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" FullWidth="true" OnClick='() => NavigationManager.NavigateTo("/question-management")'>
+                            题库监管中心
+                        </MudButton>
+                    </div>
+                </div>
+            </MudItem>
+        </MudGrid>
+    }
+    else
+    {
+        <!-- 顶部欢迎 Banner -->
+        <div class="glass-card pa-6 mb-6">
+            <MudGrid align-items="center">
+                <MudItem xs="12" md="7">
+                    <div class="d-flex align-center gap-3">
+                        <div class="d-flex align-center justify-center rounded-circle" style="width: 56px; height: 56px; font-size: 2rem; background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(139,92,246,0.2)); border: 2px solid var(--mud-palette-primary);">
+                            @(!string.IsNullOrEmpty(_currentUser?.Avatar) ? _currentUser.Avatar : "🎓")
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-center gap-2 flex-wrap">
+                                <MudText Typo="Typo.h5" Class="font-weight-bold">
+                                    欢迎回来，<span Class="gradient-text">@(_currentUser?.Username ?? "学霸")</span>！
+                                </MudText>
+                                <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Filled" Style="font-weight: 800;">
+                                    Lv.@(_currentUser?.Level ?? 1)
+                                </MudChip>
+                                @if (!string.IsNullOrEmpty(_currentUser?.BindingCode))
+                                {
+                                    <MudTooltip Text="点击复制专属绑定码，可交予家长一键关联协同">
+                                        <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.ContentCopy" Style="cursor: pointer; font-family: monospace; font-weight: 700;" OnClick="CopyBindingCodeAsync">
+                                            绑定码: @_currentUser.BindingCode
+                                        </MudChip>
+                                    </MudTooltip>
+                                }
+                            </div>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                                当前学习年级：<strong>@(_currentUser?.Grade ?? "初中二年级")</strong> ｜ 身份：<strong>@(_currentUser?.RoleDisplayName ?? "学员")</strong> ｜ 已连续打卡 <strong>@(_currentUser?.CurrentStreak ?? 1) 天</strong>
+                            </MudText>
+                            <!-- 等级经验升级进度条 -->
+                            <div class="d-flex align-center gap-2 mt-2" style="max-width: 380px;">
+                                <div class="flex-grow-1">
+                                    <MudProgressLinear Color="Color.Warning" Value="@GetExpProgressPercent()" Rounded="true" Style="height: 7px; border-radius: 4px;" />
+                                </div>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-size: 0.75rem; white-space: nowrap;">
+                                    @(_currentUser?.Exp ?? 0) / @GetExpThreshold() EXP
+                                </MudText>
+                            </div>
+                        </div>
+                    </div>
+                </MudItem>
+                <MudItem xs="12" md="5" Class="d-flex justify-md-end gap-2 flex-wrap align-center">
+                    @if (_currentUser?.CanAccessSystemConfig == true)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Settings" OnClick='() => NavigationManager.NavigateTo("/settings")'>
+                            系统配置
+                        </MudButton>
+                    }
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick='() => NavigationManager.NavigateTo("/error-book")' Style="font-weight: 700;">
+                        净化错题 (@_unmasteredCount)
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Psychology" OnClick="StartAdaptivePractice" Style="font-weight: 700;">
+                        🎯 弱项靶向突破
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.PlayArrow" Class="px-6 py-3 font-weight-bold" Style="border-radius: 12px;" OnClick='() => NavigationManager.NavigateTo("/practice")'>
+                        开始今日刷题
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </div>
+
+    <!-- 家长/老师布置的专属作业待办 (如果存在未完成作业) -->
+    @if (_pendingAssignments.Any())
+    {
+        <div class="glass-card pa-5 mb-6" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(99, 102, 241, 0.15) 100%); border-left: 5px solid #3b82f6; border-radius: 12px; box-shadow: 0 4px 20px rgba(59, 130, 246, 0.15);">
+            <div class="d-flex align-center justify-space-between mb-3 flex-wrap gap-2">
+                <div class="d-flex align-center gap-2">
+                    <div class="d-flex align-center justify-center rounded-circle" style="width: 36px; height: 36px; background: rgba(59, 130, 246, 0.2); color: #3b82f6;">
+                        <MudIcon Icon="@Icons.Material.Filled.Assignment" Size="Size.Small" />
+                    </div>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Style="color: #3b82f6;">
+                        📋 家长/名师布置的专属作业待办 (@_pendingAssignments.Count 份待完成)
+                    </MudText>
+                </div>
+                <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled" Icon="@Icons.Material.Filled.NotificationImportant">
+                    今日重点冲刺
+                </MudChip>
+            </div>
+
+            <MudGrid>
+                @foreach (var assign in _pendingAssignments)
+                {
+                    <MudItem xs="12" md="6">
+                        <div class="glass-card pa-4 d-flex flex-column justify-space-between" style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 10px; min-height: 120px;">
+                            <div>
+                                <div class="d-flex align-center justify-space-between mb-1">
+                                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold">@assign.Title</MudText>
+                                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">@assign.Subject</MudChip>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(assign.ParentNote))
+                                {
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1" Style="font-size: 0.85rem;">
+                                        💬 附言：@assign.ParentNote
+                                    </MudText>
+                                }
+                            </div>
+                            <div class="d-flex align-center justify-space-between mt-3 flex-wrap gap-2">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    题量：<strong>@assign.QuestionCount 题</strong> · 期望难度：<strong>Lv.@assign.TargetDifficulty</strong>
+                                </MudText>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.PlayArrow" Style="font-weight: 700;" OnClick="() => StartAssignmentPractice(assign)">
+                                    🚀 立即开始作业
+                                </MudButton>
+                            </div>
+                        </div>
+                    </MudItem>
+                }
+            </MudGrid>
+        </div>
+    }
+
+    <!-- 家长关怀寄语暖心 Banner (如果家长有留言) -->
+    @if (!string.IsNullOrWhiteSpace(_currentUser?.ParentEncouragementNote))
+    {
+        <div class="glass-card pa-4 mb-6 d-flex align-center justify-space-between flex-wrap gap-3" style="background: linear-gradient(135deg, rgba(236, 72, 153, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%); border-left: 4px solid #ec4899; border-radius: 12px; box-shadow: 0 4px 16px rgba(236, 72, 153, 0.15);">
+            <div class="d-flex align-center gap-3">
+                <div class="d-flex align-center justify-center rounded-circle" style="width: 44px; height: 44px; background: rgba(236, 72, 153, 0.2); color: #ec4899; flex-shrink: 0;">
+                    <MudIcon Icon="@Icons.Material.Filled.Favorite" Size="Size.Medium" />
+                </div>
+                <div>
+                    <div class="d-flex align-center gap-2">
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold" style="color: #ec4899;">
+                            💌 家长暖心寄语
+                        </MudText>
+                        @if (_currentUser?.ParentNoteUpdatedAt.HasValue == true)
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                (@_currentUser.ParentNoteUpdatedAt.Value.ToString("yyyy-MM-dd HH:mm"))
+                            </MudText>
+                        }
+                    </div>
+                    <MudText Typo="Typo.body2" Class="mt-1" Style="font-weight: 500;">
+                        “@_currentUser?.ParentEncouragementNote”
+                    </MudText>
+                </div>
+            </div>
+            <MudChip T="string" Color="Color.Secondary" Variant="Variant.Outlined" Size="Size.Small" Icon="@Icons.Material.Filled.SportsScore">
+                努力冲刺，不负期望
+            </MudChip>
+        </div>
+    }
+
+    <!-- 新手快速起航向导 Card (若历史答题数为0) -->
+    @if ((_currentUser?.TotalAnswered ?? 0) == 0)
+    {
+        <div class="glass-card pa-6 mb-6" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 16px;">
+            <div class="d-flex align-center gap-3 mb-4">
+                <div class="d-flex align-center justify-center rounded-circle" style="width: 44px; height: 44px; background: rgba(59, 130, 246, 0.2); color: #3b82f6;">
+                    <MudIcon Icon="@Icons.Material.Filled.RocketLaunch" Size="Size.Medium" />
+                </div>
+                <div>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold gradient-text">新手学霸快速起航指南</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">只需 3 步，开启智能自适应学习提分之旅</MudText>
+                </div>
+            </div>
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="4">
+                    <div class="glass-card pa-4 h-100 d-flex flex-column justify-space-between" style="border: 1px dashed rgba(59, 130, 246, 0.4); border-radius: 12px; background: rgba(15, 23, 42, 0.4);">
+                        <div>
+                            <div class="d-flex align-center gap-2 mb-2">
+                                <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Filled">Step 1</MudChip>
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold">极速热身作答</MudText>
+                            </div>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                进入刷题中心体验中考真题，支持键盘 A/B/C/D 快捷作答与公式输入，即时获取能力评测。
+                            </MudText>
+                        </div>
+                        <div class="mt-3">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" FullWidth="true" OnClick='() => NavigationManager.NavigateTo("/practice")'>
+                                立即热身 ➔
+                            </MudButton>
+                        </div>
+                    </div>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <div class="glass-card pa-4 h-100 d-flex flex-column justify-space-between" style="border: 1px dashed rgba(139, 92, 246, 0.4); border-radius: 12px; background: rgba(15, 23, 42, 0.4);">
+                        <div>
+                            <div class="d-flex align-center gap-2 mb-2">
+                                <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Filled">Step 2</MudChip>
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold">苏格拉底 AI 启发</MudText>
+                            </div>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                遇到卡壳难点时，点击【苏格拉底启发】，AI 导师层层递进点拨思考，建立科学思维路径。
+                            </MudText>
+                        </div>
+                        <div class="mt-3">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" FullWidth="true" OnClick='() => NavigationManager.NavigateTo("/practice?mode=socratic")'>
+                                体验启发引导 ➔
+                            </MudButton>
+                        </div>
+                    </div>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <div class="glass-card pa-4 h-100 d-flex flex-column justify-space-between" style="border: 1px dashed rgba(16, 185, 129, 0.4); border-radius: 12px; background: rgba(15, 23, 42, 0.4);">
+                        <div>
+                            <div class="d-flex align-center gap-2 mb-2">
+                                <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled">Step 3</MudChip>
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold">错题净化与靶向消灭</MudText>
+                            </div>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                答错题目自动归集进错题本，借助艾宾浩斯复习曲线与变式重练，彻底攻克薄弱盲区。
+                            </MudText>
+                        </div>
+                        <div class="mt-3">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" FullWidth="true" OnClick='() => NavigationManager.NavigateTo("/error-book")'>
+                                前往错题本 ➔
+                            </MudButton>
+                        </div>
+                    </div>
+                </MudItem>
+            </MudGrid>
+        </div>
+    }
+
+    <!-- 今日刷题打卡目标进度条 Card -->
+    <div class="glass-card pa-4 mb-6 d-flex align-center justify-space-between flex-wrap gap-4" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(16, 185, 129, 0.06)); border-left: 4px solid var(--mud-palette-success);">
+        <div class="d-flex align-center gap-3">
+            <div class="d-flex align-center justify-center rounded-circle" style="width: 44px; height: 44px; background: rgba(16, 185, 129, 0.15); color: #10b981;">
+                <MudIcon Icon="@Icons.Material.Filled.TrackChanges" Size="Size.Medium" />
+            </div>
+            <div>
+                <div class="d-flex align-center gap-2 flex-wrap">
+                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold">
+                        今日刷题打卡目标
+                    </MudText>
+                    @if (IsDailyTargetCompleted())
+                    {
+                        <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled" Icon="@Icons.Material.Filled.CheckCircle">
+                            今日已达成！🎉
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Outlined">
+                            还差 @Math.Max(0, (_currentUser?.DailyTargetQuestions ?? 20) - (_currentUser?.TodayAnsweredCount ?? 0)) 题完成
+                        </MudChip>
+                    }
+                </div>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    今日已作答 <strong>@(_currentUser?.TodayAnsweredCount ?? 0)</strong> / <strong>@(_currentUser?.DailyTargetQuestions ?? 20)</strong> 题 · 坚持每日打卡保持连击火花 🔥
+                </MudText>
+            </div>
+        </div>
+
+        <div class="d-flex align-center gap-3 flex-wrap">
+            <div style="min-width: 140px;">
+                <MudProgressLinear Color="@(IsDailyTargetCompleted() ? Color.Success : Color.Primary)" Value="@GetDailyTargetProgressPercent()" Rounded="true" Style="height: 10px; border-radius: 5px;" />
+            </div>
+            @if (IsDailyTargetCompleted())
+            {
+                @if (IsDailyRewardClaimed())
+                {
+                    <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small" Icon="@Icons.Material.Filled.EmojiEvents">
+                        🏆 今日达标礼包已领
+                    </MudChip>
+                }
+                else
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" StartIcon="@Icons.Material.Filled.CardGiftcard" OnClick="ClaimDailyRewardAsync" Class="font-weight-bold" Style="box-shadow: 0 0 12px rgba(245, 158, 11, 0.4); animation: pulse 2s infinite;">
+                        🎉 领取打卡达标大礼包 (+50 EXP, +30 金币)
+                    </MudButton>
+                }
+            }
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Edit" OnClick="OpenEditTargetDialog">
+                调整目标 (@(_currentUser?.DailyTargetQuestions ?? 20) 题/天)
+            </MudButton>
+        </div>
+    </div>
+
+    <!-- 数据概览卡片矩阵 (交互式快捷直达) -->
+    <MudGrid Class="mb-6">
+        <MudItem xs="12" sm="6" md="3">
+            <div class="glass-card pa-4 d-flex align-center gap-4 cursor-pointer" @onclick='() => NavigationManager.NavigateTo("/practice-records")' style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
+                <MudAvatar Color="Color.Primary" Size="Size.Large" Variant="Variant.Filled">
+                    <MudIcon Icon="@Icons.Material.Filled.Quiz" />
+                </MudAvatar>
+                <div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">累计刷题 ➔</MudText>
+                    <MudText Typo="Typo.h5" Class="font-weight-bold">@(_currentUser?.TotalAnswered ?? 0) 道</MudText>
+                </div>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <div class="glass-card pa-4 d-flex align-center gap-4 cursor-pointer" @onclick='() => NavigationManager.NavigateTo("/practice-records")' style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
+                <MudAvatar Color="Color.Success" Size="Size.Large" Variant="Variant.Filled">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" />
+                </MudAvatar>
+                <div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">综合正确率 ➔</MudText>
+                    <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Success">
+                        @GetAccuracyRate()%
+                    </MudText>
+                </div>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <div class="glass-card pa-4 d-flex align-center gap-4 cursor-pointer" @onclick='() => NavigationManager.NavigateTo("/error-book")' style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
+                <MudAvatar Color="Color.Error" Size="Size.Large" Variant="Variant.Filled">
+                    <MudIcon Icon="@Icons.Material.Filled.AutoFixHigh" />
+                </MudAvatar>
+                <div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">待净化错题 ➔</MudText>
+                    <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Error">
+                        @_unmasteredCount 道
+                    </MudText>
+                </div>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <div class="glass-card pa-4 d-flex align-center gap-4 cursor-pointer" @onclick='() => NavigationManager.NavigateTo("/achievements")' style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
+                <MudAvatar Color="Color.Warning" Size="Size.Large" Variant="Variant.Filled">
+                    <MudIcon Icon="@Icons.Material.Filled.Whatshot" />
+                </MudAvatar>
+                <div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">最高连击纪录 ➔</MudText>
+                    <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Warning">
+                        @(_currentUser?.MaxCombo ?? 0) Combo
+                    </MudText>
+                </div>
+            </div>
+        </MudItem>
+    </MudGrid>
+
+    <!-- AI 学情演进与周度能力跨越对比 Card -->
+    @if (_diagnosisReport != null)
+    {
+        <div class="glass-card pa-6 mb-6" style="border-left: 4px solid #8b5cf6; background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(30, 41, 59, 0.5) 100%);">
+            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Psychology" Color="Color.Secondary" Size="Size.Large" />
+                    <div>
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">AI 学情演进与能力破壁诊断</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">关注学生真正进步：周度对比 + 靶向破壁 + 遗忘衰减预警</MudText>
+                    </div>
+                </div>
+                <div class="d-flex align-center gap-2">
+                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Warning">
+                        综合星级：
+                        @for (int i = 0; i < _diagnosisReport.StarRating; i++)
+                        {
+                            <span>⭐</span>
+                        }
+                    </MudText>
+                </div>
+            </div>
+
+            <!-- 周度真实进步对比指标 -->
+            <div class="pa-4 mb-4 rounded d-flex flex-wrap gap-4 align-center justify-space-between" style="background: rgba(139, 92, 246, 0.12); border: 1px solid rgba(139, 92, 246, 0.25);">
+                <div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">周度正确率变动</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Color="@(_diagnosisReport.WeeklyAccuracyDelta >= 0 ? Color.Success : Color.Error)">
+                        @(_diagnosisReport.WeeklyAccuracyDelta >= 0 ? "+" : "")@_diagnosisReport.WeeklyAccuracyDelta %
+                    </MudText>
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">解题速度提升</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Info">
+                        提速 @_diagnosisReport.SpeedImprovementSeconds 秒 / 题
+                    </MudText>
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">待复习艾宾浩斯节点</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Color="@(_diagnosisReport.PendingSpacedReviewCount > 0 ? Color.Warning : Color.Success)">
+                        @_diagnosisReport.PendingSpacedReviewCount 个
+                    </MudText>
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">攻坚弱项数量</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Primary">
+                        @_diagnosisReport.TopWeakCategories.Count 个
+                    </MudText>
+                </div>
+            </div>
+
+            <div class="pa-4 rounded mb-4" style="background: var(--sub-card-bg); white-space: pre-line;">
+                <MudText Typo="Typo.body1" Style="line-height: 1.6;">
+                    @_diagnosisReport.AiGrowthAdvice
+                </MudText>
+            </div>
+
+            @if (_diagnosisReport.PrerequisiteWarnings.Count > 0)
+            {
+                <div class="pa-4 mb-4 rounded" style="background: rgba(245, 158, 11, 0.12); border-left: 4px solid #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3);">
+                    <div class="d-flex align-center gap-2 mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.AccountTree" Color="Color.Warning" />
+                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Warning">
+                            🔗 AI 前置知识图谱溯源诊断 (前置概念薄弱警报)
+                        </MudText>
+                    </div>
+                    @foreach (var warn in _diagnosisReport.PrerequisiteWarnings)
+                    {
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
+                            <MudText Typo="Typo.body2" Style="line-height: 1.5;">
+                                @warn.ActionAdvice
+                            </MudText>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" OnClick="() => NavigateCategory(warn.PrerequisiteCategory)">
+                                优先巩固前置考点：【@warn.PrerequisiteCategory】 ➔
+                            </MudButton>
+                        </div>
+                    }
+                </div>
+            }
+
+            <div class="d-flex align-center justify-space-between flex-wrap gap-4 pt-2">
+                <div class="d-flex align-center gap-2 flex-wrap">
+                    @if (_diagnosisReport.TopMasteredCategories.Count > 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="font-weight-bold" Color="Color.Success">🔥 精通考点：</MudText>
+                        @foreach (var c in _diagnosisReport.TopMasteredCategories)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Outlined">@c</MudChip>
+                        }
+                    }
+                    @if (_diagnosisReport.TopWeakCategories.Count > 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="font-weight-bold" Color="Color.Error">⚠️ 攻坚弱项：</MudText>
+                        @foreach (var c in _diagnosisReport.TopWeakCategories)
+                        {
+                            <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Outlined">@c</MudChip>
+                        }
+                    }
+                </div>
+
+                @if (!string.IsNullOrEmpty(_diagnosisReport.RecommendedSubject))
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="NavigateRecommendedPractice" Class="font-weight-bold px-6">
+                        开启 AI 靶向弱项精准拔高：【@_diagnosisReport.RecommendedCategory】 ➔
+                    </MudButton>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- 艾宾浩斯遗忘曲线 - 记忆巩固唤醒副本 Card -->
+    @if (_pendingSpacedNodes.Count > 0)
+    {
+        <div class="glass-card pa-6 mb-6" style="border-left: 4px solid #f59e0b; background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(30, 41, 59, 0.5) 100%);">
+            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.HourglassBottom" Color="Color.Warning" Size="Size.Large" />
+                    <div>
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">艾宾浩斯遗忘曲线 - 记忆唤醒副本</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">在记忆临界衰减点进行精准复习，巩固率提升 3.5 倍</MudText>
+                    </div>
+                </div>
+                <div class="d-flex align-center gap-2 flex-wrap">
+                    <MudChip T="string" Color="Color.Warning" Variant="Variant.Filled" Style="font-weight: 800;">
+                        待复习考点: @_pendingSpacedNodes.Count 个
+                    </MudChip>
+                    <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" StartIcon="@Icons.Material.Filled.SportsKabaddi" OnClick="StartBatchSpacedReview" Style="font-weight: 700;">
+                        🚀 启动今日记忆唤醒冲刺 ➔
+                    </MudButton>
+                </div>
+            </div>
+
+            <MudGrid Class="mb-3">
+                @foreach (var node in _pendingSpacedNodes.Take(4))
+                {
+                    <MudItem xs="12" sm="6" md="3">
+                        <div class="pa-4 glass-card h-100" style="background: var(--sub-card-bg); border-top: 3px solid #f59e0b;">
+                            <div class="d-flex align-center justify-space-between mb-1">
+                                <MudChip T="string" Color="Color.Primary" Size="Size.Small">@node.Subject</MudChip>
+                                <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Outlined">@node.SpacedRepetitionStatus</MudChip>
+                            </div>
+                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold my-1">@node.Category</MudText>
+                            <div class="d-flex justify-space-between mud-text-secondary mb-1" style="font-size: 0.8rem;">
+                                <span>记忆保留率</span>
+                                <span style="font-weight: 700; color: #f59e0b;">@node.MemoryRetentionRate %</span>
+                            </div>
+                            <MudProgressLinear Color="Color.Warning" Value="@node.MemoryRetentionRate" Style="height: 5px; border-radius: 3px;" Class="mb-3" />
+                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" FullWidth="true" OnClick="() => NavigateSpacedReview(node.Category, node.Subject)">
+                                立即唤醒记忆 ➔
+                            </MudButton>
+                        </div>
+                    </MudItem>
+                }
+            </MudGrid>
+        </div>
+    }
+
+    <!-- 知识点全景演进星盘 (Interactive Knowledge Evolution Map) -->
+    @if (_masteryOverview.Count > 0)
+    {
+        <div class="glass-card pa-6 mb-6">
+            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Hub" Color="Color.Primary" />
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">全景知识演进与能力星盘</MudText>
+                </div>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">点击任意考点卡片即可一键发起 AI 靶向训练</MudText>
+            </div>
+
+            <MudGrid>
+                @foreach (var m in _masteryOverview.Take(8))
+                {
+                    <MudItem xs="12" sm="6" md="3">
+                        <div class="pa-4 glass-card cursor-pointer" style="background: var(--sub-card-bg); transition: transform 0.2s;" @onclick="() => NavigateCategory(m.Category, m.Subject)">
+                            <div class="d-flex align-center justify-space-between mb-2">
+                                <MudChip T="string" Color="Color.Primary" Size="Size.Small">@m.Subject</MudChip>
+                                <MudChip T="string" Color="@(m.MasteryScore >= 85 ? Color.Success : (m.MasteryScore >= 65 ? Color.Info : Color.Error))" Size="Size.Small">
+                                    @m.MasteryLevel
+                                </MudChip>
+                            </div>
+                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">@m.Category</MudText>
+                            <div class="d-flex justify-space-between mb-1" style="font-size: 0.8rem;">
+                                <span>掌握度得分</span>
+                                <span class="font-weight-bold">@m.MasteryScore / 100</span>
+                            </div>
+                            <MudProgressLinear Color="@(m.MasteryScore >= 85 ? Color.Success : (m.MasteryScore >= 65 ? Color.Info : Color.Error))" Value="@m.MasteryScore" Style="height: 6px; border-radius: 3px;" Class="mb-2" />
+                            <div class="d-flex justify-space-between mud-text-secondary" style="font-size: 0.75rem;">
+                                <span>正确率: @m.AccuracyRate%</span>
+                                <span>做题数: @m.TotalAnswered 题</span>
+                            </div>
+                        </div>
+                    </MudItem>
+                }
+            </MudGrid>
+        </div>
+    }
+
+    <!-- 快捷功能入口 -->
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <div class="glass-card pa-6 h-100">
+                <div class="d-flex align-center justify-space-between mb-3">
+                    <div class="d-flex align-center gap-2">
+                        <MudIcon Icon="@Icons.Material.Filled.FlashOn" Color="Color.Primary" />
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">
+                            年级学科一键专练 (@(_currentUser?.Grade ?? "当前年级"))
+                        </MudText>
+                    </div>
+                </div>
+                <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+                    根据你的学段自动匹配课程与中高考核心考点，享受连击经验加成与即时反馈。
+                </MudText>
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var sub in GetCurrentGradeSubjects())
+                    {
+                        <MudChip T="string" OnClick='() => NavigateSubject(sub)' Color="Color.Primary" Variant="Variant.Outlined" Style="font-weight: 600; cursor: pointer;">
+                            📖 @sub
+                        </MudChip>
+                    }
+                </div>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <div class="glass-card pa-6 h-100">
+                <div class="d-flex align-center justify-space-between mb-3">
+                    <div class="d-flex align-center gap-2">
+                        <MudIcon Icon="@Icons.Material.Filled.BugReport" Color="Color.Error" />
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">
+                            待消灭错题副本
+                        </MudText>
+                    </div>
+                    <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Filled">
+                        @_unmasteredCount 道待净化
+                    </MudChip>
+                </div>
+                <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+                    你在刷题中积累了 @_unmasteredCount 道未净化的错题。改错成功可获得 1.5 倍经验值与 AI 变式强化！
+                </MudText>
+                <div class="d-flex gap-2 flex-wrap">
+                    <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick='() => NavigationManager.NavigateTo("/error-book")' Style="font-weight: 700;">
+                        进入错题净化副本
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.SportsKabaddi" OnClick='() => NavigationManager.NavigateTo("/practice?mode=sprint")'>
+                        开启错题专项突击
+                    </MudButton>
+                </div>
+            </div>
+        </MudItem>
+    </MudGrid>
+    }
+
+    <!-- 调整每日刷题目标 Dialog -->
+    <MudDialog @bind-Visible="_targetDialogVisible" Options="_targetDialogOptions">
+        <TitleContent>
+            <div class="d-flex align-center gap-2">
+                <MudIcon Icon="@Icons.Material.Filled.TrackChanges" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="font-weight-bold">设定每日刷题打卡目标</MudText>
+            </div>
+        </TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                合理设定每日刷题量，保持专注节奏，循序渐进构建坚实知识网络！
+            </MudText>
+            <MudNumericField T="int" @bind-Value="_newDailyTarget" Label="每日目标题数 (建议 10~50 题)" Min="1" Max="200" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <div class="d-flex gap-2 mt-3 flex-wrap">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small" OnClick="() => _newDailyTarget = 10" Style="cursor: pointer;">10 题/天 (轻量热身)</MudChip>
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small" OnClick="() => _newDailyTarget = 20" Style="cursor: pointer;">20 题/天 (标准进阶)</MudChip>
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small" OnClick="() => _newDailyTarget = 30" Style="cursor: pointer;">30 题/天 (学霸冲刺)</MudChip>
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small" OnClick="() => _newDailyTarget = 50" Style="cursor: pointer;">50 题/天 (极限突破)</MudChip>
+            </div>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="() => _targetDialogVisible = false">取消</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDailyTargetAsync">保存目标</MudButton>
+        </DialogActions>
+    </MudDialog>
+
+    <!-- 家长编辑寄语弹窗 -->
+    <MudDialog @bind-Visible="_parentNoteDialogVisible">
+        <TitleContent>
+            <div class="d-flex align-center gap-2">
+                <MudIcon Icon="@Icons.Material.Filled.Favorite" Color="Color.Secondary" />
+                <MudText Typo="Typo.h6" Class="font-weight-bold">写给孩子 @(_selectedChild?.Username) 的暖心寄语</MudText>
+            </div>
+        </TitleContent>
+        <DialogContent>
+            <div class="d-flex flex-column gap-3 py-2">
+                <MudTextField T="string" @bind-Value="_newParentNote" Label="寄语内容" Variant="Variant.Outlined"
+                              Lines="3" MaxLength="300" Counter="300"
+                              Placeholder="例如：小明，今天物理浮力题要细心审题哦，晚上做好吃的犒劳你！" />
+                <div class="d-flex align-center gap-2 flex-wrap">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">快捷寄语灵感：</MudText>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Style="cursor: pointer;" OnClick='() => _newParentNote = "今天也要保持专注与细心，做完记得复习错题，加油！"'>🎯 专注细心</MudChip>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success" Style="cursor: pointer;" OnClick='() => _newParentNote = "一步一个脚印，错题就是进步的阶梯，爸爸妈妈为你自豪！"'>🌱 鼓励陪伴</MudChip>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning" Style="cursor: pointer;" OnClick='() => _newParentNote = "挑战今日刷题目标，达成后周末带你出去放松玩耍！"'>🎁 目标奖励</MudChip>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Secondary" Style="cursor: pointer;" OnClick='() => _newParentNote = "中考冲刺是一场稳步向前的马拉松，稳住心态，错题是提分的最佳燃料！"'>🔥 中考冲刺</MudChip>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" Style="cursor: pointer;" OnClick='() => _newParentNote = "尽力而为，累了就站起来喝杯热牛奶放松一下，身心健康永远第一位！"'>☕ 考前减压</MudChip>
+                </div>
+            </div>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="() => _parentNoteDialogVisible = false">取消</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="SaveParentNoteAsync">发布寄语</MudButton>
+        </DialogActions>
+    </MudDialog>
+</MudContainer>
+
+@code {
+    private User? _currentUser;
+    private int _unmasteredCount = 0;
+    private EvolutionDiagnosisReportDto? _diagnosisReport;
+    private List<KnowledgePointMasteryDto> _pendingSpacedNodes = new List<KnowledgePointMasteryDto>();
+    private List<KnowledgePointMasteryDto> _masteryOverview = new List<KnowledgePointMasteryDto>();
+    private List<HomeworkAssignment> _pendingAssignments = new List<HomeworkAssignment>();
+
+    // 家长协同工作台状态
+    private List<User> _boundStudents = new();
+    private User? _selectedChild = null;
+    private int _childUnmasteredCount = 0;
+    private List<HomeworkAssignment> _childAssignments = new();
+    private string _newParentNote = string.Empty;
+    private bool _parentNoteDialogVisible = false;
+
+    // 教师教研与题库工作台状态
+    private int _totalQuestionsCount = 0;
+    private int _publicQuestionsCount = 0;
+    private int _myQuestionsCount = 0;
+
+    // 超级管理员运维大盘状态
+    private int _totalUsersCount = 0;
+    private int _pendingUsersCount = 0;
+    private int _adminQuestionsCount = 0;
+    private bool _isInitialLoading = true;
+
+    private bool _targetDialogVisible = false;
+    private int _newDailyTarget = 20;
+    private readonly DialogOptions _targetDialogOptions = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserSession.OnUserChanged += OnUserChangedHandler;
+        await LoadDashboardDataAsync();
+    }
+
+    private async Task LoadDashboardDataAsync()
+    {
+        try
+        {
+            _currentUser = await GamificationService.GetCurrentUserAsync();
+            var countTask = ErrorBookService.GetUnmasteredCountAsync(_currentUser?.Id);
+
+            if (_currentUser != null)
+            {
+                if (_currentUser.Role == UserRole.Student)
+                {
+                    var diagTask = StudentEvolutionService.GenerateDiagnosisReportAsync(_currentUser.Id);
+                    var spacedTask = StudentEvolutionService.GetPendingSpacedReviewNodesAsync(_currentUser.Id);
+                    var masteryTask = StudentEvolutionService.GetMasteryOverviewAsync(_currentUser.Id);
+                    var assignTask = PracticeService.GetHomeworkAssignmentsByStudentAsync(_currentUser.Id);
+
+                    await Task.WhenAll(countTask, diagTask, spacedTask, masteryTask, assignTask);
+
+                    _unmasteredCount = await countTask;
+                    _diagnosisReport = await diagTask;
+                    _pendingSpacedNodes = await spacedTask;
+                    _masteryOverview = await masteryTask;
+                    var assignments = await assignTask;
+                    _pendingAssignments = assignments.Where(a => !a.IsCompleted).ToList();
+                }
+                else if (_currentUser.Role == UserRole.Parent)
+                {
+                    _unmasteredCount = await countTask;
+                    _boundStudents = await UserSession.GetBoundStudentsAsync(_currentUser.Id);
+                    if (_boundStudents.Any())
+                    {
+                        _selectedChild = _boundStudents.First();
+                        var childCountTask = ErrorBookService.GetUnmasteredCountAsync(_selectedChild.Id);
+                        var childAssignTask = PracticeService.GetHomeworkAssignmentsByStudentAsync(_selectedChild.Id);
+                        await Task.WhenAll(childCountTask, childAssignTask);
+                        _childUnmasteredCount = await childCountTask;
+                        _childAssignments = await childAssignTask;
+                    }
+                }
+                else if (_currentUser.Role == UserRole.Teacher)
+                {
+                    _unmasteredCount = await countTask;
+                    var qStats = await QuestionManagementService.GetQuestionStatisticsAsync(_currentUser.Id);
+                    _totalQuestionsCount = qStats.TotalQuestions;
+                    _publicQuestionsCount = qStats.PublicQuestions;
+                    _myQuestionsCount = qStats.MyQuestions;
+                }
+                else if (_currentUser.Role == UserRole.SuperAdmin)
+                {
+                    _unmasteredCount = await countTask;
+                    var uStats = await UserSession.GetUserStatisticsAsync();
+                    _totalUsersCount = uStats.TotalUsers;
+                    _pendingUsersCount = uStats.PendingUsers;
+                    var qStats = await QuestionManagementService.GetQuestionStatisticsAsync();
+                    _adminQuestionsCount = qStats.TotalQuestions;
+                }
+            }
+            else
+            {
+                _unmasteredCount = await countTask;
+            }
+        }
+        finally
+        {
+            _isInitialLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void StartAssignmentPractice(HomeworkAssignment assign)
+    {
+        NavigationManager.NavigateTo($"/practice?assignmentId={assign.Id}&subject={Uri.EscapeDataString(assign.Subject)}&category={Uri.EscapeDataString(assign.Category)}&count={assign.QuestionCount}&difficulty={assign.TargetDifficulty}");
+    }
+
+    private void StartAdaptivePractice()
+    {
+        if (_pendingSpacedNodes.Any())
+        {
+            var first = _pendingSpacedNodes.First();
+            NavigationManager.NavigateTo($"/practice?subject={Uri.EscapeDataString(first.Subject)}&category={Uri.EscapeDataString(first.Category)}&mode=spaced_review");
+        }
+        else if (_masteryOverview.Any(m => m.MasteryScore < 60))
+        {
+            var weak = _masteryOverview.OrderBy(m => m.MasteryScore).First();
+            NavigationManager.NavigateTo($"/practice?subject={Uri.EscapeDataString(weak.Subject)}&category={Uri.EscapeDataString(weak.Category)}");
+        }
+        else
+        {
+            NavigationManager.NavigateTo("/practice?mode=sprint");
+        }
+    }
+
+    private async void OnUserChangedHandler()
+    {
+        await LoadDashboardDataAsync();
+    }
+
+    public void Dispose()
+    {
+        UserSession.OnUserChanged -= OnUserChangedHandler;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("renderAllMath");
+        }
+        catch { }
+    }
+
+    private string GetAccuracyRate()
+    {
+        if (_currentUser == null || _currentUser.TotalAnswered == 0) return "100";
+        double rate = (double)_currentUser.TotalCorrect / _currentUser.TotalAnswered * 100;
+        return rate.ToString("F1");
+    }
+
+    private void NavigateCategory(string category, string? subject = null)
+    {
+        string url = $"/practice?category={Uri.EscapeDataString(category)}";
+        if (!string.IsNullOrWhiteSpace(subject))
+        {
+            url += $"&subject={Uri.EscapeDataString(subject)}";
+        }
+        NavigationManager.NavigateTo(url);
+    }
+
+    private void NavigateSubject(string subject)
+    {
+        NavigationManager.NavigateTo($"/practice?subject={Uri.EscapeDataString(subject)}");
+    }
+
+    private void NavigateSpacedReview(string category, string? subject = null)
+    {
+        string url = $"/practice?category={Uri.EscapeDataString(category)}&mode=spaced_review";
+        if (!string.IsNullOrWhiteSpace(subject))
+        {
+            url += $"&subject={Uri.EscapeDataString(subject)}";
+        }
+        NavigationManager.NavigateTo(url);
+    }
+
+    private void StartBatchSpacedReview()
+    {
+        if (_pendingSpacedNodes.Count > 0)
+        {
+            var first = _pendingSpacedNodes[0];
+            NavigateSpacedReview(first.Category, first.Subject);
+        }
+        else
+        {
+            NavigationManager.NavigateTo("/practice?mode=sprint");
+        }
+    }
+
+    private List<string> GetCurrentGradeSubjects()
+    {
+        string grade = _currentUser?.Grade ?? "初中二年级";
+        return GradeSubjectProvider.GetSubjectsByGrade(grade);
+    }
+
+    private void OpenEditTargetDialog()
+    {
+        _newDailyTarget = _currentUser?.DailyTargetQuestions ?? 20;
+        _targetDialogVisible = true;
+    }
+
+    private async Task SaveDailyTargetAsync()
+    {
+        if (_currentUser == null) return;
+        bool success = await UserSession.UpdateDailyTargetAsync(_currentUser.Id, _newDailyTarget);
+        if (success)
+        {
+            _currentUser.DailyTargetQuestions = _newDailyTarget;
+            _targetDialogVisible = false;
+            Snackbar.Add($"每日打卡目标已设定为 {_newDailyTarget} 题/天！", Severity.Success);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private bool IsDailyTargetCompleted()
+    {
+        if (_currentUser == null) return false;
+        return _currentUser.TodayAnsweredCount >= _currentUser.DailyTargetQuestions;
+    }
+
+    private double GetDailyTargetProgressPercent()
+    {
+        if (_currentUser == null || _currentUser.DailyTargetQuestions <= 0) return 0;
+        return Math.Min(100.0, (double)_currentUser.TodayAnsweredCount / _currentUser.DailyTargetQuestions * 100.0);
+    }
+
+    private async Task CopyBindingCodeAsync()
+    {
+        if (string.IsNullOrEmpty(_currentUser?.BindingCode)) return;
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", _currentUser.BindingCode);
+            Snackbar.Add($"已复制学生专属绑定码：{_currentUser.BindingCode}", Severity.Success);
+        }
+        catch
+        {
+            Snackbar.Add($"学生专属绑定码为：{_currentUser.BindingCode}", Severity.Info);
+        }
+    }
+
+    private void NavigateRecommendedPractice()
+    {
+        if (_diagnosisReport != null)
+        {
+            NavigateCategory(_diagnosisReport.RecommendedCategory, _diagnosisReport.RecommendedSubject);
+        }
+    }
+
+    private int GetExpThreshold()
+    {
+        return (_currentUser?.Level ?? 1) * 100;
+    }
+
+    private double GetExpProgressPercent()
+    {
+        if (_currentUser == null) return 0;
+        int threshold = GetExpThreshold();
+        if (threshold <= 0) return 0;
+        return Math.Min(100.0, (double)_currentUser.Exp / threshold * 100.0);
+    }
+
+    private bool IsDailyRewardClaimed()
+    {
+        if (_currentUser == null) return false;
+        return _currentUser.LastDailyRewardClaimDate.HasValue && _currentUser.LastDailyRewardClaimDate.Value.Date == DateTime.Today;
+    }
+
+    private async Task ClaimDailyRewardAsync()
+    {
+        if (_currentUser == null) return;
+        var (success, msg, exp, coins) = await GamificationService.ClaimDailyTargetRewardAsync(_currentUser.Id);
+        if (success)
+        {
+            _currentUser = await GamificationService.GetCurrentUserAsync();
+            Snackbar.Add(msg, Severity.Success);
+
+            try
+            {
+                if (_currentUser.ConfettiEnabled)
+                {
+                    await JSRuntime.InvokeVoidAsync("triggerConfetti");
+                }
+                if (_currentUser.SoundEffectsEnabled)
+                {
+                    await JSRuntime.InvokeVoidAsync("playRewardAudio", "levelup");
+                }
+            }
+            catch { }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        else
+        {
+            Snackbar.Add(msg, Severity.Info);
+        }
+    }
+
+    private void OpenParentNoteDialog()
+    {
+        if (_selectedChild != null)
+        {
+            _newParentNote = _selectedChild.ParentEncouragementNote ?? string.Empty;
+            _parentNoteDialogVisible = true;
+        }
+    }
+
+    private async Task SaveParentNoteAsync()
+    {
+        if (_selectedChild != null && !string.IsNullOrWhiteSpace(_newParentNote))
+        {
+            var (success, msg) = await UserSession.UpdateParentEncouragementNoteAsync(_selectedChild.Id, _newParentNote);
+            if (success)
+            {
+                _selectedChild.ParentEncouragementNote = _newParentNote.Trim();
+                _selectedChild.ParentNoteUpdatedAt = DateTime.Now;
+                _parentNoteDialogVisible = false;
+                Snackbar.Add("🎉 暖心寄语已发布，孩子将在下次刷新或登录时看到！", Severity.Success);
+                await InvokeAsync(StateHasChanged);
+            }
+            else
+            {
+                Snackbar.Add(msg, Severity.Warning);
+            }
+        }
+    }
+
+    private string GetChildAccuracyRate()
+    {
+        if (_selectedChild == null || _selectedChild.TotalAnswered == 0) return "0";
+        double rate = (double)_selectedChild.TotalCorrect / _selectedChild.TotalAnswered * 100;
+        return rate.ToString("F1");
+    }
+}

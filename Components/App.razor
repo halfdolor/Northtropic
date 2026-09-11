@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Northtropic - AI 智适应精准助学与错题净化提分系统</title>
+    <base href="/" />
+    
+    <!-- 引入炫酷现代字体与图标 -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+    
+    <!-- MudBlazor 样式 -->
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+    <link rel="stylesheet" href="app.css?v=20260809_v10" />
+    <link rel="stylesheet" href="Northtropic.styles.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+
+<body class="bg-gradient">
+    <Routes @rendermode="InteractiveServer" />
+    
+    <!-- MudBlazor JS 脚本 -->
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <!-- Canvas Confetti 粒子打卡/答对庆祝特效 -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- KaTeX 数学公式渲染引擎与自动渲染扩展 -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    
+    <script>
+        // 全局理科公式渲染引擎 (KaTeX)
+        window.renderAllMath = function (targetSelector) {
+            let attempts = 0;
+            function doRender() {
+                if (typeof renderMathInElement !== 'function') {
+                    if (attempts++ < 20) {
+                        setTimeout(doRender, 150);
+                    }
+                    return;
+                }
+                const rootEl = targetSelector ? (document.querySelector(targetSelector) || document.body) : document.body;
+                if (!rootEl) return;
+                try {
+                    renderMathInElement(rootEl, {
+                        delimiters: [
+                            { left: '$$', right: '$$', display: true },
+                            { left: '$', right: '$', display: false },
+                            { left: '\\(', right: '\\)', display: false },
+                            { left: '\\[', right: '\\]', display: true }
+                        ],
+                        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code', 'option'],
+                        throwOnError: false,
+                        errorColor: '#ef4444'
+                    });
+                } catch (e) {
+                    console.warn("KaTeX render notice:", e);
+                }
+            }
+
+            if (window.requestAnimationFrame) {
+                window.requestAnimationFrame(function () {
+                    setTimeout(doRender, 20);
+                });
+            } else {
+                doRender();
+            }
+        };
+
+        window.renderMathInElementScoped = function (selector) {
+            window.renderAllMath(selector || '.practice-math-container');
+        };
+
+        // 全局粒子与音效触发函数
+        window.triggerConfetti = function () {
+            if (typeof confetti === 'function') {
+                confetti({
+                    particleCount: 90,
+                    spread: 80,
+                    origin: { y: 0.6 }
+                });
+            }
+        };
+
+        window.playRewardAudio = function (type) {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                if (type === 'correct') {
+                    // 清脆悦耳的大三和弦 (C5, E5, G5, C6)
+                    const notes = [523.25, 659.25, 783.99, 1046.50];
+                    notes.forEach((freq, i) => {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.06);
+                        gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.06);
+                        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.06 + 0.35);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start(ctx.currentTime + i * 0.06);
+                        osc.stop(ctx.currentTime + i * 0.06 + 0.35);
+                    });
+                } else if (type === 'combo') {
+                    // 连击爆发声效
+                    const notes = [659.25, 880.00, 1046.50, 1318.51];
+                    notes.forEach((freq, i) => {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.05);
+                        gain.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.05);
+                        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.05 + 0.3);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start(ctx.currentTime + i * 0.05);
+                        osc.stop(ctx.currentTime + i * 0.05 + 0.3);
+                    });
+                } else if (type === 'levelup') {
+                    // 凯旋式升级交响音效
+                    const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51];
+                    notes.forEach((freq, i) => {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.1);
+                        gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.1);
+                        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.1 + 0.5);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start(ctx.currentTime + i * 0.1);
+                        osc.stop(ctx.currentTime + i * 0.1 + 0.5);
+                    });
+                } else if (type === 'wrong') {
+                    // 温和提示音（不刺耳）
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(261.63, ctx.currentTime); // C4
+                    osc.frequency.exponentialRampToValueAtTime(196.00, ctx.currentTime + 0.25); // G3
+                    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.3);
+                } else if (type === 'reward') {
+                    // 温暖清澈的钟琴琶音 (D5, F#5, A5, D6)
+                    const notes = [587.33, 739.99, 880.00, 1174.66];
+                    notes.forEach((freq, i) => {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.08);
+                        gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.08);
+                        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.08 + 0.45);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start(ctx.currentTime + i * 0.08);
+                        osc.stop(ctx.currentTime + i * 0.08 + 0.45);
+                    });
+                } else if (type === 'streak' || type === 'shield') {
+                    // 护盾激活/连续里程碑柔和防护音 (A4, C#5, E5)
+                    const notes = [440.00, 554.37, 659.25];
+                    notes.forEach((freq, i) => {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.07);
+                        gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.07);
+                        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.07 + 0.35);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start(ctx.currentTime + i * 0.07);
+                        osc.stop(ctx.currentTime + i * 0.07 + 0.35);
+                    });
+                }
+            } catch (e) {
+                console.log("Audio play notice:", e);
+            }
+        };
+
+        window.openDownloadLink = function (url, fileName) {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        };
+
+        window.downloadTextFile = function (fileName, content, mimeType) {
+            const blob = new Blob([content], { type: mimeType || 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+
+        window.downloadBase64File = function (fileName, base64Data, mimeType) {
+            const byteCharacters = atob(base64Data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: mimeType || 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+
+        window.printCurrentPage = function () {
+            window.print();
+        };
+
+        // 升级版智能草稿演算本 (Scratchpad Canvas - 含多笔色/粗细/荧光/撤销Undo)
+        const scratchpads = {};
+        window.initScratchpad = function (canvasId, strokeColor, lineWidth) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * (window.devicePixelRatio || 1);
+            canvas.height = rect.height * (window.devicePixelRatio || 1);
+            ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+
+            scratchpads[canvasId] = {
+                canvas: canvas,
+                ctx: ctx,
+                isDrawing: false,
+                color: strokeColor || '#00e5ff',
+                width: lineWidth || 3,
+                isEraser: false,
+                isHighlighter: false,
+                history: [],
+                strokes: [],
+                currentStroke: null
+            };
+
+            // 保存初始空白状态
+            try {
+                const initialSnapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                scratchpads[canvasId].history.push(initialSnapshot);
+            } catch (e) { }
+
+            function getPos(e) {
+                const r = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return {
+                    x: clientX - r.left,
+                    y: clientY - r.top
+                };
+            }
+
+            function startDraw(e) {
+                const sp = scratchpads[canvasId];
+                if (!sp) return;
+                sp.isDrawing = true;
+                const p = getPos(e);
+                
+                if (!sp.isEraser) {
+                    sp.currentStroke = {
+                        xs: [Math.round(p.x)],
+                        ys: [Math.round(p.y)],
+                        ts: [Date.now()]
+                    };
+                    sp.strokes.push(sp.currentStroke);
+                }
+
+                sp.ctx.beginPath();
+                sp.ctx.moveTo(p.x, p.y);
+                if (e.touches) e.preventDefault();
+            }
+
+            function draw(e) {
+                const sp = scratchpads[canvasId];
+                if (!sp || !sp.isDrawing) return;
+                const p = getPos(e);
+                sp.ctx.lineWidth = sp.width;
+                sp.ctx.lineCap = 'round';
+                sp.ctx.lineJoin = 'round';
+
+                if (sp.isEraser) {
+                    sp.ctx.globalCompositeOperation = 'destination-out';
+                    sp.ctx.globalAlpha = 1.0;
+                } else if (sp.isHighlighter) {
+                    sp.ctx.globalCompositeOperation = 'source-over';
+                    sp.ctx.globalAlpha = 0.35;
+                    sp.ctx.strokeStyle = sp.color;
+                } else {
+                    sp.ctx.globalCompositeOperation = 'source-over';
+                    sp.ctx.globalAlpha = 1.0;
+                    sp.ctx.strokeStyle = sp.color;
+                }
+
+                if (sp.currentStroke && !sp.isEraser) {
+                    sp.currentStroke.xs.push(Math.round(p.x));
+                    sp.currentStroke.ys.push(Math.round(p.y));
+                    sp.currentStroke.ts.push(Date.now());
+                }
+
+                sp.ctx.lineTo(p.x, p.y);
+                sp.ctx.stroke();
+                if (e.touches) e.preventDefault();
+            }
+
+            function stopDraw() {
+                const sp = scratchpads[canvasId];
+                if (sp && sp.isDrawing) {
+                    sp.isDrawing = false;
+                    sp.currentStroke = null;
+                    try {
+                        const snapshot = sp.ctx.getImageData(0, 0, sp.canvas.width, sp.canvas.height);
+                        sp.history.push(snapshot);
+                        if (sp.history.length > 20) {
+                            sp.history.shift();
+                        }
+                    } catch (e) { }
+                }
+            }
+
+            canvas.onmousedown = startDraw;
+            canvas.onmousemove = draw;
+            canvas.onmouseup = stopDraw;
+            canvas.onmouseleave = stopDraw;
+
+            canvas.ontouchstart = startDraw;
+            canvas.ontouchmove = draw;
+            canvas.ontouchend = stopDraw;
+        };
+
+        window.setScratchpadTool = function (canvasId, color, width, isEraser, isHighlighter) {
+            const sp = scratchpads[canvasId];
+            if (!sp) return;
+            if (color) sp.color = color;
+            if (width) sp.width = width;
+            sp.isEraser = !!isEraser;
+            sp.isHighlighter = !!isHighlighter;
+        };
+
+        window.undoScratchpad = function (canvasId) {
+            const sp = scratchpads[canvasId];
+            if (!sp || sp.history.length <= 1) return;
+            sp.history.pop();
+            if (sp.strokes && sp.strokes.length > 0) {
+                sp.strokes.pop();
+            }
+            const prev = sp.history[sp.history.length - 1];
+            if (prev) {
+                sp.ctx.putImageData(prev, 0, 0);
+            }
+        };
+
+        window.clearScratchpad = function (canvasId) {
+            const sp = scratchpads[canvasId];
+            if (!sp) return;
+            const r = sp.canvas.getBoundingClientRect();
+            sp.ctx.clearRect(0, 0, r.width * (window.devicePixelRatio || 1), r.height * (window.devicePixelRatio || 1));
+            sp.history = [];
+            sp.strokes = [];
+            sp.currentStroke = null;
+            try {
+                const blank = sp.ctx.getImageData(0, 0, sp.canvas.width, sp.canvas.height);
+                sp.history.push(blank);
+            } catch (e) { }
+        };
+
+        window.downloadScratchpadImage = function (canvasId, filename) {
+            const sp = scratchpads[canvasId];
+            if (!sp) return;
+            const link = document.createElement('a');
+            link.download = filename || '草稿纸演算记录.png';
+            link.href = sp.canvas.toDataURL('image/png');
+            link.click();
+        };
+
+        window.getScratchpadDataUrl = function (canvasId) {
+            const sp = scratchpads[canvasId];
+            if (!sp) return '';
+            return sp.canvas.toDataURL('image/png');
+        };
+
+        window.getScratchpadOcrDataUrl = function (canvasId) {
+            const sp = scratchpads[canvasId];
+            if (!sp) return '';
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = sp.canvas.width;
+            tempCanvas.height = sp.canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            tempCtx.fillStyle = '#ffffff';
+            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            
+            try {
+                const imgData = sp.ctx.getImageData(0, 0, sp.canvas.width, sp.canvas.height);
+                const data = imgData.data;
+                let hasInk = false;
+                for (let i = 0; i < data.length; i += 4) {
+                    const alpha = data[i + 3];
+                    if (alpha > 30) {
+                        hasInk = true;
+                        data[i] = 0;
+                        data[i + 1] = 0;
+                        data[i + 2] = 0;
+                        data[i + 3] = 255;
+                    } else {
+                        data[i] = 255;
+                        data[i + 1] = 255;
+                        data[i + 2] = 255;
+                        data[i + 3] = 255;
+                    }
+                }
+                if (!hasInk) return '';
+                tempCtx.putImageData(imgData, 0, 0);
+                return tempCanvas.toDataURL('image/png');
+            } catch (e) {
+                tempCtx.drawImage(sp.canvas, 0, 0);
+                return tempCanvas.toDataURL('image/png');
+            }
+        };
+
+        window.hasScratchpadContent = function (canvasId) {
+            const sp = scratchpads[canvasId];
+            return !!(sp && ((sp.strokes && sp.strokes.length > 0) || (sp.history && sp.history.length > 1)));
+        };
+
+        // 在线手写笔迹向量智能识别 (支持汉字、数学公式与符号快速识别)
+        window.recognizeHandwritingStrokes = async function (canvasId) {
+            const sp = scratchpads[canvasId];
+            if (!sp || !sp.strokes || sp.strokes.length === 0) return '';
+
+            const rect = sp.canvas.getBoundingClientRect();
+            const validStrokes = sp.strokes.filter(s => s.xs && s.xs.length > 0);
+            if (validStrokes.length === 0) return '';
+
+            const ink = validStrokes.map(s => [s.xs, s.ys, s.ts]);
+
+            const requestData = {
+                app_version: 0.4,
+                api_level: '533.0.30',
+                device: navigator.userAgent,
+                input_type: '0',
+                options: 'enable_pre_space',
+                requests: [
+                    {
+                        writing_guide: {
+                            writing_area_width: Math.round(rect.width),
+                            writing_area_height: Math.round(rect.height)
+                        },
+                        ink: ink,
+                        language: 'zh_CN'
+                    }
+                ]
+            };
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+                const response = await fetch('https://inputtools.google.com/request?ime=handwriting&app=autodraw&dbg=1&cs=1&oe=UTF-8', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestData),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data && data[0] === 'SUCCESS' && data[1] && data[1][0] && data[1][0][1] && data[1][0][1].length > 0) {
+                        return data[1][0][1][0];
+                    }
+                }
+            } catch (e) {
+                console.warn("Handwriting stroke recognition notice:", e);
+            }
+
+            return '';
+        };
+
+        // 全局快捷键监听 (刷题专注流)
+        let activeKeyHelper = null;
+        let keyHandler = null;
+        window.registerKeyboardShortcuts = function (dotNetHelper) {
+            activeKeyHelper = dotNetHelper;
+            if (keyHandler) window.removeEventListener('keydown', keyHandler);
+
+            keyHandler = function (e) {
+                // 如果用户当前聚焦在输入框或文本域中，不拦截按键 (除非是 Ctrl+Enter)
+                const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+                if (tag === 'input' || tag === 'textarea') {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                        e.preventDefault();
+                        activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'CtrlEnter');
+                    }
+                    return;
+                }
+
+                if (e.key === 'a' || e.key === 'A' || e.key === '1') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'A');
+                } else if (e.key === 'b' || e.key === 'B' || e.key === '2') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'B');
+                } else if (e.key === 'c' || e.key === 'C' || e.key === '3') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'C');
+                } else if (e.key === 'd' || e.key === 'D' || e.key === '4') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'D');
+                } else if (e.key === 'e' || e.key === 'E' || e.key === '5') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'E');
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'Enter');
+                } else if (e.key === 'ArrowRight' || e.key === ' ') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'Next');
+                } else if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'Prev');
+                } else if (e.key === 't' || e.key === 'T') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'T');
+                } else if (e.key === 'f' || e.key === 'F') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'F');
+                } else if (e.key === 'm' || e.key === 'M') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'Star');
+                } else if (e.key === 'p' || e.key === 'P') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'Pin');
+                } else if (e.key === 's' || e.key === 'S') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'Scratchpad');
+                } else if (e.key === 'h' || e.key === 'H') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'Ai');
+                } else if (e.key === 'z' || e.key === 'Z') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'Zen');
+                } else if (e.key === 'Escape') {
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'Esc');
+                } else if (e.key === '?' || e.key === '？') {
+                    e.preventDefault();
+                    activeKeyHelper.invokeMethodAsync('OnGlobalShortcut', 'Help');
+                }
+            };
+
+            window.addEventListener('keydown', keyHandler);
+        };
+
+        window.unregisterKeyboardShortcuts = function () {
+            if (keyHandler) {
+                window.removeEventListener('keydown', keyHandler);
+                keyHandler = null;
+            }
+            activeKeyHelper = null;
+        };
+
+        // Web Speech API: STT 语音识别
+        let currentRecognition = null;
+        window.startSpeechRecognition = function (dotNetHelper, callbackMethod) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                alert("当前浏览器暂不支持 Web Speech 语音识别，建议使用 Chrome, Edge 或 Safari 浏览器。");
+                return false;
+            }
+            if (currentRecognition) {
+                try { currentRecognition.stop(); } catch(e){}
+            }
+            currentRecognition = new SpeechRecognition();
+            currentRecognition.lang = 'zh-CN';
+            currentRecognition.continuous = false;
+            currentRecognition.interimResults = true;
+
+            currentRecognition.onresult = function (event) {
+                let transcript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    transcript += event.results[i][0].transcript;
+                }
+                dotNetHelper.invokeMethodAsync(callbackMethod, transcript);
+            };
+
+            currentRecognition.onerror = function (event) {
+                console.warn('Speech recognition error:', event.error);
+            };
+
+            currentRecognition.start();
+            return true;
+        };
+
+        window.stopSpeechRecognition = function () {
+            if (currentRecognition) {
+                try { currentRecognition.stop(); } catch(e){}
+                currentRecognition = null;
+            }
+        };
+
+        // Web Speech API: TTS 语音朗读
+        window.speakText = function (text) {
+            if (!('speechSynthesis' in window)) {
+                alert("当前浏览器暂不支持 Web Speech 语音朗读功能。");
+                return;
+            }
+            window.speechSynthesis.cancel();
+            
+            // 清理 markdown 标签，提取干净文本朗读
+            let cleanText = text.replace(/[*#`_\-~>]/g, ' ').replace(/\[.*?\]\(.*?\)/g, '');
+            const utterance = new SpeechSynthesisUtterance(cleanText);
+            utterance.lang = 'zh-CN';
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+
+            const voices = window.speechSynthesis.getVoices();
+            const zhVoice = voices.find(v => v.lang.includes('zh') || v.lang.includes('CN'));
+            if (zhVoice) utterance.voice = zhVoice;
+
+            window.speechSynthesis.speak(utterance);
+        };
+
+        window.stopSpeaking = function () {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+        };
+
+        // 会话闲置监听器 (含提前 2 分钟友好倒计时预警与一键续期)
+        let inactivityTimeoutHelper = null;
+        let lastUserActivityTimestamp = Date.now();
+        let inactivityTimerInterval = null;
+        let inactivityWarningFired = false;
+
+        window.initInactivityTracker = function (dotNetHelper, timeoutMinutes = 30) {
+            inactivityTimeoutHelper = dotNetHelper;
+            lastUserActivityTimestamp = Date.now();
+            inactivityWarningFired = false;
+
+            function resetActivity() {
+                lastUserActivityTimestamp = Date.now();
+                inactivityWarningFired = false;
+            }
+
+            window.addEventListener('mousemove', resetActivity, { passive: true });
+            window.addEventListener('keydown', resetActivity, { passive: true });
+            window.addEventListener('click', resetActivity, { passive: true });
+            window.addEventListener('scroll', resetActivity, { passive: true });
+            window.addEventListener('touchstart', resetActivity, { passive: true });
+
+            if (inactivityTimerInterval) clearInterval(inactivityTimerInterval);
+
+            const timeoutMs = (timeoutMinutes || 30) * 60 * 1000;
+            const warningMs = Math.max(timeoutMs - 2 * 60 * 1000, timeoutMs / 2); // 提前 2 分钟进入预警状态
+
+            inactivityTimerInterval = setInterval(() => {
+                const idleTime = Date.now() - lastUserActivityTimestamp;
+                if (idleTime >= timeoutMs) {
+                    if (inactivityTimeoutHelper) {
+                        inactivityTimeoutHelper.invokeMethodAsync('OnInactivityTimeoutOccurred');
+                    }
+                } else if (idleTime >= warningMs && !inactivityWarningFired) {
+                    inactivityWarningFired = true;
+                    const secondsLeft = Math.max(1, Math.round((timeoutMs - idleTime) / 1000));
+                    if (inactivityTimeoutHelper) {
+                        inactivityTimeoutHelper.invokeMethodAsync('OnInactivityWarningOccurred', secondsLeft);
+                    }
+                }
+            }, 10000); // 每 10 秒轮询检测
+        };
+
+        window.extendUserSession = function () {
+            lastUserActivityTimestamp = Date.now();
+            inactivityWarningFired = false;
+        };
+    </script>
+    
+    <script src="_framework/blazor.web.js"></script>
+</body>
+
+</html>

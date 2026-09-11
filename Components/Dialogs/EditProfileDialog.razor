@@ -1,0 +1,224 @@
+@using Northtropic.Services
+@using Northtropic.Models
+@inject IUserSessionService UserSessionService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-3 pa-4" style="background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(139,92,246,0.12)); border-bottom: 1px solid var(--glass-card-border);">
+            <MudIcon Icon="@Icons.Material.Filled.ManageAccounts" Color="Color.Primary" Size="Size.Large" />
+            <div>
+                <MudText Typo="Typo.h6" Class="font-weight-bold">编辑个人资料</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    设置您的专属学霸昵称、个性化生动头像与联系方式
+                </MudText>
+            </div>
+        </div>
+    </TitleContent>
+
+    <DialogContent>
+        <div class="d-flex flex-column gap-4 pa-4" style="max-height: 70vh; overflow-y: auto;">
+            <!-- 头像预览与当前身份展示区 -->
+            <div class="d-flex align-center gap-4 pa-4 rounded-xl glass-card" style="background: var(--sub-card-bg); border: 1px solid var(--glass-card-border);">
+                <div class="d-flex align-center justify-center rounded-circle" style="width: 72px; height: 72px; font-size: 2.5rem; background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(139,92,246,0.2)); border: 2px solid var(--mud-palette-primary); box-shadow: 0 0 16px rgba(59,130,246,0.25);">
+                    @_selectedAvatar
+                </div>
+                <div class="flex-grow-1">
+                    <div class="d-flex align-center gap-2 mb-1">
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">@(string.IsNullOrWhiteSpace(_username) ? "学霸学员" : _username)</MudText>
+                        <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Filled">
+                            @CurrentUser.RoleDisplayName
+                        </MudChip>
+                    </div>
+                    <div class="d-flex align-center gap-2">
+                        @if (!string.IsNullOrEmpty(CurrentUser.ActiveTitle))
+                        {
+                            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.MilitaryTech">
+                                @CurrentUser.ActiveTitle
+                            </MudChip>
+                        }
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            Lv.@CurrentUser.Level (当前拥有 @CurrentUser.Coins 金币)
+                        </MudText>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 个性化生动头像选择面板 -->
+            <div>
+                <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2 d-flex align-center gap-1">
+                    <MudIcon Icon="@Icons.Material.Filled.Face" Size="Size.Small" Color="Color.Primary" />
+                    选择个性化头像：
+                </MudText>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    @foreach (var (avatar, name) in _presetAvatars)
+                    {
+                        bool isSelected = _selectedAvatar == avatar;
+                        <MudTooltip Text="@name">
+                            <div class="d-flex flex-column align-center justify-center rounded-lg cursor-pointer pa-2 transition-all"
+                                 style="@($"width: 52px; height: 52px; font-size: 1.6rem; border: 2px solid {(isSelected ? "var(--mud-palette-primary)" : "transparent")}; background: {(isSelected ? "rgba(59,130,246,0.2)" : "var(--sub-card-bg)")}; transform: {(isSelected ? "scale(1.1)" : "scale(1.0)")};")"
+                                 @onclick="() => _selectedAvatar = avatar">
+                                <span>@avatar</span>
+                            </div>
+                        </MudTooltip>
+                    }
+                </div>
+
+                <!-- 自定义单字符/Emoji 输入框 -->
+                <div class="d-flex align-center gap-2">
+                    <MudTextField T="string" @bind-Value="_selectedAvatar" Label="或手工输入任意个性 Emoji / 文字头像" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  MaxLength="10" HelperText="支持填入任意单个喜欢的 Emoji 表情或汉字" Class="flex-grow-1" />
+                </div>
+            </div>
+
+            <MudDivider />
+
+            <!-- 基本资料编辑表单 -->
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudTextField T="string" @bind-Value="_username" Label="姓名 / 昵称 *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Placeholder="请输入您的称呼..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Badge" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="string" @bind-Value="_grade" Label="就读/适用年级" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                        @foreach (var g in GradeSubjectProvider.AvailableGrades)
+                        {
+                            <MudSelectItem Value="@g">@g</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudTextField T="string" @bind-Value="_phoneNumber" Label="手机号码" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Placeholder="用于登录系统..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.PhoneAndroid" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudTextField T="string" @bind-Value="_email" Label="电子邮箱" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Placeholder="用于接收学情报告..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Email" />
+                </MudItem>
+            </MudGrid>
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="py-1">
+                    @_errorMessage
+                </MudAlert>
+            }
+        </div>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                   OnClick="SubmitProfileAsync" Disabled="@_isSubmitting" Class="px-6 font-weight-bold" Style="border-radius: 8px;">
+            @if (_isSubmitting)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>保存中...</span>
+            }
+            else
+            {
+                <span>保存资料</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public User CurrentUser { get; set; } = null!;
+
+    private string _username = string.Empty;
+    private string _selectedAvatar = "🎓";
+    private string _phoneNumber = string.Empty;
+    private string _email = string.Empty;
+    private string _grade = "初中二年级";
+    private string _errorMessage = string.Empty;
+    private bool _isSubmitting = false;
+
+    // 24 款预设精选生动头像
+    private readonly List<(string Avatar, string Name)> _presetAvatars = new()
+    {
+        ("🎓", "学霸博士"),
+        ("🚀", "冲刺先锋"),
+        ("🦉", "智慧之鸟"),
+        ("🦊", "灵动小狐"),
+        ("🐱", "聪慧猫咪"),
+        ("🐶", "活力汪汪"),
+        ("🐼", "功夫熊猫"),
+        ("🦁", "荣耀雄狮"),
+        ("🐯", "进击猛虎"),
+        ("🦄", "梦幻独角兽"),
+        ("🐬", "灵敏海豚"),
+        ("⚡", "超能电光"),
+        ("🌟", "闪耀星辰"),
+        ("🏆", "满分金杯"),
+        ("🎯", "百步穿杨"),
+        ("💎", "璀璨钻石"),
+        ("👑", "荣耀王者"),
+        ("🎨", "灵感大师"),
+        ("🔬", "科学探索"),
+        ("🪐", "宇宙漫游"),
+        ("🕹️", "闯关达人"),
+        ("📚", "博览群书"),
+        ("💡", "灵光乍现"),
+        ("🛡️", "坚毅守护")
+    };
+
+    protected override void OnInitialized()
+    {
+        if (CurrentUser != null)
+        {
+            _username = CurrentUser.Username;
+            _selectedAvatar = string.IsNullOrWhiteSpace(CurrentUser.Avatar) ? "🎓" : CurrentUser.Avatar;
+            _phoneNumber = CurrentUser.PhoneNumber;
+            _email = CurrentUser.Email;
+            _grade = string.IsNullOrWhiteSpace(CurrentUser.Grade) ? "初中二年级" : CurrentUser.Grade;
+        }
+    }
+
+    private async Task SubmitProfileAsync()
+    {
+        _errorMessage = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(_username))
+        {
+            _errorMessage = "姓名 / 昵称不能为空！";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_selectedAvatar))
+        {
+            _selectedAvatar = "🎓";
+        }
+
+        _isSubmitting = true;
+        await InvokeAsync(StateHasChanged);
+
+        var (success, message) = await UserSessionService.UpdateUserProfileAsync(
+            CurrentUser.Id,
+            _username,
+            _selectedAvatar,
+            _email,
+            _phoneNumber,
+            _grade
+        );
+
+        _isSubmitting = false;
+        if (success)
+        {
+            Snackbar.Add("🎉 " + message, Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        else
+        {
+            _errorMessage = message;
+            Snackbar.Add(message, Severity.Error);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -1,0 +1,556 @@
+@page "/practice-records"
+@using Northtropic.Models
+@using Northtropic.Services
+@using Northtropic.Components.Dialogs
+@using Microsoft.EntityFrameworkCore
+@inject IPracticeService PracticeService
+@inject IGamificationService GamificationService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager NavigationManager
+@inject IErrorBookService ErrorBookService
+
+<PageTitle>闯关分析 - Northtropic</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-6 mb-12">
+    <!-- 头部 Header -->
+    <div class="glass-card pa-6 mb-6 d-flex align-center justify-space-between flex-wrap gap-4">
+        <div>
+            <div class="d-flex align-center gap-3 mb-1">
+                <MudIcon Icon="@Icons.Material.Filled.Analytics" Color="Color.Primary" Size="Size.Large" />
+                <MudText Typo="Typo.h4" Class="font-weight-bold">闯关分析</MudText>
+            </div>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                深度拆解你的刷题时间、练习时长、解题速度与学科正确率，精准帮您掌控学习节奏！
+            </MudText>
+        </div>
+
+        <div class="d-flex align-center gap-3">
+            <MudSelect T="string" Value="@_selectedSubject" ValueChanged="OnSubjectFilterChanged" Label="筛选学科" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 140px;">
+                <MudSelectItem Value="@("全部分科")">全部分科</MudSelectItem>
+                @foreach (var sub in _subjects)
+                {
+                    <MudSelectItem Value="@sub">@sub</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="d-flex justify-center my-12">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+        </div>
+    }
+    else if (_analytics.TotalAnswered == 0)
+    {
+        <div class="glass-card pa-8 my-6 text-center" style="border: 2px dashed rgba(var(--mud-palette-primary-rgb), 0.3); border-radius: 16px;">
+            <div class="d-inline-flex align-center justify-center rounded-circle mb-4" style="width: 80px; height: 80px; background: rgba(var(--mud-palette-primary-rgb), 0.12); border: 2px solid var(--mud-palette-primary);">
+                <MudIcon Icon="@Icons.Material.Filled.RocketLaunch" Color="Color.Primary" Style="font-size: 2.8rem;" />
+            </div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold mb-2">
+                🌟 欢迎开启智能自适应助学之旅！
+            </MudText>
+            <MudText Typo="Typo.body1" Class="mud-text-secondary mb-6" Style="max-width: 600px; margin: 0 auto; line-height: 1.6;">
+                当前尚未产生答题记录。系统会根据您的每一次作答，自动建立考点认知图谱、艾宾浩斯抗遗忘记忆曲线与做题速度节律分析，助您精准查漏补缺！
+            </MudText>
+            <div class="d-flex justify-center gap-4 flex-wrap">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Bolt" Href="/practice" Style="font-weight: 700; border-radius: 10px;">
+                    ⚡ 开启今日首次精选刷题
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Large" StartIcon="@Icons.Material.Filled.School" Href="/practice?mode=mock" Style="font-weight: 700; border-radius: 10px;">
+                    📝 进入全真模拟考场
+                </MudButton>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- 4 大核心指标卡片 -->
+        <MudGrid Class="mb-6">
+            <!-- 答题总量与正确率 -->
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-5 d-flex align-center justify-space-between">
+                    <div>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">刷题总量 & 正确率</MudText>
+                        <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Info">
+                            @_analytics.TotalAnswered <span style="font-size: 1rem;" class="mud-text-secondary">道</span>
+                        </MudText>
+                        <MudText Typo="Typo.subtitle2" Color="Color.Success" Class="font-weight-bold">
+                            综合正确率 @_analytics.OverallAccuracyRate %
+                        </MudText>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Color="Color.Primary" Size="Size.Large" />
+                </div>
+            </MudItem>
+
+            <!-- 练习总时长与速度 -->
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-5 d-flex align-center justify-space-between">
+                    <div>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">练习时长 & 平均速度</MudText>
+                        <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Secondary">
+                            @FormatTimeSpent(_analytics.TotalTimeSpentSeconds)
+                        </MudText>
+                        <MudText Typo="Typo.subtitle2" Color="Color.Warning" Class="font-weight-bold">
+                            平均 @_analytics.AverageSpeedSeconds 秒 / 题
+                        </MudText>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Filled.Speed" Color="Color.Secondary" Size="Size.Large" />
+                </div>
+            </MudItem>
+
+            <!-- 答对总题数 -->
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-5 d-flex align-center justify-space-between">
+                    <div>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">正确击破题目</MudText>
+                        <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Success">
+                            @_analytics.TotalCorrect <span style="font-size: 1rem;" class="mud-text-secondary">道</span>
+                        </MudText>
+                        <MudText Typo="Typo.subtitle2" Color="Color.Error" Class="font-weight-bold">
+                            归集错题 @(_analytics.TotalAnswered - _analytics.TotalCorrect) 道
+                        </MudText>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Large" />
+                </div>
+            </MudItem>
+
+            <!-- 获得经验与金币 -->
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-5 d-flex align-center justify-space-between">
+                    <div>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">刷题收益</MudText>
+                        <MudText Typo="Typo.h4" Class="font-weight-bold my-1" Color="Color.Warning">
+                            +@_analytics.TotalEarnedExp <span style="font-size: 0.9rem;">EXP</span>
+                        </MudText>
+                        <MudText Typo="Typo.subtitle2" Color="Color.Warning" Class="font-weight-bold">
+                            获得 +@_analytics.TotalEarnedCoins 金币
+                        </MudText>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Filled.MonetizationOn" Color="Color.Warning" Size="Size.Large" />
+                </div>
+            </MudItem>
+        </MudGrid>
+
+        <!-- 解题速度与认知专注节奏分层 & 艾宾浩斯抗遗忘全景 (UX 专家级深度学情仪表盘) -->
+        <MudGrid Class="mb-6">
+            <!-- 速度节奏分布卡片 -->
+            <MudItem xs="12" md="7">
+                <div class="glass-card pa-5 h-100 d-flex flex-column justify-space-between">
+                    <div>
+                        <div class="d-flex align-center justify-space-between mb-3">
+                            <div class="d-flex align-center gap-2">
+                                <MudIcon Icon="@Icons.Material.Filled.ElectricBolt" Color="Color.Warning" />
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">答题速度与专注度节奏分层</MudText>
+                            </div>
+                            <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
+                                样本量: @_analytics.RecentRecords.Count 题
+                            </MudChip>
+                        </div>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="4">
+                                <div class="pa-3 rounded text-center" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25);">
+                                    <MudText Typo="Typo.caption" Color="Color.Info" Class="font-weight-bold d-block">⚡ 闪击突破 (&lt;15s)</MudText>
+                                    <MudText Typo="Typo.h5" Class="font-weight-bold my-1">@FastBlitzCount <span style="font-size: 0.8rem;">题</span></MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">正确率 @FastBlitzAccuracy%</MudText>
+                                </div>
+                            </MudItem>
+                            <MudItem xs="4">
+                                <div class="pa-3 rounded text-center" style="background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.25);">
+                                    <MudText Typo="Typo.caption" Color="Color.Success" Class="font-weight-bold d-block">🎯 黄金节奏 (15-60s)</MudText>
+                                    <MudText Typo="Typo.h5" Class="font-weight-bold my-1">@GoldenRhythmCount <span style="font-size: 0.8rem;">题</span></MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">正确率 @GoldenRhythmAccuracy%</MudText>
+                                </div>
+                            </MudItem>
+                            <MudItem xs="4">
+                                <div class="pa-3 rounded text-center" style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.25);">
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="font-weight-bold d-block">🧗 深度攻坚 (&gt;60s)</MudText>
+                                    <MudText Typo="Typo.h5" Class="font-weight-bold my-1">@DeepFocusCount <span style="font-size: 0.8rem;">题</span></MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">正确率 @DeepFocusAccuracy%</MudText>
+                                </div>
+                            </MudItem>
+                        </MudGrid>
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary mt-3">
+                        💡 专家建议：保持 15-60 秒的黄金专注节奏，在保障审题充分度的同时沉淀稳健的答题肌肉记忆。
+                    </MudText>
+                </div>
+            </MudItem>
+
+            <!-- 艾宾浩斯抗遗忘记忆紧迫度卡片 -->
+            <MudItem xs="12" md="5">
+                <div class="glass-card pa-5 h-100 d-flex flex-column justify-space-between" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%); border: 1px solid rgba(239, 68, 68, 0.25);">
+                    <div>
+                        <div class="d-flex align-center justify-space-between mb-3">
+                            <div class="d-flex align-center gap-2">
+                                <MudIcon Icon="@Icons.Material.Filled.HistoryEdu" Color="Color.Error" />
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">艾宾浩斯抗遗忘记忆全景</MudText>
+                            </div>
+                            @if (_dueEbbinghausCount > 0)
+                            {
+                                <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Alarm">
+                                    @_dueEbbinghausCount 题急需复练
+                                </MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled">
+                                    记忆状态极佳
+                                </MudChip>
+                            }
+                        </div>
+                        <div class="d-flex align-center justify-space-around text-center my-2">
+                            <div>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">临界待复习</MudText>
+                                <MudText Typo="Typo.h5" Color="Color.Error" Class="font-weight-bold">@_dueEbbinghausCount</MudText>
+                            </div>
+                            <MudDivider Vertical="true" FlexItem="true" />
+                            <div>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">待巩固累积</MudText>
+                                <MudText Typo="Typo.h5" Color="Color.Warning" Class="font-weight-bold">@_unmasteredErrorCount</MudText>
+                            </div>
+                            <MudDivider Vertical="true" FlexItem="true" />
+                            <div>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">已攻坚净化</MudText>
+                                <MudText Typo="Typo.h5" Color="Color.Success" Class="font-weight-bold">@_masteredErrorCount</MudText>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <MudButton Variant="Variant.Filled" Color="Color.Error" FullWidth="true" StartIcon="@Icons.Material.Filled.FlashOn" Href="/error-book" Class="font-weight-bold" Style="border-radius: 8px;">
+                            @(_dueEbbinghausCount > 0 ? $"⚡ 立即开启 {_dueEbbinghausCount} 题抗遗忘特训 ➔" : "前往错题本查看全景 ➔")
+                        </MudButton>
+                    </div>
+                </div>
+            </MudItem>
+        </MudGrid>
+
+        @if (_analytics.TotalAnswered == 0)
+        {
+            <div class="glass-card pa-8 text-center my-6">
+                <MudIcon Icon="@Icons.Material.Filled.RocketLaunch" Color="Color.Primary" Style="font-size: 3.5rem;" Class="mb-3" />
+                <MudText Typo="Typo.h5" Class="font-weight-bold mb-2">开启你的第一次知识闯关！</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-5" Style="max-width: 520px; margin: 0 auto;">
+                    你还没有任何刷题记录。立即前往答题广场，开启 AI 智能互动刷题或全真模拟考场，系统将自动为你生成专属的学习画像与知识图谱！
+                </MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.PlayArrow" Href="/practice" Class="px-8 font-weight-bold">
+                    立即开启闯关答题
+                </MudButton>
+            </div>
+        }
+
+        <!-- 知识点维度细粒度演进矩阵 -->
+        @if (_masteryList.Count > 0)
+        {
+            <div class="glass-card pa-6 mb-6">
+                <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4">
+                    <div class="d-flex align-center gap-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Psychology" Color="Color.Secondary" />
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">知识点考点细粒度演进矩阵</MudText>
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        根据答题正确率、做题速度与错题净化率综合计算掌握度指数 (0-100)
+                    </MudText>
+                </div>
+
+                <MudGrid>
+                    @foreach (var m in _masteryList)
+                    {
+                        <MudItem xs="12" sm="6" md="4" lg="3">
+                            <div class="pa-4 glass-card mb-2" style="background: var(--sub-card-bg); border-top: 3px solid @(m.MasteryScore >= 85 ? "#22c55e" : (m.MasteryScore >= 65 ? "#3b82f6" : (m.TotalAnswered > 0 ? "#ef4444" : "#94a3b8")));">
+                                <div class="d-flex align-center justify-space-between mb-2">
+                                    <MudChip T="string" Color="Color.Primary" Size="Size.Small">@m.Subject</MudChip>
+                                    <MudChip T="string" Color="@(m.MasteryScore >= 85 ? Color.Success : (m.MasteryScore >= 65 ? Color.Info : (m.TotalAnswered > 0 ? Color.Error : Color.Default)))" Size="Size.Small" Variant="Variant.Filled">
+                                        @m.MasteryLevel
+                                    </MudChip>
+                                </div>
+
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">@m.Category</MudText>
+
+                                <div class="d-flex justify-space-between mb-1" style="font-size: 0.85rem;">
+                                    <span class="mud-text-secondary">掌握度得分</span>
+                                    <span style="font-weight: 700;">@m.MasteryScore / 100</span>
+                                </div>
+                                <MudProgressLinear Color="@(m.MasteryScore >= 85 ? Color.Success : (m.MasteryScore >= 65 ? Color.Info : Color.Error))" Value="@m.MasteryScore" Class="mb-2" Style="height: 6px; border-radius: 3px;" />
+
+                                <div class="d-flex justify-space-between mud-text-secondary" style="font-size: 0.8rem;">
+                                    <span>刷题量: @m.TotalAnswered 道</span>
+                                    <span>正确率: @m.AccuracyRate %</span>
+                                </div>
+                                @if (m.TotalAnswered > 0)
+                                {
+                                    <div class="d-flex justify-space-between mud-text-secondary mt-1" style="font-size: 0.75rem;">
+                                        <span>记忆保留率: @m.MemoryRetentionRate %</span>
+                                        <span style="font-weight:700; color:@(m.NeedsSpacedReview ? "#f59e0b" : "#10b981")">@m.SpacedRepetitionStatus</span>
+                                    </div>
+                                }
+                            </div>
+                        </MudItem>
+                    }
+                </MudGrid>
+            </div>
+        }
+
+        <!-- 详细刷题流水日志 Table -->
+        <div class="glass-card pa-6">
+            <div class="d-flex align-center justify-space-between mb-4 flex-wrap gap-2">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.History" Color="Color.Primary" />
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">全量答题流水日志</MudText>
+                </div>
+                <div class="d-flex align-center gap-2 flex-wrap">
+                    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small" Class="mr-2">
+                        <MudButton Color="@(_timeFilter == "all" ? Color.Primary : Color.Default)" Variant="@(_timeFilter == "all" ? Variant.Filled : Variant.Outlined)" OnClick='() => _timeFilter = "all"'>全部时间</MudButton>
+                        <MudButton Color="@(_timeFilter == "today" ? Color.Primary : Color.Default)" Variant="@(_timeFilter == "today" ? Variant.Filled : Variant.Outlined)" OnClick='() => _timeFilter = "today"'>今日挑战</MudButton>
+                        <MudButton Color="@(_timeFilter == "week" ? Color.Primary : Color.Default)" Variant="@(_timeFilter == "week" ? Variant.Filled : Variant.Outlined)" OnClick='() => _timeFilter = "week"'>近7天</MudButton>
+                    </MudButtonGroup>
+
+                    <MudChip T="string" Color="@(_resultFilter == null ? Color.Primary : Color.Default)" OnClick="() => SetResultFilter(null)">全部 (@_analytics.RecentRecords.Count)</MudChip>
+                    <MudChip T="string" Color="@(_resultFilter == true ? Color.Success : Color.Default)" OnClick="() => SetResultFilter(true)">正确 (@_analytics.RecentRecords.Count(r => r.IsCorrect))</MudChip>
+                    <MudChip T="string" Color="@(_resultFilter == false ? Color.Error : Color.Default)" OnClick="() => SetResultFilter(false)">错误 (@_analytics.RecentRecords.Count(r => !r.IsCorrect))</MudChip>
+                </div>
+            </div>
+
+            @if (FilteredRecords.Count == 0)
+            {
+                <div class="text-center py-10 mud-text-secondary">
+                    <MudIcon Icon="@Icons.Material.Filled.Inbox" Size="Size.Large" Color="Color.Default" Class="mb-2" />
+                    <MudText Typo="Typo.body1" Class="font-weight-bold">暂无匹配的答题流水记录</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">可以调整上方筛选条件，或开启全新一轮强化练习！</MudText>
+                    <div class="mt-4">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.PlayArrow" Href="/practice">
+                            去刷题
+                        </MudButton>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <MudTable Items="@FilteredRecords" Hover="true" Striped="true" Dense="true" Elevation="0" Class="glass-card" RowsPerPage="15">
+                    <HeaderContent>
+                        <MudTh>答题时间</MudTh>
+                        <MudTh>学科 & 考点</MudTh>
+                        <MudTh>题目题型</MudTh>
+                        <MudTh>你的回答</MudTh>
+                        <MudTh>结果</MudTh>
+                        <MudTh>耗时速度</MudTh>
+                        <MudTh>收益</MudTh>
+                        <MudTh Style="text-align: right;">快捷操作</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="答题时间">@context.AnsweredAt.ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
+                        <MudTd DataLabel="学科 & 考点">
+                            <MudChip T="string" Color="Color.Primary" Size="Size.Small">@(context.Question?.Subject ?? "通用")</MudChip>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary ml-1">@(context.Question?.Category ?? "综合")</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="题目题型">
+                            <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Outlined">
+                                @(context.Question?.Type.ToString() ?? "单选")
+                            </MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="你的回答">
+                            <code style="background: var(--sub-card-bg); padding: 2px 6px; border-radius: 4px;">@context.UserAnswer</code>
+                        </MudTd>
+                        <MudTd DataLabel="结果">
+                            @if (context.IsCorrect)
+                            {
+                                <MudChip T="string" Color="Color.Success" Size="Size.Small">正确</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Color="Color.Error" Size="Size.Small">错误</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="耗时速度">
+                            <span style="font-weight: 700;">@context.TimeTakenSeconds 秒</span>
+                        </MudTd>
+                        <MudTd DataLabel="收益">
+                            <span style="color: #34d399; font-weight: 700;">+@context.EarnedExp EXP</span>
+                            <span style="color: #facc15;" Class="ml-1">+@context.EarnedCoins 金币</span>
+                        </MudTd>
+                        <MudTd DataLabel="快捷操作" Style="text-align: right;">
+                            @if (!context.IsCorrect && context.Question != null)
+                            {
+                                <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.SportsKabaddi" OnClick="() => OpenReviseDialogAsync(context)" Class="font-weight-bold">
+                                    立即重练
+                                </MudButton>
+                            }
+                            else if (context.IsCorrect && context.Question != null)
+                            {
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick="() => OpenVariantChallengeAsync(context)">
+                                    变式挑战
+                                </MudButton>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{ 10, 15, 25, 50 }" RowsPerPageString="每页条数:" InfoFormat="{first_item}-{last_item} 共 {all_items} 条" />
+                    </PagerContent>
+                </MudTable>
+            }
+        </div>
+    }
+</MudContainer>
+
+@inject IStudentEvolutionService StudentEvolutionService
+
+@code {
+    private User? _currentUser;
+    private bool _loading = true;
+    private PracticeAnalyticsDto _analytics = new PracticeAnalyticsDto();
+    private List<KnowledgePointMasteryDto> _masteryList = new List<KnowledgePointMasteryDto>();
+    private string _selectedSubject = "全部分科";
+    private bool? _resultFilter = null;
+    private string _timeFilter = "all";
+
+    private List<string> _subjects = new List<string>();
+
+    private int _dueEbbinghausCount = 0;
+    private int _unmasteredErrorCount = 0;
+    private int _masteredErrorCount = 0;
+
+    // 解题节奏计算属性 (闪击 <15s, 黄金 15-60s, 深度 >60s)
+    private int FastBlitzCount => _analytics.RecentRecords.Count(r => r.TimeTakenSeconds < 15);
+    private int GoldenRhythmCount => _analytics.RecentRecords.Count(r => r.TimeTakenSeconds >= 15 && r.TimeTakenSeconds <= 60);
+    private int DeepFocusCount => _analytics.RecentRecords.Count(r => r.TimeTakenSeconds > 60);
+
+    private int FastBlitzAccuracy => FastBlitzCount > 0 ? (int)Math.Round(_analytics.RecentRecords.Where(r => r.TimeTakenSeconds < 15).Count(r => r.IsCorrect) * 100.0 / FastBlitzCount) : 0;
+    private int GoldenRhythmAccuracy => GoldenRhythmCount > 0 ? (int)Math.Round(_analytics.RecentRecords.Where(r => r.TimeTakenSeconds >= 15 && r.TimeTakenSeconds <= 60).Count(r => r.IsCorrect) * 100.0 / GoldenRhythmCount) : 0;
+    private int DeepFocusAccuracy => DeepFocusCount > 0 ? (int)Math.Round(_analytics.RecentRecords.Where(r => r.TimeTakenSeconds > 60).Count(r => r.IsCorrect) * 100.0 / DeepFocusCount) : 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currentUser = await GamificationService.GetCurrentUserAsync();
+        if (_currentUser != null)
+        {
+            _subjects = GradeSubjectProvider.GetSubjectsByGrade(_currentUser.Grade);
+        }
+        await LoadAnalyticsAsync();
+    }
+
+    private async Task LoadAnalyticsAsync()
+    {
+        if (_currentUser == null) return;
+        _loading = true;
+        _analytics = await PracticeService.GetPracticeAnalyticsAsync(_currentUser.Id, _selectedSubject, _resultFilter);
+        _masteryList = await StudentEvolutionService.GetMasteryOverviewAsync(_currentUser.Id, _selectedSubject);
+
+        try
+        {
+            var ebbinghausQueue = await ErrorBookService.GetEbbinghausReviewQueueAsync(_currentUser.Id, null, 100);
+            _dueEbbinghausCount = ebbinghausQueue.Count;
+            var unmastered = await ErrorBookService.GetUnmasteredErrorsAsync(_currentUser.Id);
+            _unmasteredErrorCount = unmastered.Count;
+            var mastered = await ErrorBookService.GetMasteredErrorsAsync(_currentUser.Id);
+            _masteredErrorCount = mastered.Count;
+        }
+        catch
+        {
+            // 非侵入式容错
+        }
+
+        _loading = false;
+    }
+
+    private List<PracticeRecord> FilteredRecords
+    {
+        get
+        {
+            var list = _analytics.RecentRecords;
+            if (_timeFilter == "today")
+            {
+                var today = DateTime.Today;
+                return list.Where(r => r.AnsweredAt >= today).ToList();
+            }
+            if (_timeFilter == "week")
+            {
+                var weekAgo = DateTime.Now.AddDays(-7);
+                return list.Where(r => r.AnsweredAt >= weekAgo).ToList();
+            }
+            return list;
+        }
+    }
+
+    private async Task OnSubjectFilterChanged(string val)
+    {
+        _selectedSubject = val;
+        await LoadAnalyticsAsync();
+    }
+
+    private async Task SetResultFilter(bool? isCorrect)
+    {
+        _resultFilter = isCorrect;
+        await LoadAnalyticsAsync();
+    }
+
+    private string FormatTimeSpent(int seconds)
+    {
+        if (seconds < 60) return $"{seconds} 秒";
+        int minutes = seconds / 60;
+        int remSec = seconds % 60;
+        if (minutes < 60) return $"{minutes} 分 {remSec} 秒";
+        int hours = minutes / 60;
+        int remMin = minutes % 60;
+        return $"{hours} 小时 {remMin} 分";
+    }
+
+    private async Task OpenReviseDialogAsync(PracticeRecord record)
+    {
+        if (record.Question == null || _currentUser == null) return;
+
+        var errorItem = await ErrorBookService.GetErrorItemByQuestionAsync(_currentUser.Id, record.QuestionId);
+
+        if (errorItem == null)
+        {
+            errorItem = new ErrorItem
+            {
+                UserId = _currentUser.Id,
+                QuestionId = record.QuestionId,
+                Question = record.Question,
+                UserWrongAnswer = record.UserAnswer,
+                ErrorReasonCategory = "概念模糊",
+                CreatedAt = record.AnsweredAt
+            };
+        }
+
+        var parameters = new DialogParameters<ReviseErrorDialog>
+        {
+            { x => x.Item, errorItem },
+            { x => x.AutoStartVariant, false }
+        };
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<ReviseErrorDialog>("错题深度重练与变式攻坚", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            await LoadAnalyticsAsync();
+        }
+    }
+
+    private async Task OpenVariantChallengeAsync(PracticeRecord record)
+    {
+        if (record.Question == null || _currentUser == null) return;
+
+        var errorItem = new ErrorItem
+        {
+            UserId = _currentUser.Id,
+            QuestionId = record.QuestionId,
+            Question = record.Question,
+            UserWrongAnswer = record.UserAnswer,
+            ErrorReasonCategory = "已掌握",
+            IsMastered = true,
+            CreatedAt = record.AnsweredAt
+        };
+
+        var parameters = new DialogParameters<ReviseErrorDialog>
+        {
+            { x => x.Item, errorItem },
+            { x => x.AutoStartVariant, true }
+        };
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+        await DialogService.ShowAsync<ReviseErrorDialog>("AI 智能同源变式题挑战", parameters, options);
+    }
+}

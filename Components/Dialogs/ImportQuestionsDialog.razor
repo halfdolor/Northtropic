@@ -1,0 +1,208 @@
+@using Northtropic.Services
+@using Northtropic.Models
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Forms
+@inject IQuestionImportService QuestionImportService
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.FileUpload" Color="Color.Primary" Size="Size.Large" />
+            <div>
+                <MudText Typo="Typo.h6" Class="font-weight-bold">多格式题库批量导入与模板下载</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">支持 CSV、Excel (.xlsx/.csv)、JSON、TXT 格式批量导入与结构化解析校验</MudText>
+            </div>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex flex-column gap-4 py-2">
+            <!-- 步骤 1：标准模板下载 -->
+            <MudPaper Class="pa-4 glass-card" Style="background: var(--sub-card-bg);">
+                <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-1" Color="Color.Info">
+                    步骤 1：选择并下载标准试题模板
+                </MudText>
+                <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+                    标准模板支持<strong>单选题、不定项选择题、填空题、简答题、问答解析大题</strong>全题型。
+                </MudText>
+                <div class="d-flex flex-wrap gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Custom.FileFormats.FileExcel" OnClick='() => DownloadTemplateAsync("xlsx")'>
+                        标准 Excel 模板 (.xlsx)
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Download" OnClick='() => DownloadTemplateAsync("csv")'>
+                        标准 CSV 模板 (.csv)
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Code" OnClick='() => DownloadTemplateAsync("json")'>
+                        结构化 JSON 模板 (.json)
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Description" OnClick='() => DownloadTemplateAsync("txt")'>
+                        纯文本 TXT 模板 (.txt)
+                    </MudButton>
+                </div>
+            </MudPaper>
+
+            <!-- 步骤 2：上传题库文件 -->
+            <MudPaper Class="pa-4 glass-card" Style="background: var(--sub-card-bg);">
+                <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-2" Color="Color.Secondary">
+                    步骤 2：选择上传题库文件 (.xlsx / .csv / .json / .txt)
+                </MudText>
+
+                <div class="d-flex align-center gap-3 mb-2">
+                    <InputFile OnChange="OnFileChange" accept=".xlsx,.csv,.json,.txt" class="mud-input-root" id="multiFileInput" hidden />
+                    <label for="multiFileInput">
+                        <MudButton HtmlTag="label" Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.CloudUpload">
+                            选择题库文件 (.xlsx / .csv / .json / .txt)
+                        </MudButton>
+                    </label>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                        @(_selectedFileName ?? "尚未选择文件")
+                    </MudText>
+                </div>
+
+                @if (_isImporting || _isValidating)
+                {
+                    <div class="d-flex align-center gap-2 mt-3">
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="@(_isValidating ? Color.Info : Color.Secondary)" />
+                        <MudText Typo="Typo.body2">@(_isValidating ? "正在执行试飞预校验 (不产生写库副作用)..." : "正在校验解析并存入题库...")</MudText>
+                    </div>
+                }
+
+                @if (_importResult != null)
+                {
+                    <div class="mt-3">
+                        @if (_importResult.IsDryRun)
+                        {
+                            <MudAlert Severity="@(_importResult.FailureCount == 0 ? Severity.Info : Severity.Warning)" Class="mb-2" Variant="Variant.Filled">
+                                🔍 <strong>试飞预校验报告 (尚未写入数据库)</strong>：
+                                格式有效题量: <strong>@_importResult.SuccessCount</strong> 道，
+                                校验未通过: <strong>@_importResult.FailureCount</strong> 道@(_importResult.DuplicateCount > 0 ? $"，重复题过滤: {_importResult.DuplicateCount} 道" : "")
+                                <div class="mt-1" style="font-size: 0.85rem; opacity: 0.95;">
+                                    🛡️ 预校验模式仅运行语法、字段完整度与防重合规流水线，已确认无系统副作用。确认无误后可直接点击下方【确认导入题库】。
+                                </div>
+                            </MudAlert>
+                        }
+                        else
+                        {
+                            <MudAlert Severity="@(_importResult.FailureCount == 0 ? Severity.Success : Severity.Warning)" Class="mb-2">
+                                🎉 导入完成！成功入库: <strong>@_importResult.SuccessCount</strong> 道，失败: <strong>@_importResult.FailureCount</strong> 道@(_importResult.DuplicateCount > 0 ? $"，跳过重复: {_importResult.DuplicateCount} 道" : "")
+                            </MudAlert>
+                        }
+
+                        @if (_importResult.ErrorMessages.Count > 0)
+                        {
+                            <MudPaper Class="pa-2 max-height-200 overflow-y-auto" Style="background: rgba(0,0,0,0.3); font-size: 0.85rem;">
+                                @foreach (var err in _importResult.ErrorMessages)
+                                {
+                                    <div style="color: #f87171;">⚠️ @err</div>
+                                }
+                            </MudPaper>
+                        }
+                    </div>
+                }
+            </MudPaper>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">关闭窗口</MudButton>
+        @if (_selectedFile != null && !_isImporting && !_isValidating)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.FactCheck" OnClick="ValidateOnlyAsync">
+                🔍 试飞预校验 (不入库)
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Check" OnClick="ConfirmImportAsync">
+                确认校验并导入题库
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Guid? UserId { get; set; }
+
+    private string? _selectedFileName;
+    private IBrowserFile? _selectedFile;
+    private bool _isImporting = false;
+    private bool _isValidating = false;
+    private QuestionImportResult? _importResult;
+
+    private void DownloadTemplateAsync(string format)
+    {
+        try
+        {
+            NavigationManager.NavigateTo($"/api/questions/download-template?format={format}", forceLoad: true);
+            Snackbar.Add($"题库【{format.ToUpper()}】模板已开始下载！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"下载模板失败: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void OnFileChange(InputFileChangeEventArgs e)
+    {
+        _selectedFile = e.File;
+        _selectedFileName = e.File.Name;
+        _importResult = null;
+        StateHasChanged();
+    }
+
+    private async Task ValidateOnlyAsync()
+    {
+        if (_selectedFile == null) return;
+        _isValidating = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            using var stream = _selectedFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            _importResult = await QuestionImportService.ValidateQuestionsFileAsync(stream, _selectedFile.Name, UserId);
+            if (_importResult.FailureCount == 0)
+            {
+                Snackbar.Add($"✅ 预校验通过！共检测到 {_importResult.SuccessCount} 道合规试题，零格式错误！", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"⚠️ 预校验发现 {_importResult.FailureCount} 处格式问题，已拦截异常入库！", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"预校验异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isValidating = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ConfirmImportAsync()
+    {
+        if (_selectedFile == null) return;
+        _isImporting = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            using var stream = _selectedFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            _importResult = await QuestionImportService.ParseAndImportQuestionsByFileFormatAsync(stream, _selectedFile.Name, UserId);
+            if (_importResult.SuccessCount > 0)
+            {
+                Snackbar.Add($"成功将 {_importResult.SuccessCount} 道习题解析存入数据库！", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"导入异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isImporting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

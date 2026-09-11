@@ -1,0 +1,833 @@
+@page "/question-management"
+@using Northtropic.Models
+@using Northtropic.Services
+@inject IQuestionManagementService QuestionManagementService
+@inject IGamificationService GamificationService
+@inject IUserSessionService UserSessionService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>题库管理 - Northtropic</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-6 mb-12">
+    <!-- 头部 Header -->
+    <div class="glass-card pa-6 mb-6 d-flex align-center justify-space-between flex-wrap gap-4">
+        <div>
+            <div class="d-flex align-center gap-3 mb-1">
+                <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Color="Color.Primary" Size="Size.Large" />
+                <MudText Typo="Typo.h4" Class="font-weight-bold">题库管理</MudText>
+                @if (_currentUser != null)
+                {
+                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Class="font-weight-bold">
+                        @_currentUser.RoleDisplayName @(_currentUser.CanModifyQuestionBank ? "(具备修改/录入权限)" : "(学生只读模式)")
+                    </MudChip>
+                }
+            </div>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                支持手动单题录入、CSV/JSON/TXT 多格式文件批量导入以及照片 OCR 智能识别录入。管理个人私有题库与全网公共题库！
+            </MudText>
+        </div>
+
+        <!-- 题库导出与录入按钮组 (超级管理员与老师可见) -->
+        <div class="d-flex align-center gap-2 flex-wrap">
+            <MudMenu Label="@(_isExporting ? "导出中..." : "📥 导出题库")" Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.FileDownload" EndIcon="@Icons.Material.Filled.KeyboardArrowDown" Disabled="@_isExporting">
+                <MudMenuItem Icon="@Icons.Custom.FileFormats.FileExcel" IconColor="Color.Success" OnClick="ExportQuestionsXlsxAsync">
+                    标准 Excel 电子表格 (.xlsx)
+                </MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Filled.TableChart" IconColor="Color.Info" OnClick="ExportQuestionsCsvAsync">
+                    通用 CSV 表格 (.csv)
+                </MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Filled.Code" IconColor="Color.Warning" OnClick="ExportQuestionsJsonAsync">
+                    结构化 JSON 备份 (.json)
+                </MudMenuItem>
+            </MudMenu>
+            @if (_currentUser != null && _currentUser.CanManageQuestionBank)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.EditNote" OnClick="OpenManualEntryDialogAsync">
+                    手动单题录入
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FileUpload" OnClick="OpenImportDialogAsync">
+                    文件批量导入
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddAPhoto" OnClick="OpenPhotoOcrDialogAsync">
+                    照片 OCR 录入
+                </MudButton>
+            }
+            else
+            {
+                <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined">仅超级管理员与老师用户拥有题库录入编辑权限</MudChip>
+            }
+        </div>
+    </div>
+
+    <!-- 非教学人员只读提示栏 -->
+    @if (_currentUser != null && !_currentUser.CanManageQuestionBank)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-6 rounded-lg glass-card">
+            <strong>【只读模式】</strong> 您当前登录角色为 <strong>@_currentUser.RoleDisplayName</strong>，题库修改与录入权限面向【超级管理员】与【老师用户】开放。您可进行题目检索浏览与考点查看。
+        </MudAlert>
+    }
+
+    <!-- 筛选控制栏 -->
+    <div class="glass-card pa-4 mb-6">
+        <MudGrid align-items="center">
+            <MudItem xs="12" sm="4" md="3">
+                <MudTextField T="string" Value="@_searchQuery" ValueChanged="OnSearchQueryChanged" Placeholder="搜索题干或关键字..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" />
+            </MudItem>
+            <MudItem xs="6" sm="3" md="2">
+                <MudSelect T="string" Value="@_selectedSubject" ValueChanged="OnSubjectFilterChanged" Label="目标学科" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="@("全部分科")">全部分科</MudSelectItem>
+                    @foreach (var sub in _subjects)
+                    {
+                        <MudSelectItem Value="@sub">@sub</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6" sm="3" md="2">
+                <MudSelect T="string" Value="@_scopeFilter" ValueChanged="OnScopeFilterChanged" Label="题库范围" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="@("全部题库")">全部题库</MudSelectItem>
+                    <MudSelectItem Value="@("全网公共题库")">全网公共题库</MudSelectItem>
+                    <MudSelectItem Value="@("我的私有题库")">我的私有题库</MudSelectItem>
+                    <MudSelectItem Value="@("待审核转公开")">待审核转公开</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="2" md="5" Class="d-flex justify-end gap-2 align-center">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.SelectAll" OnClick="ToggleSelectAll">
+                    @(PagedQuestions.Count > 0 && PagedQuestions.All(q => _selectedQuestionIds.Contains(q.Id)) ? "取消本页全选" : "全选当前页")
+                </MudButton>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary align-self-center">
+                    共 <strong>@FilteredQuestions.Count</strong> 道题目
+                </MudText>
+            </MudItem>
+        </MudGrid>
+    </div>
+
+    <!-- 批量操作控制浮动栏 (当有选中题目时展示) -->
+    @if (_selectedQuestionIds.Any())
+    {
+        <div class="glass-card pa-3 mb-6 d-flex align-center justify-space-between flex-wrap gap-3" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%); border: 1px solid #3b82f6; border-radius: 12px; animation: fadeIn 0.3s ease-in-out;">
+            <div class="d-flex align-center gap-2">
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    已勾选 @_selectedQuestionIds.Count 道试题
+                </MudChip>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    可执行批量公开入库、批量删除等高级批处理指令
+                </MudText>
+            </div>
+            <div class="d-flex align-center gap-2">
+                <MudMenu Label="@(_isExporting ? "导出中..." : "📥 批量导出所选")" Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.FileDownload" EndIcon="@Icons.Material.Filled.KeyboardArrowDown" Disabled="@_isExporting">
+                    <MudMenuItem Icon="@Icons.Custom.FileFormats.FileExcel" IconColor="Color.Success" OnClick="@(async () => await ExportSelectedQuestionsAsync("xlsx"))">
+                        导出为 Excel (.xlsx)
+                    </MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Filled.TableChart" IconColor="Color.Info" OnClick="@(async () => await ExportSelectedQuestionsAsync("csv"))">
+                        导出为 CSV (.csv)
+                    </MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Filled.Code" IconColor="Color.Warning" OnClick="@(async () => await ExportSelectedQuestionsAsync("json"))">
+                        导出为 JSON (.json)
+                    </MudMenuItem>
+                </MudMenu>
+                @if (_currentUser != null && _currentUser.CanManageQuestionBank)
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Public" OnClick="BatchPublishAsync">
+                        批量发布至全网公共库
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.DeleteSweep" OnClick="BatchDeleteAsync">
+                        批量彻底删除
+                    </MudButton>
+                }
+                <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small" OnClick="() => _selectedQuestionIds.Clear()">
+                    清空勾选
+                </MudButton>
+            </div>
+        </div>
+    }
+
+    <!-- 题目列表 Cards -->
+    @if (_loading)
+    {
+        <MudGrid>
+            @for (int i = 0; i < 3; i++)
+            {
+                <MudItem xs="12">
+                    <div class="glass-card pa-5">
+                        <div class="d-flex align-center justify-space-between mb-3 flex-wrap gap-2">
+                            <div class="d-flex align-center gap-2">
+                                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="24px" Height="24px" Class="rounded" />
+                                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="64px" Height="24px" Class="rounded-pill" />
+                                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="80px" Height="24px" Class="rounded-pill" />
+                                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="70px" Height="24px" Class="rounded-pill" />
+                            </div>
+                            <div class="d-flex align-center gap-2">
+                                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="90px" Height="32px" Class="rounded" />
+                                <MudSkeleton SkeletonType="SkeletonType.Circle" Width="30px" Height="30px" />
+                                <MudSkeleton SkeletonType="SkeletonType.Circle" Width="30px" Height="30px" />
+                            </div>
+                        </div>
+                        <MudSkeleton SkeletonType="SkeletonType.Text" Width="95%" Height="32px" Class="mb-1" />
+                        <MudSkeleton SkeletonType="SkeletonType.Text" Width="60%" Height="24px" Class="mb-3" />
+                        <div class="pa-3 glass-card" style="background: var(--sub-card-bg);">
+                            <MudSkeleton SkeletonType="SkeletonType.Text" Width="25%" Height="20px" Class="mb-1" />
+                            <MudSkeleton SkeletonType="SkeletonType.Text" Width="65%" Height="20px" />
+                        </div>
+                    </div>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else if (FilteredQuestions.Count == 0)
+    {
+        <div class="glass-card pa-12 text-center my-6">
+            <MudIcon Icon="@Icons.Material.Filled.FindInPage" Size="Size.Large" Color="Color.Primary" Class="mb-3" />
+            <MudText Typo="Typo.h6" Class="mb-2">未找到符合条件的题目</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                当前筛选条件下暂无试题。你可以重置筛选条件，或通过手动录入、多格式文件导入与 OCR 扫描上传试题。
+            </MudText>
+            
+            <div class="d-flex justify-center flex-wrap gap-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FilterAltOff" OnClick="ResetFilters">
+                    重置所有筛选
+                </MudButton>
+                @if (_currentUser != null && _currentUser.CanModifyQuestionBank)
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.EditNote" OnClick="OpenManualEntryDialogAsync">
+                        手动单题录入
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FileUpload" OnClick="OpenImportDialogAsync">
+                        批量导入文件
+                    </MudButton>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <MudGrid>
+            @foreach (var q in PagedQuestions)
+            {
+                <MudItem xs="12">
+                    <div class="glass-card pa-5 position-relative" style="@(_selectedQuestionIds.Contains(q.Id) ? "border: 2px solid #3b82f6;" : "")">
+                        <div class="d-flex align-center justify-space-between mb-3 flex-wrap gap-2">
+                            <div class="d-flex align-center gap-2">
+                                <MudCheckBox T="bool" Value="@_selectedQuestionIds.Contains(q.Id)" ValueChanged="@(v => ToggleSelectQuestion(q.Id, v))" Color="Color.Primary" Dense="true" />
+                                <MudChip T="string" Color="Color.Primary" Size="Size.Small">@q.Subject</MudChip>
+                                <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">@q.Category</MudChip>
+                                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">@q.TypeDisplayName</MudChip>
+
+                                @if (q.IsPublic)
+                                {
+                                    <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Public">全网公共库</MudChip>
+                                }
+                                else if (q.PublishStatus == PublishStatusEnum.Pending)
+                                {
+                                    <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled" Icon="@Icons.Material.Filled.HourglassTop">待审核转公开</MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Lock">个人私有题库</MudChip>
+                                }
+                            </div>
+
+                            <div class="d-flex align-center gap-2">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.Visibility" OnClick="() => OpenPreviewDialog(q)">
+                                    试卷高保真预览
+                                </MudButton>
+
+                                <!-- 私有题库发布控制 -->
+                                @if (!q.IsPublic && q.PublishStatus == PublishStatusEnum.Private && _currentUser?.CanModifyQuestionBank == true)
+                                {
+                                    @if (_currentUser.Role == UserRole.SuperAdmin || _currentUser.Role == UserRole.Teacher)
+                                    {
+                                        <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Public" OnClick="() => DirectPublishAsync(q)">
+                                            发布至全网公共库
+                                        </MudButton>
+                                    }
+                                    else
+                                    {
+                                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.FileUpload" OnClick="() => ApplyForPublicAsync(q)">
+                                            申请转为公共库 (+50 EXP / +20 金币)
+                                        </MudButton>
+                                    }
+                                }
+                                else if (q.IsPublic && (_currentUser?.Role == UserRole.SuperAdmin || q.CreatedByUserId == _currentUser?.Id))
+                                {
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" StartIcon="@Icons.Material.Filled.Lock" OnClick="() => RetractToPrivateAsync(q)">
+                                        撤回为私有题库
+                                    </MudButton>
+                                }
+
+                                <!-- 超级管理员审核控制按钮 -->
+                                @if (_currentUser?.Role == UserRole.SuperAdmin && q.PublishStatus == PublishStatusEnum.Pending)
+                                {
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Check" OnClick="() => ApprovePublishAsync(q)">
+                                        批准公开 (发放奖励)
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" StartIcon="@Icons.Material.Filled.Close" OnClick="() => RejectPublishAsync(q)">
+                                        退回
+                                    </MudButton>
+                                }
+
+                                @if (_currentUser?.CanModifyQuestionBank == true)
+                                {
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small" OnClick="() => EditQuestionAsync(q)" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Default" Size="Size.Small" OnClick="() => DeleteQuestionAsync(q)" />
+                                }
+                            </div>
+                        </div>
+
+                        <!-- 题干 -->
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-3" Style="line-height: 1.5;">
+                            @q.Stem
+                        </MudText>
+
+                        <!-- 正确答案与解析 (统一主题浅色白底与 Primary 标注) -->
+                        <div class="pa-3 glass-card" style="background: var(--sub-card-bg); font-size: 0.9rem;">
+                            <div class="font-weight-bold mb-1" style="color: var(--accent-color);">标准答案：@q.CorrectAnswer</div>
+                            <div class="mud-text-secondary">官方解析：@(string.IsNullOrWhiteSpace(q.StandardAnalysis) ? "暂无详细解析" : q.StandardAnalysis)</div>
+                        </div>
+                    </div>
+                </MudItem>
+            }
+        </MudGrid>
+
+        <!-- 分页控制器 -->
+        @if (TotalPages > 1)
+        {
+            <div class="d-flex align-center justify-space-between flex-wrap gap-4 mt-6 pa-4 glass-card">
+                <div class="d-flex align-center gap-3">
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">每页容量：</MudText>
+                    <MudSelect T="int" Value="_pageSize" ValueChanged="OnPageSizeChanged" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" Style="width: 105px;">
+                        @foreach (var size in _pageSizeOptions)
+                        {
+                            <MudSelectItem Value="@size">@size 条/页</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        第 @(_currentPage) / @(TotalPages) 页 (共 @FilteredQuestions.Count 道试题)
+                    </MudText>
+                </div>
+                <MudPagination Count="@TotalPages" Selected="@_currentPage" SelectedChanged="OnPageChanged" Color="Color.Primary" Variant="Variant.Filled" ShowFirstButton="true" ShowLastButton="true" />
+            </div>
+        }
+    }
+
+    <!-- 试题高保真渲染预览 Modal -->
+    <MudDialog @bind-Visible="_previewDialogVisible" Options="_previewDialogOptions">
+        <TitleContent>
+            <div class="d-flex align-center gap-2">
+                <MudIcon Icon="@Icons.Material.Filled.Preview" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="font-weight-bold">
+                    试题真题全景高保真渲染
+                </MudText>
+            </div>
+        </TitleContent>
+        <DialogContent>
+            @if (_previewQuestion != null)
+            {
+                <div class="pa-2">
+                    <div class="d-flex align-center gap-2 mb-3 flex-wrap">
+                        <MudChip T="string" Color="Color.Primary" Size="Size.Small">@_previewQuestion.Subject</MudChip>
+                        <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Outlined">@_previewQuestion.Category</MudChip>
+                        <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Outlined">@_previewQuestion.Type.ToString()</MudChip>
+                        <MudRating SelectedValue="@_previewQuestion.Difficulty" MaxValue="5" ReadOnly="true" Size="Size.Small" />
+                    </div>
+
+                    <!-- 题干 (支持 KaTeX LaTeX 智能公式) -->
+                    <div class="glass-card pa-4 mb-4" style="background: rgba(30, 41, 59, 0.5); border-left: 4px solid var(--mud-palette-primary);">
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold" Style="line-height: 1.7; font-size: 1.05rem;">
+                            @_previewQuestion.Stem
+                        </MudText>
+                    </div>
+
+                    <!-- 选项矩阵 (单选/多选) -->
+                    @if (_previewQuestion.Options.Any())
+                    {
+                        <div class="d-flex flex-column gap-2 mb-4">
+                            @foreach (var opt in _previewQuestion.Options)
+                            {
+                                <div class="glass-card pa-3 d-flex align-center gap-3" style="background: rgba(255, 255, 255, 0.04); border-radius: 8px;">
+                                    <div class="d-flex align-center justify-center rounded-circle" style="width: 28px; height: 28px; background: rgba(59, 130, 246, 0.2); color: #3b82f6; font-weight: 700; flex-shrink: 0;">
+                                        @opt.Substring(0, 1)
+                                    </div>
+                                    <MudText Typo="Typo.body2">@opt</MudText>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- 答案与解析 -->
+                    <div class="glass-card pa-4" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px;">
+                        <div class="d-flex align-center gap-2 mb-2">
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Success">
+                                正确答案：@_previewQuestion.CorrectAnswer
+                            </MudText>
+                        </div>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="line-height: 1.6;">
+                            <strong>解题指引：</strong>@(string.IsNullOrWhiteSpace(_previewQuestion.StandardAnalysis) ? "暂无详细解析" : _previewQuestion.StandardAnalysis)
+                        </MudText>
+                    </div>
+                </div>
+            }
+        </DialogContent>
+        <DialogActions>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => _previewDialogVisible = false">关闭预览</MudButton>
+        </DialogActions>
+    </MudDialog>
+</MudContainer>
+
+@code {
+    private User? _currentUser;
+    private bool _loading = true;
+    private List<Question> _questions = new List<Question>();
+    private string _searchQuery = string.Empty;
+    private string _selectedSubject = "全部分科";
+    private string _scopeFilter = "全部题库";
+
+    private int _currentPage = 1;
+    private int _pageSize = 10;
+    private readonly int[] _pageSizeOptions = new[] { 10, 20, 50 };
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)FilteredQuestions.Count / _pageSize));
+
+    private List<Question> PagedQuestions
+    {
+        get
+        {
+            var filtered = FilteredQuestions;
+            if (_currentPage > TotalPages)
+            {
+                _currentPage = TotalPages;
+            }
+            return filtered.Skip((_currentPage - 1) * _pageSize).Take(_pageSize).ToList();
+        }
+    }
+
+    private HashSet<Guid> _selectedQuestionIds = new HashSet<Guid>();
+    private bool _previewDialogVisible = false;
+    private Question? _previewQuestion;
+    private readonly DialogOptions _previewDialogOptions = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+
+    private List<string> _subjects = new List<string>
+    {
+        "初中物理", "初中数学", "高中物理", "高中数学", "C# & .NET 进阶", "AI 工程实战", "通用知识"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserSessionService.OnUserChanged += OnUserChangedHandler;
+        await LoadQuestionsAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("renderAllMath");
+        }
+        catch { }
+    }
+
+    private void ToggleSelectQuestion(Guid id, bool isSelected)
+    {
+        if (isSelected) _selectedQuestionIds.Add(id);
+        else _selectedQuestionIds.Remove(id);
+    }
+
+    private void ToggleSelectAll()
+    {
+        var currentPagedIds = PagedQuestions.Select(q => q.Id).ToList();
+        if (currentPagedIds.Count > 0 && currentPagedIds.All(id => _selectedQuestionIds.Contains(id)))
+        {
+            foreach (var id in currentPagedIds)
+            {
+                _selectedQuestionIds.Remove(id);
+            }
+        }
+        else
+        {
+            foreach (var id in currentPagedIds)
+            {
+                _selectedQuestionIds.Add(id);
+            }
+        }
+    }
+
+    private void OpenPreviewDialog(Question q)
+    {
+        _previewQuestion = q;
+        _previewDialogVisible = true;
+    }
+
+    private async Task BatchPublishAsync()
+    {
+        if (_currentUser == null || !_selectedQuestionIds.Any()) return;
+
+        bool? confirm = await DialogService.ShowMessageBox("批量发布确认", $"确定要将选中的 {_selectedQuestionIds.Count} 道试题批量发布至全网公共题库吗？", yesText: "确认批量发布", cancelText: "取消");
+        if (confirm == true)
+        {
+            var idsToPublish = _selectedQuestionIds.ToList();
+            int count = await QuestionManagementService.BatchDirectPublishAsync(idsToPublish, _currentUser.Id);
+            _selectedQuestionIds.Clear();
+            Snackbar.Add($"🎉 批量发布成功！共将 {count} 道试题加入全网公共题库！", Severity.Success);
+            await LoadQuestionsAsync();
+        }
+    }
+
+    private async Task BatchDeleteAsync()
+    {
+        if (_currentUser == null || !_selectedQuestionIds.Any()) return;
+
+        bool? confirm = await DialogService.ShowMessageBox("批量删除确认", $"【危险操作】确定要彻底删除选中的 {_selectedQuestionIds.Count} 道试题吗？删除后将无法恢复！", yesText: "确认彻底删除", cancelText: "取消");
+        if (confirm == true)
+        {
+            var idsToDelete = _selectedQuestionIds.ToList();
+            int count = await QuestionManagementService.BatchDeleteQuestionsAsync(idsToDelete, _currentUser.Id);
+            _selectedQuestionIds.Clear();
+            Snackbar.Add($"已彻底删除 {count} 道试题记录！", Severity.Info);
+            await LoadQuestionsAsync();
+        }
+    }
+
+    private async Task LoadQuestionsAsync()
+    {
+        _currentUser = await UserSessionService.GetActiveUserAsync();
+        if (_currentUser == null) return;
+        _loading = true;
+        _questions = await QuestionManagementService.GetQuestionsForManagementAsync(_currentUser.Id);
+        _loading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnUserChangedHandler()
+    {
+        await LoadQuestionsAsync();
+    }
+
+    private List<Question> FilteredQuestions
+    {
+        get
+        {
+            var res = _questions.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                res = res.Where(q => q.Stem.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                                     q.Category.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                                     q.Subject.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase));
+            }
+            if (_selectedSubject != "全部分科")
+            {
+                res = res.Where(q => q.Subject == _selectedSubject);
+            }
+            if (_scopeFilter == "全网公共题库")
+            {
+                res = res.Where(q => q.IsPublic);
+            }
+            else if (_scopeFilter == "我的私有题库")
+            {
+                res = res.Where(q => !q.IsPublic && q.CreatedByUserId == _currentUser?.Id);
+            }
+            else if (_scopeFilter == "待审核转公开")
+            {
+                res = res.Where(q => q.PublishStatus == PublishStatusEnum.Pending);
+            }
+            return res.ToList();
+        }
+    }
+
+    private void OnSearchQueryChanged(string val) { _searchQuery = val; _currentPage = 1; }
+    private void OnSubjectFilterChanged(string val) { _selectedSubject = val; _currentPage = 1; }
+    private void OnScopeFilterChanged(string val) { _scopeFilter = val; _currentPage = 1; }
+
+    private void OnPageChanged(int newPage)
+    {
+        _currentPage = newPage;
+    }
+
+    private void OnPageSizeChanged(int newSize)
+    {
+        _pageSize = newSize;
+        _currentPage = 1;
+    }
+
+    private void ResetFilters()
+    {
+        _searchQuery = string.Empty;
+        _selectedSubject = "全部分科";
+        _scopeFilter = "全部题库";
+        _currentPage = 1;
+    }
+
+    private async Task OpenManualEntryDialogAsync()
+    {
+        var parameters = new DialogParameters { ["UserId"] = _currentUser?.Id };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<Northtropic.Components.Dialogs.ManualQuestionEntryDialog>("手动单题录入", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadQuestionsAsync();
+        }
+    }
+
+    private async Task OpenImportDialogAsync()
+    {
+        var parameters = new DialogParameters { ["UserId"] = _currentUser?.Id };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<Northtropic.Components.Dialogs.ImportQuestionsDialog>("题库批量导入与模板下载", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadQuestionsAsync();
+        }
+    }
+
+    private async Task OpenPhotoOcrDialogAsync()
+    {
+        var parameters = new DialogParameters { ["UserId"] = _currentUser?.Id };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<Northtropic.Components.Dialogs.PhotoOcrImportDialog>("照片 OCR 识别与智能试题录入", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadQuestionsAsync();
+        }
+    }
+
+    private async Task ApplyForPublicAsync(Question q)
+    {
+        if (_currentUser == null) return;
+        var success = await QuestionManagementService.ApplyForPublicPublishAsync(q.Id, _currentUser.Id);
+        if (success)
+        {
+            q.PublishStatus = PublishStatusEnum.Pending;
+            Snackbar.Add("已提交转公开申请！等待超级管理员审核批准后即可获得 +50 EXP 奖励！", Severity.Success);
+        }
+    }
+
+    private async Task ApprovePublishAsync(Question q)
+    {
+        if (_currentUser == null) return;
+        var success = await QuestionManagementService.ApprovePublishRequestAsync(q.Id, _currentUser.Id);
+        if (success)
+        {
+            q.IsPublic = true;
+            q.PublishStatus = PublishStatusEnum.Approved;
+            Snackbar.Add("批准公开成功！系统已对题目作者发放公开奖励！", Severity.Success);
+        }
+    }
+
+    private async Task DirectPublishAsync(Question q)
+    {
+        if (_currentUser == null) return;
+        var success = await QuestionManagementService.DirectPublishAsync(q.Id, _currentUser.Id);
+        if (success)
+        {
+            q.IsPublic = true;
+            q.PublishStatus = PublishStatusEnum.Approved;
+            Snackbar.Add("🎉 试题已成功发布至全网公共题库，所有学员均可共享刷题！", Severity.Success);
+        }
+    }
+
+    private async Task RetractToPrivateAsync(Question q)
+    {
+        if (_currentUser == null) return;
+        var success = await QuestionManagementService.RetractToPrivateAsync(q.Id, _currentUser.Id);
+        if (success)
+        {
+            q.IsPublic = false;
+            q.PublishStatus = PublishStatusEnum.Private;
+            Snackbar.Add("已将试题撤回为个人私有题库。", Severity.Info);
+        }
+    }
+
+    private async Task RejectPublishAsync(Question q)
+    {
+        var success = await QuestionManagementService.RejectPublishRequestAsync(q.Id);
+        if (success)
+        {
+            q.PublishStatus = PublishStatusEnum.Rejected;
+            Snackbar.Add("已退回该题目的公开申请。", Severity.Warning);
+        }
+    }
+
+    private async Task DeleteQuestionAsync(Question q)
+    {
+        if (_currentUser?.CanModifyQuestionBank != true) return;
+        var success = await QuestionManagementService.DeleteQuestionAsync(q.Id, _currentUser.Id);
+        if (success)
+        {
+            _questions.Remove(q);
+            Snackbar.Add("已成功删除该试题！", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add("删除失败：权限不足或该试题不存在！", Severity.Error);
+        }
+    }
+
+    private async Task EditQuestionAsync(Question q)
+    {
+        var parameters = new DialogParameters { ["UserId"] = _currentUser?.Id, ["ExistingQuestion"] = q };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<Northtropic.Components.Dialogs.ManualQuestionEntryDialog>("✏️ 修改编辑试题", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadQuestionsAsync();
+        }
+    }
+
+    private bool _isExporting = false;
+
+    private async Task ExportQuestionsJsonAsync()
+    {
+        if (_currentUser == null) return;
+        _isExporting = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            string? subject = _selectedSubject == "全部分科" ? null : _selectedSubject;
+            bool? isPublic = null;
+            PublishStatusEnum? status = null;
+
+            if (_scopeFilter == "全网公共题库") isPublic = true;
+            else if (_scopeFilter == "我的私有题库") isPublic = false;
+            else if (_scopeFilter == "待审核转公开") status = PublishStatusEnum.Pending;
+
+            string jsonContent = await QuestionManagementService.ExportQuestionsJsonAsync(_currentUser.Id, subject, null, isPublic, status);
+            string fileName = $"题库备份_{_selectedSubject}_{DateTime.Now:yyyyMMdd_HHmmss}.json";
+
+            await JSRuntime.InvokeVoidAsync("downloadTextFile", fileName, jsonContent, "application/json;charset=utf-8");
+            Snackbar.Add($"🎉 成功导出题库标准备份文件：{fileName}！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"题库导出失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isExporting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ExportQuestionsCsvAsync()
+    {
+        if (_currentUser == null) return;
+        _isExporting = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            string? subject = _selectedSubject == "全部分科" ? null : _selectedSubject;
+            bool? isPublic = null;
+            PublishStatusEnum? status = null;
+
+            if (_scopeFilter == "全网公共题库") isPublic = true;
+            else if (_scopeFilter == "我的私有题库") isPublic = false;
+            else if (_scopeFilter == "待审核转公开") status = PublishStatusEnum.Pending;
+
+            byte[] csvBytes = await QuestionManagementService.ExportQuestionsCsvAsync(_currentUser.Id, subject, null, isPublic, status);
+            string fileName = $"题库导出_{_selectedSubject}_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+
+            string base64 = Convert.ToBase64String(csvBytes);
+            await JSRuntime.InvokeVoidAsync("downloadBase64File", fileName, base64, "text/csv;charset=utf-8");
+            Snackbar.Add($"🎉 成功导出题库 Excel 表格：{fileName}！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"题库导出失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isExporting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ExportQuestionsXlsxAsync()
+    {
+        if (_currentUser == null) return;
+        _isExporting = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            string? subject = _selectedSubject == "全部分科" ? null : _selectedSubject;
+            bool? isPublic = null;
+            PublishStatusEnum? status = null;
+
+            if (_scopeFilter == "全网公共题库") isPublic = true;
+            else if (_scopeFilter == "我的私有题库") isPublic = false;
+            else if (_scopeFilter == "待审核转公开") status = PublishStatusEnum.Pending;
+
+            byte[] xlsxBytes = await QuestionManagementService.ExportQuestionsXlsxAsync(_currentUser.Id, subject, null, isPublic, status);
+            string fileName = $"题库导出_{_selectedSubject}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+
+            string base64 = Convert.ToBase64String(xlsxBytes);
+            await JSRuntime.InvokeVoidAsync("downloadBase64File", fileName, base64, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            Snackbar.Add($"🎉 成功导出题库标准 Excel 电子表格：{fileName}！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"题库导出失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isExporting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ExportSelectedQuestionsAsync(string format)
+    {
+        if (_currentUser == null || !_selectedQuestionIds.Any()) return;
+        _isExporting = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var selectedIds = _selectedQuestionIds.ToList();
+            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            if (format == "json")
+            {
+                string jsonContent = await QuestionManagementService.ExportQuestionsJsonAsync(_currentUser.Id, specificQuestionIds: selectedIds);
+                string fileName = $"题库勾选导出_{selectedIds.Count}题_{timestamp}.json";
+                await JSRuntime.InvokeVoidAsync("downloadTextFile", fileName, jsonContent, "application/json;charset=utf-8");
+                Snackbar.Add($"🎉 成功导出 {selectedIds.Count} 道勾选试题备份文件：{fileName}！", Severity.Success);
+            }
+            else if (format == "csv")
+            {
+                byte[] csvBytes = await QuestionManagementService.ExportQuestionsCsvAsync(_currentUser.Id, specificQuestionIds: selectedIds);
+                string fileName = $"题库勾选导出_{selectedIds.Count}题_{timestamp}.csv";
+                string base64 = Convert.ToBase64String(csvBytes);
+                await JSRuntime.InvokeVoidAsync("downloadBase64File", fileName, base64, "text/csv;charset=utf-8");
+                Snackbar.Add($"🎉 成功导出 {selectedIds.Count} 道勾选试题 CSV 表格：{fileName}！", Severity.Success);
+            }
+            else if (format == "xlsx")
+            {
+                byte[] xlsxBytes = await QuestionManagementService.ExportQuestionsXlsxAsync(_currentUser.Id, specificQuestionIds: selectedIds);
+                string fileName = $"题库勾选导出_{selectedIds.Count}题_{timestamp}.xlsx";
+                string base64 = Convert.ToBase64String(xlsxBytes);
+                await JSRuntime.InvokeVoidAsync("downloadBase64File", fileName, base64, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                Snackbar.Add($"🎉 成功导出 {selectedIds.Count} 道勾选试题 Excel 表格：{fileName}！", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"批量导出勾选试题失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isExporting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public void Dispose()
+    {
+        UserSessionService.OnUserChanged -= OnUserChangedHandler;
+    }
+}
