@@ -203,6 +203,46 @@ namespace Northtropic.Services
                 .ToListAsync();
         }
 
+        public async Task<bool> IsProductionModeAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var admin = await dbScope.Context.Users.FirstOrDefaultAsync(u => u.Role == UserRole.SuperAdmin);
+            return admin != null &&
+                   !string.IsNullOrWhiteSpace(admin.PhoneNumber) &&
+                   admin.PhoneNumber.Trim() != "13800000000";
+        }
+
+        public async Task SyncDemoAccountsLifecycleAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var context = dbScope.Context;
+            var admin = await context.Users.FirstOrDefaultAsync(u => u.Role == UserRole.SuperAdmin);
+            bool isProduction = admin != null &&
+                                !string.IsNullOrWhiteSpace(admin.PhoneNumber) &&
+                                admin.PhoneNumber.Trim() != "13800000000";
+
+            var demoUsers = await context.Users
+                .Where(u => u.IsBuiltInDemo && u.Role != UserRole.SuperAdmin)
+                .ToListAsync();
+
+            bool changed = false;
+            foreach (var user in demoUsers)
+            {
+                var targetStatus = isProduction ? UserAccountStatus.Disabled : UserAccountStatus.Approved;
+                if (user.AccountStatus != targetStatus)
+                {
+                    user.AccountStatus = targetStatus;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                await context.SaveChangesAsync();
+                OnUserChanged?.Invoke();
+            }
+        }
+
         public async Task<User> CreateUserAsync(string username, string grade)
         {
             string randomSuffix = Random.Shared.Next(1000, 9999).ToString();
@@ -269,7 +309,7 @@ namespace Northtropic.Services
                 return (false, null, "该账号不存在！请检查手机号或前往注册。");
             }
 
-            // 审核状态拦截
+            // 审核与禁用状态拦截
             if (user.AccountStatus == UserAccountStatus.PendingApproval)
             {
                 return (false, null, "您的账号正在等待超级管理员审批中，审批通过后方可登录，请耐心等待！");
@@ -278,6 +318,10 @@ namespace Northtropic.Services
             {
                 string reason = string.IsNullOrWhiteSpace(user.RejectReason) ? "注册信息审核未通过" : user.RejectReason;
                 return (false, null, $"您的注册申请已被管理员拒绝。拒绝理由：{reason}");
+            }
+            if (user.AccountStatus == UserAccountStatus.Disabled)
+            {
+                return (false, null, "系统已进入正式使用阶段，内置演示体验账号已停用！请使用您自行注册并审批通过的账号登录。");
             }
 
             // 密码核验 (支持 PBKDF2-SHA256 加盐哈希 与 旧明文自适应无感升级)
@@ -352,6 +396,10 @@ namespace Northtropic.Services
                     string reason = string.IsNullOrWhiteSpace(user.RejectReason) ? "注册信息审核未通过" : user.RejectReason;
                     return (false, null, $"该账号注册申请已被管理员拒绝（理由：{reason}），无法登录！");
                 }
+                if (user.AccountStatus == UserAccountStatus.Disabled)
+                {
+                    return (false, null, "系统已进入正式使用阶段，内置演示体验账号已停用！请使用您自行注册并审批通过的账号登录。");
+                }
             }
 
             _activeUserId = user.Id;
@@ -368,18 +416,25 @@ namespace Northtropic.Services
             phoneOrRole = phoneOrRole?.Trim() ?? string.Empty;
             await using var dbScope = await CreateDbScopeAsync();
             var context = dbScope.Context;
-            var user = await context.Users.FirstOrDefaultAsync(u => 
-                u.PhoneNumber == phoneOrRole || 
-                u.Username == phoneOrRole ||
-                (phoneOrRole == "Student" && u.Role == UserRole.Student) ||
-                (phoneOrRole == "Parent" && u.Role == UserRole.Parent) ||
-                (phoneOrRole == "Teacher" && u.Role == UserRole.Teacher) ||
-                (phoneOrRole == "Admin" && u.Role == UserRole.SuperAdmin)
-            );
+            var user = await context.Users
+                .OrderByDescending(u => u.IsBuiltInDemo)
+                .FirstOrDefaultAsync(u => 
+                    u.PhoneNumber == phoneOrRole || 
+                    u.Username == phoneOrRole ||
+                    (phoneOrRole == "Student" && u.Role == UserRole.Student) ||
+                    (phoneOrRole == "Parent" && u.Role == UserRole.Parent) ||
+                    (phoneOrRole == "Teacher" && u.Role == UserRole.Teacher) ||
+                    (phoneOrRole == "Admin" && u.Role == UserRole.SuperAdmin)
+                );
 
             if (user == null)
             {
                 return (false, null, $"未找到匹配的体验账号（{phoneOrRole}）！");
+            }
+
+            if (user.AccountStatus == UserAccountStatus.Disabled)
+            {
+                return (false, null, "系统已进入正式使用阶段，内置演示体验账号已停用！请使用您自行注册并审批通过的账号登录。");
             }
 
             _activeUserId = user.Id;
@@ -804,7 +859,7 @@ namespace Northtropic.Services
                 return (false, null, "该手机号尚未注册！请切换至【新用户注册】提交真实姓名、角色、手机号与邮箱进行注册申请。");
             }
 
-            // 审核状态拦截
+            // 审核与禁用状态拦截
             if (user.AccountStatus == UserAccountStatus.PendingApproval)
             {
                 return (false, null, "您的账号正在等待超级管理员审批中，审批通过后方可登录，请耐心等待！");
@@ -813,6 +868,10 @@ namespace Northtropic.Services
             {
                 string reason = string.IsNullOrWhiteSpace(user.RejectReason) ? "注册信息审核未通过" : user.RejectReason;
                 return (false, null, $"您的注册申请已被管理员拒绝。拒绝理由：{reason}");
+            }
+            if (user.AccountStatus == UserAccountStatus.Disabled)
+            {
+                return (false, null, "系统已进入正式使用阶段，内置演示体验账号已停用！请使用您自行注册并审批通过的账号登录。");
             }
 
             _activeUserId = user.Id;
@@ -1080,6 +1139,7 @@ namespace Northtropic.Services
 
                 context.Users.Remove(user);
                 await context.SaveChangesAsync();
+                await SyncDemoAccountsLifecycleAsync();
 
                 if (_activeUserId == userId)
                 {
@@ -1112,6 +1172,7 @@ namespace Northtropic.Services
             {
                 user.Role = newRole;
                 await context.SaveChangesAsync();
+                await SyncDemoAccountsLifecycleAsync();
                 OnUserChanged?.Invoke();
                 return true;
             }
@@ -1162,6 +1223,7 @@ namespace Northtropic.Services
             }
 
             await context.SaveChangesAsync();
+            await SyncDemoAccountsLifecycleAsync();
             OnUserChanged?.Invoke();
             return (true, "个人资料修改成功！");
         }
@@ -1232,6 +1294,7 @@ namespace Northtropic.Services
                 user.Role = role;
                 user.PhoneNumber = phoneNumber.Trim();
                 await context.SaveChangesAsync();
+                await SyncDemoAccountsLifecycleAsync();
                 OnUserChanged?.Invoke();
                 return true;
             }

@@ -27,7 +27,10 @@ namespace Northtropic.Models
         PendingApproval = 1,
 
         [Display(Name = "已拒绝")]
-        Rejected = 2
+        Rejected = 2,
+
+        [Display(Name = "已禁用 (正式模式)")]
+        Disabled = 3
     }
 
     public class User
@@ -50,6 +53,9 @@ namespace Northtropic.Models
         public string Email { get; set; } = string.Empty;
 
         public UserAccountStatus AccountStatus { get; set; } = UserAccountStatus.Approved;
+
+        // 标记是否为系统内置预设体验演示账号 (用于在管理员修改手机号转正式使用时自动禁用)
+        public bool IsBuiltInDemo { get; set; } = false;
 
         [MaxLength(200)]
         public string RejectReason { get; set; } = string.Empty;

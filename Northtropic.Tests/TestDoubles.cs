@@ -21,6 +21,8 @@ namespace Northtropic.Tests
         public Task<User?> GetActiveUserAsync() => Task.FromResult(ActiveUser);
         public Task<List<User>> GetAllUsersAsync() => Task.FromResult(new List<User>());
         public Task<User> CreateUserAsync(string username, string grade) => Task.FromResult(new User { Username = username, Grade = grade });
+        public Task<bool> IsProductionModeAsync() => Task.FromResult(false);
+        public Task SyncDemoAccountsLifecycleAsync() => Task.CompletedTask;
         public Task<(bool Success, User? User, string Message)> SwitchUserAsync(Guid userId) => Task.FromResult<(bool, User?, string)>((true, ActiveUser, "OK"));
         public Task<(bool Success, User? User, string Message)> QuickLoginDemoUserAsync(string phoneOrRole) => Task.FromResult<(bool, User?, string)>((true, ActiveUser, "OK"));
         public Task<(bool Success, User? User, string Message)> LoginWithPasswordAsync(string accountOrPhone, string password) => Task.FromResult<(bool, User?, string)>((true, ActiveUser, "OK"));

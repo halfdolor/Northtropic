@@ -141,6 +141,7 @@
                                 <MudSelectItem Value="@("全部状态")">全部状态</MudSelectItem>
                                 <MudSelectItem Value="@("正常可用")">正常可用</MudSelectItem>
                                 <MudSelectItem Value="@("待审批")">待审批</MudSelectItem>
+                                <MudSelectItem Value="@("已禁用")">已禁用</MudSelectItem>
                                 <MudSelectItem Value="@("已拒绝")">已拒绝</MudSelectItem>
                             </MudSelect>
                         </MudItem>
@@ -194,9 +195,17 @@
                             {
                                 <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled">待审批</MudChip>
                             }
+                            else if (context.AccountStatus == UserAccountStatus.Disabled)
+                            {
+                                <MudChip T="string" Color="Color.Dark" Size="Size.Small" Variant="Variant.Filled">已禁用 (正式模式)</MudChip>
+                            }
                             else
                             {
                                 <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Outlined">已拒绝</MudChip>
+                            }
+                            @if (context.IsBuiltInDemo)
+                            {
+                                <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Text" Class="ml-1">内置体验</MudChip>
                             }
                         </MudTd>
                         <MudTd DataLabel="当前角色身份">
@@ -437,6 +446,10 @@
             else if (_selectedStatusFilter == "待审批")
             {
                 res = res.Where(u => u.AccountStatus == UserAccountStatus.PendingApproval);
+            }
+            else if (_selectedStatusFilter == "已禁用")
+            {
+                res = res.Where(u => u.AccountStatus == UserAccountStatus.Disabled);
             }
             else if (_selectedStatusFilter == "已拒绝")
             {

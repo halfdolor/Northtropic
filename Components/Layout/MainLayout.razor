@@ -261,59 +261,62 @@
                 </MudTabs>
 
                 <!-- 🎭 体验账号一键登录通道 (无门槛体验 4 大角色) -->
-                <div class="mt-4 pa-4 glass-card" style="background: rgba(59, 130, 246, 0.06); border: 1px dashed rgba(59, 130, 246, 0.4); border-radius: 12px;">
-                    <div class="d-flex align-center justify-space-between mb-2 flex-wrap gap-1">
-                        <div class="d-flex align-center gap-1">
-                            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Secondary" Size="Size.Small" />
-                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Style="color: var(--mud-palette-secondary);">
-                                🎭 快捷体验通道 · 4 大角色一键进入
-                            </MudText>
+                @if (!_isProductionMode)
+                {
+                    <div class="mt-4 pa-4 glass-card" style="background: rgba(59, 130, 246, 0.06); border: 1px dashed rgba(59, 130, 246, 0.4); border-radius: 12px;">
+                        <div class="d-flex align-center justify-space-between mb-2 flex-wrap gap-1">
+                            <div class="d-flex align-center gap-1">
+                                <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Secondary" Size="Size.Small" />
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Style="color: var(--mud-palette-secondary);">
+                                    🎭 快捷体验通道 · 4 大角色一键进入
+                                </MudText>
+                            </div>
+                            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Text">免密极速体验</MudChip>
                         </div>
-                        <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Text">免密极速体验</MudChip>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="6">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" FullWidth="true"
+                                           StartIcon="@Icons.Material.Filled.School" Class="justify-start text-left py-2"
+                                           OnClick='() => QuickDemoLoginAsync("Student")' Disabled="@_isLoggingIn">
+                                    <div>
+                                        <div class="font-weight-bold">🎓 学员 · 李小明</div>
+                                        <div class="mud-text-secondary" style="font-size: 0.72rem;">初二/刷题/错题副本</div>
+                                    </div>
+                                </MudButton>
+                            </MudItem>
+                            <MudItem xs="6">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" FullWidth="true"
+                                           StartIcon="@Icons.Material.Filled.FamilyRestroom" Class="justify-start text-left py-2"
+                                           OnClick='() => QuickDemoLoginAsync("Parent")' Disabled="@_isLoggingIn">
+                                    <div>
+                                        <div class="font-weight-bold">👨‍👩‍👧 家长 · 李大强</div>
+                                        <div class="mud-text-secondary" style="font-size: 0.72rem;">学情雷达/定制做题</div>
+                                    </div>
+                                </MudButton>
+                            </MudItem>
+                            <MudItem xs="6">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" FullWidth="true"
+                                           StartIcon="@Icons.Material.Filled.PersonSearch" Class="justify-start text-left py-2"
+                                           OnClick='() => QuickDemoLoginAsync("Teacher")' Disabled="@_isLoggingIn">
+                                    <div>
+                                        <div class="font-weight-bold">👩‍🏫 名师 · 张老师</div>
+                                        <div class="mud-text-secondary" style="font-size: 0.72rem;">题库录入/OCR拍照</div>
+                                    </div>
+                                </MudButton>
+                            </MudItem>
+                            <MudItem xs="6">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" FullWidth="true"
+                                           StartIcon="@Icons.Material.Filled.AdminPanelSettings" Class="justify-start text-left py-2"
+                                           OnClick='() => QuickDemoLoginAsync("Admin")' Disabled="@_isLoggingIn">
+                                    <div>
+                                        <div class="font-weight-bold">🛡️ 超级管理员</div>
+                                        <div class="mud-text-secondary" style="font-size: 0.72rem;">系统总控/用户审核</div>
+                                    </div>
+                                </MudButton>
+                            </MudItem>
+                        </MudGrid>
                     </div>
-                    <MudGrid Spacing="2">
-                        <MudItem xs="6">
-                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" FullWidth="true"
-                                       StartIcon="@Icons.Material.Filled.School" Class="justify-start text-left py-2"
-                                       OnClick='() => QuickDemoLoginAsync("Student")' Disabled="@_isLoggingIn">
-                                <div>
-                                    <div class="font-weight-bold">🎓 学员 · 李小明</div>
-                                    <div class="mud-text-secondary" style="font-size: 0.72rem;">初二/刷题/错题副本</div>
-                                </div>
-                            </MudButton>
-                        </MudItem>
-                        <MudItem xs="6">
-                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" FullWidth="true"
-                                       StartIcon="@Icons.Material.Filled.FamilyRestroom" Class="justify-start text-left py-2"
-                                       OnClick='() => QuickDemoLoginAsync("Parent")' Disabled="@_isLoggingIn">
-                                <div>
-                                    <div class="font-weight-bold">👨‍👩‍👧 家长 · 李大强</div>
-                                    <div class="mud-text-secondary" style="font-size: 0.72rem;">学情雷达/定制做题</div>
-                                </div>
-                            </MudButton>
-                        </MudItem>
-                        <MudItem xs="6">
-                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" FullWidth="true"
-                                       StartIcon="@Icons.Material.Filled.PersonSearch" Class="justify-start text-left py-2"
-                                       OnClick='() => QuickDemoLoginAsync("Teacher")' Disabled="@_isLoggingIn">
-                                <div>
-                                    <div class="font-weight-bold">👩‍🏫 名师 · 张老师</div>
-                                    <div class="mud-text-secondary" style="font-size: 0.72rem;">题库录入/OCR拍照</div>
-                                </div>
-                            </MudButton>
-                        </MudItem>
-                        <MudItem xs="6">
-                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" FullWidth="true"
-                                       StartIcon="@Icons.Material.Filled.AdminPanelSettings" Class="justify-start text-left py-2"
-                                       OnClick='() => QuickDemoLoginAsync("Admin")' Disabled="@_isLoggingIn">
-                                <div>
-                                    <div class="font-weight-bold">🛡️ 超级管理员</div>
-                                    <div class="mud-text-secondary" style="font-size: 0.72rem;">系统总控/用户审核</div>
-                                </div>
-                            </MudButton>
-                        </MudItem>
-                    </MudGrid>
-                </div>
+                }
 
                 <!-- 底部安全与超时说明 -->
                 <div class="mt-5 text-center">
@@ -393,30 +396,33 @@
                 </MudTooltip>
 
                 <!-- 🎭 快速切换体验身份快捷菜单 (桌面端) -->
-                <MudMenu AnchorOrigin="Origin.BottomCenter" TransformOrigin="Origin.TopCenter">
-                    <ActivatorContent>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.SwapHoriz" EndIcon="@Icons.Material.Filled.ArrowDropDown" Style="border-radius: 20px; font-weight: 700;">
-                            🎭 切身份
-                        </MudButton>
-                    </ActivatorContent>
-                    <ChildContent>
-                        <div class="px-4 py-2 font-weight-bold" style="font-size: 0.78rem; border-bottom: 1px solid var(--glass-card-border); color: #94a3b8;">
-                            🎭 无需重新输入账号 · 一键热切换
-                        </div>
-                        <MudMenuItem Icon="@Icons.Material.Filled.School" IconColor="Color.Primary" OnClick='() => SwitchToPersonaAsync("Student")'>
-                            🎓 切换至：学员 · 李小明 (初二 · 刷题/错题/成长)
-                        </MudMenuItem>
-                        <MudMenuItem Icon="@Icons.Material.Filled.FamilyRestroom" IconColor="Color.Secondary" OnClick='() => SwitchToPersonaAsync("Parent")'>
-                            👨‍👩‍👧 切换至：家长 · 李大强 (学情雷达/定制做题)
-                        </MudMenuItem>
-                        <MudMenuItem Icon="@Icons.Material.Filled.PersonSearch" IconColor="Color.Warning" OnClick='() => SwitchToPersonaAsync("Teacher")'>
-                            👩‍🏫 切换至：名师 · 张老师 (题库录入/OCR拍照)
-                        </MudMenuItem>
-                        <MudMenuItem Icon="@Icons.Material.Filled.AdminPanelSettings" IconColor="Color.Error" OnClick='() => SwitchToPersonaAsync("Admin")'>
-                            🛡️ 切换至：超级管理员 (系统总控/用户审批)
-                        </MudMenuItem>
-                    </ChildContent>
-                </MudMenu>
+                @if (!_isProductionMode)
+                {
+                    <MudMenu AnchorOrigin="Origin.BottomCenter" TransformOrigin="Origin.TopCenter">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.SwapHoriz" EndIcon="@Icons.Material.Filled.ArrowDropDown" Style="border-radius: 20px; font-weight: 700;">
+                                🎭 切身份
+                            </MudButton>
+                        </ActivatorContent>
+                        <ChildContent>
+                            <div class="px-4 py-2 font-weight-bold" style="font-size: 0.78rem; border-bottom: 1px solid var(--glass-card-border); color: #94a3b8;">
+                                🎭 无需重新输入账号 · 一键热切换
+                            </div>
+                            <MudMenuItem Icon="@Icons.Material.Filled.School" IconColor="Color.Primary" OnClick='() => SwitchToPersonaAsync("Student")'>
+                                🎓 切换至：学员 · 李小明 (初二 · 刷题/错题/成长)
+                            </MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.FamilyRestroom" IconColor="Color.Secondary" OnClick='() => SwitchToPersonaAsync("Parent")'>
+                                👨‍👩‍👧 切换至：家长 · 李大强 (学情雷达/定制做题)
+                            </MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.PersonSearch" IconColor="Color.Warning" OnClick='() => SwitchToPersonaAsync("Teacher")'>
+                                👩‍🏫 切换至：名师 · 张老师 (题库录入/OCR拍照)
+                            </MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.AdminPanelSettings" IconColor="Color.Error" OnClick='() => SwitchToPersonaAsync("Admin")'>
+                                🛡️ 切换至：超级管理员 (系统总控/用户审批)
+                            </MudMenuItem>
+                        </ChildContent>
+                    </MudMenu>
+                }
 
                 <!-- 用户菜单 (角色展示、修改个人资料、修改密码、切换用户、退出登录) -->
                 <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
@@ -445,22 +451,25 @@
                         </div>
                         <MudMenuItem Icon="@Icons.Material.Filled.ManageAccounts" OnClick="OpenEditProfileDialog">编辑个人资料</MudMenuItem>
                         <MudMenuItem Icon="@Icons.Material.Filled.Key" OnClick="OpenChangePasswordDialog">修改登录密码</MudMenuItem>
-                        <MudDivider />
-                        <div class="px-4 py-1 font-weight-bold" style="font-size: 0.75rem; color: #94a3b8;">
-                            🎭 切换体验身份
-                        </div>
-                        <MudMenuItem Icon="@Icons.Material.Filled.School" IconColor="Color.Primary" OnClick='() => SwitchToPersonaAsync("Student")'>
-                            🎓 学员 · 李小明
-                        </MudMenuItem>
-                        <MudMenuItem Icon="@Icons.Material.Filled.FamilyRestroom" IconColor="Color.Secondary" OnClick='() => SwitchToPersonaAsync("Parent")'>
-                            👨‍👩‍👧 家长 · 李大强
-                        </MudMenuItem>
-                        <MudMenuItem Icon="@Icons.Material.Filled.PersonSearch" IconColor="Color.Warning" OnClick='() => SwitchToPersonaAsync("Teacher")'>
-                            👩‍🏫 名师 · 张老师
-                        </MudMenuItem>
-                        <MudMenuItem Icon="@Icons.Material.Filled.AdminPanelSettings" IconColor="Color.Error" OnClick='() => SwitchToPersonaAsync("Admin")'>
-                            🛡️ 超级管理员
-                        </MudMenuItem>
+                        @if (!_isProductionMode)
+                        {
+                            <MudDivider />
+                            <div class="px-4 py-1 font-weight-bold" style="font-size: 0.75rem; color: #94a3b8;">
+                                🎭 切换体验身份
+                            </div>
+                            <MudMenuItem Icon="@Icons.Material.Filled.School" IconColor="Color.Primary" OnClick='() => SwitchToPersonaAsync("Student")'>
+                                🎓 学员 · 李小明
+                            </MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.FamilyRestroom" IconColor="Color.Secondary" OnClick='() => SwitchToPersonaAsync("Parent")'>
+                                👨‍👩‍👧 家长 · 李大强
+                            </MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.PersonSearch" IconColor="Color.Warning" OnClick='() => SwitchToPersonaAsync("Teacher")'>
+                                👩‍🏫 名师 · 张老师
+                            </MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.AdminPanelSettings" IconColor="Color.Error" OnClick='() => SwitchToPersonaAsync("Admin")'>
+                                🛡️ 超级管理员
+                            </MudMenuItem>
+                        }
                         <MudDivider />
                         <MudMenuItem Icon="@Icons.Material.Filled.Logout" IconColor="Color.Error" OnClick="LogoutAsync">安全退出登录</MudMenuItem>
                     </ChildContent>
@@ -522,22 +531,25 @@
                         </MudMenuItem>
                         <MudMenuItem Icon="@Icons.Material.Filled.ManageAccounts" OnClick="OpenEditProfileDialog">编辑个人资料</MudMenuItem>
                         <MudMenuItem Icon="@Icons.Material.Filled.Key" OnClick="OpenChangePasswordDialog">修改登录密码</MudMenuItem>
-                        <MudDivider />
-                        <div class="px-4 py-1 font-weight-bold" style="font-size: 0.75rem; color: #94a3b8;">
-                            🎭 快速切换身份
-                        </div>
-                        <MudMenuItem Icon="@Icons.Material.Filled.School" IconColor="Color.Primary" OnClick='() => SwitchToPersonaAsync("Student")'>
-                            🎓 学员 · 李小明
-                        </MudMenuItem>
-                        <MudMenuItem Icon="@Icons.Material.Filled.FamilyRestroom" IconColor="Color.Secondary" OnClick='() => SwitchToPersonaAsync("Parent")'>
-                            👨‍👩‍👧 家长 · 李大强
-                        </MudMenuItem>
-                        <MudMenuItem Icon="@Icons.Material.Filled.PersonSearch" IconColor="Color.Warning" OnClick='() => SwitchToPersonaAsync("Teacher")'>
-                            👩‍🏫 名师 · 张老师
-                        </MudMenuItem>
-                        <MudMenuItem Icon="@Icons.Material.Filled.AdminPanelSettings" IconColor="Color.Error" OnClick='() => SwitchToPersonaAsync("Admin")'>
-                            🛡️ 超级管理员
-                        </MudMenuItem>
+                        @if (!_isProductionMode)
+                        {
+                            <MudDivider />
+                            <div class="px-4 py-1 font-weight-bold" style="font-size: 0.75rem; color: #94a3b8;">
+                                🎭 快速切换身份
+                            </div>
+                            <MudMenuItem Icon="@Icons.Material.Filled.School" IconColor="Color.Primary" OnClick='() => SwitchToPersonaAsync("Student")'>
+                                🎓 学员 · 李小明
+                            </MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.FamilyRestroom" IconColor="Color.Secondary" OnClick='() => SwitchToPersonaAsync("Parent")'>
+                                👨‍👩‍👧 家长 · 李大强
+                            </MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.PersonSearch" IconColor="Color.Warning" OnClick='() => SwitchToPersonaAsync("Teacher")'>
+                                👩‍🏫 名师 · 张老师
+                            </MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.AdminPanelSettings" IconColor="Color.Error" OnClick='() => SwitchToPersonaAsync("Admin")'>
+                                🛡️ 超级管理员
+                            </MudMenuItem>
+                        }
                         <MudDivider />
                         <MudMenuItem Icon="@Icons.Material.Filled.Logout" IconColor="Color.Error" OnClick="LogoutAsync">安全退出登录</MudMenuItem>
                     </ChildContent>
@@ -635,6 +647,7 @@
 @code {
     private bool _drawerOpen = true;
     private User? _currentUser;
+    private bool _isProductionMode = false;
     private bool _tokenDrawerOpen = false;
     private DotNetObjectReference<MainLayout>? _dotNetRef;
 
@@ -1103,12 +1116,22 @@
 
     private async Task LoadUserDataAsync()
     {
+        _isProductionMode = await UserSessionService.IsProductionModeAsync();
         if (UserSessionService.IsAuthenticated)
         {
             _currentUser = await UserSessionService.GetActiveUserAsync();
             if (_currentUser != null)
             {
-                await GamificationService.UpdateStreakAsync();
+                if (_currentUser.AccountStatus == UserAccountStatus.Disabled)
+                {
+                    await UserSessionService.LogoutAsync();
+                    _currentUser = null;
+                    Snackbar.Add("当前体验账号在正式模式下已禁用，已自动退出。", Severity.Warning);
+                }
+                else
+                {
+                    await GamificationService.UpdateStreakAsync();
+                }
             }
         }
         else

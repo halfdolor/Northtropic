@@ -136,9 +136,13 @@ namespace Northtropic.Data
             SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""LastDailyRewardClaimDate"" TEXT NULL;");
             SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ParentEncouragementNote"" TEXT NOT NULL DEFAULT '';");
             SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ParentNoteUpdatedAt"" TEXT NULL;");
+            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""IsBuiltInDemo"" INTEGER NOT NULL DEFAULT 0;");
 
-            // 确保超级管理员默认手机号为 13800000000
-            SafeExecuteSql(context, @"UPDATE ""Users"" SET ""PhoneNumber"" = '13800000000' WHERE ""Role"" = 0;");
+            // 若超级管理员手机号为空，默认初始化为 13800000000
+            SafeExecuteSql(context, @"UPDATE ""Users"" SET ""PhoneNumber"" = '13800000000' WHERE ""Role"" = 0 AND (""PhoneNumber"" IS NULL OR ""PhoneNumber"" = '');");
+
+            // 将系统历史内置的演示账号标记为 IsBuiltInDemo = 1
+            SafeExecuteSql(context, @"UPDATE ""Users"" SET ""IsBuiltInDemo"" = 1 WHERE ""PhoneNumber"" IN ('13800000001', '13800000002', '13800000003', '13900000000', '13600000000', '13700000000') OR ""Id"" IN ('22222222-2222-2222-2222-222222222222', '33333333-3333-3333-3333-333333333333', '44444444-4444-4444-4444-444444444444');");
 
             // 安全补全 Questions 表的新增公私有列
             SafeExecuteSql(context, @"ALTER TABLE ""Questions"" ADD COLUMN ""CreatedByUserId"" TEXT NULL;");
@@ -200,6 +204,7 @@ namespace Northtropic.Data
                     TodayAnsweredCount = 12,
                     DailyTargetQuestions = 20,
                     AccountStatus = UserAccountStatus.Approved,
+                    IsBuiltInDemo = true,
                     Password = "123456",
                     MustChangePassword = false
                 };
@@ -222,6 +227,7 @@ namespace Northtropic.Data
                     Grade = "初中二年级",
                     Avatar = "👨‍👩‍👧",
                     AccountStatus = UserAccountStatus.Approved,
+                    IsBuiltInDemo = true,
                     Password = "123456",
                     MustChangePassword = false
                 };
@@ -244,6 +250,7 @@ namespace Northtropic.Data
                     Grade = "初中二年级",
                     Avatar = "👩‍🏫",
                     AccountStatus = UserAccountStatus.Approved,
+                    IsBuiltInDemo = true,
                     Password = "123456",
                     MustChangePassword = false
                 };
@@ -809,6 +816,41 @@ namespace Northtropic.Data
                 }
             }
             context.SaveChanges();
+
+            // 根据当前管理员手机号是否为默认 13800000000，自动同步所有内置演示账号的启用/禁用生命周期
+            SyncDemoAccountsLifecycle(context);
+        }
+
+        public static void SyncDemoAccountsLifecycle(AppDbContext context)
+        {
+            try
+            {
+                var admin = context.Users.FirstOrDefault(u => u.Role == UserRole.SuperAdmin);
+                bool isProduction = admin != null &&
+                                    !string.IsNullOrWhiteSpace(admin.PhoneNumber) &&
+                                    admin.PhoneNumber.Trim() != "13800000000";
+
+                var demoUsers = context.Users
+                    .Where(u => u.IsBuiltInDemo && u.Role != UserRole.SuperAdmin)
+                    .ToList();
+
+                bool changed = false;
+                foreach (var user in demoUsers)
+                {
+                    var targetStatus = isProduction ? UserAccountStatus.Disabled : UserAccountStatus.Approved;
+                    if (user.AccountStatus != targetStatus)
+                    {
+                        user.AccountStatus = targetStatus;
+                        changed = true;
+                    }
+                }
+
+                if (changed)
+                {
+                    context.SaveChanges();
+                }
+            }
+            catch { }
         }
 
         private static void SafeExecuteSql(AppDbContext context, string sql)

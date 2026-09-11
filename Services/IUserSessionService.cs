@@ -19,7 +19,9 @@ namespace Northtropic.Services
         Task<List<User>> GetAllUsersAsync();
         Task<User> CreateUserAsync(string username, string grade);
 
-        // 快捷体验与身份无缝切换
+        // 快捷体验与身份无缝切换及正式模式判定
+        Task<bool> IsProductionModeAsync();
+        Task SyncDemoAccountsLifecycleAsync();
         Task<(bool Success, User? User, string Message)> SwitchUserAsync(Guid userId);
         Task<(bool Success, User? User, string Message)> QuickLoginDemoUserAsync(string phoneOrRole);
 
