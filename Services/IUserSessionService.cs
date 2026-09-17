@@ -72,5 +72,9 @@ namespace Northtropic.Services
         // 全局大模型与 OCR 参数继承解析 (支持普通学员无缝继承系统管理员全局配置)
         Task<User?> GetSystemAdminUserAsync();
         Task<User> ResolveEffectiveUserLlmConfigAsync(User? user = null);
+
+        // 浏览器端持久化会话凭证 (支持页面刷新 F5 自动无缝保持登录)
+        string GenerateSessionToken(Guid userId);
+        Task<(bool Success, User? User)> RestoreSessionFromTokenAsync(string token);
     }
 }

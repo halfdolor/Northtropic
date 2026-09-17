@@ -1228,6 +1228,11 @@
     private async Task LogoutAndReloginAsync()
     {
         await UserSessionService.LogoutAsync();
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("northtropicAuth.clearToken");
+        }
+        catch { }
         Snackbar.Add("已退出登录，请使用超级管理员账号登录！", Severity.Info);
         NavigationManager.NavigateTo("/", true);
     }

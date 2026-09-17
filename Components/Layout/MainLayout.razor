@@ -22,7 +22,17 @@
 </style>
 
 <MudLayout Class="@($"theme-{ThemeService.CurrentTheme.Code}")">
-    @if (!UserSessionService.IsAuthenticated || _currentUser == null)
+    @if (_isRestoringSession)
+    {
+        <!-- 页面刷新时平滑会话恢复状态指示 (杜绝 F5 刷新闪烁登录框) -->
+        <div class="d-flex align-center justify-center min-vh-100 pa-4" style="background: radial-gradient(circle at 50% 20%, rgba(59, 130, 246, 0.15), transparent 70%), var(--bg-color, #0f172a); min-height: 100vh;">
+            <div class="d-flex flex-column align-center gap-3">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">正在校验并恢复安全会话...</MudText>
+            </div>
+        </div>
+    }
+    else if (!UserSessionService.IsAuthenticated || _currentUser == null)
     {
         <!-- 全屏强鉴权登录拦截门禁 (不鉴权不允许访问系统) -->
         <div class="d-flex align-center justify-center min-vh-100 pa-4" style="background: radial-gradient(circle at 50% 20%, rgba(59, 130, 246, 0.15), transparent 70%), var(--bg-color, #0f172a); min-height: 100vh;">
@@ -653,6 +663,7 @@
     private User? _currentUser;
     private bool _isProductionMode = false;
     private bool _tokenDrawerOpen = false;
+    private bool _isRestoringSession = true;
     private DotNetObjectReference<MainLayout>? _dotNetRef;
 
     // 门禁登录表单变量
@@ -691,6 +702,10 @@
     {
         UserSessionService.OnUserChanged += OnUserChangedHandler;
         ThemeService.OnThemeChanged += OnThemeChangedHandler;
+        if (UserSessionService.IsAuthenticated)
+        {
+            _isRestoringSession = false;
+        }
         await LoadUserDataAsync();
     }
 
@@ -704,7 +719,64 @@
                 await JS.InvokeVoidAsync("initInactivityTracker", _dotNetRef, _currentUser?.SessionTimeoutMinutes ?? 30);
             }
             catch { }
+
+            // 恢复本地存储的会话凭证 (支持页面刷新 F5 自动保持登录)
+            if (!UserSessionService.IsAuthenticated)
+            {
+                try
+                {
+                    var token = await JS.InvokeAsync<string?>("northtropicAuth.getToken");
+                    if (!string.IsNullOrWhiteSpace(token))
+                    {
+                        var (success, user) = await UserSessionService.RestoreSessionFromTokenAsync(token);
+                        if (success && user != null)
+                        {
+                            _currentUser = user;
+                            await LoadUserDataAsync();
+                        }
+                        else
+                        {
+                            await JS.InvokeVoidAsync("northtropicAuth.clearToken");
+                        }
+                    }
+                }
+                catch
+                {
+                    // 静默处理凭证恢复异常
+                }
+                finally
+                {
+                    _isRestoringSession = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            else
+            {
+                _isRestoringSession = false;
+            }
         }
+    }
+
+    private async Task SaveSessionTokenToBrowserAsync(Guid userId)
+    {
+        try
+        {
+            var token = UserSessionService.GenerateSessionToken(userId);
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                await JS.InvokeVoidAsync("northtropicAuth.saveToken", token);
+            }
+        }
+        catch { }
+    }
+
+    private async Task ClearSessionTokenFromBrowserAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("northtropicAuth.clearToken");
+        }
+        catch { }
     }
 
     [JSInvokable]
@@ -746,6 +818,7 @@
         if (UserSessionService.IsAuthenticated)
         {
             await UserSessionService.LogoutAsync();
+            await ClearSessionTokenFromBrowserAsync();
             _currentUser = null;
             Snackbar.Add("⏱️ 系统检测到您已超过 30 分钟无操作，已自动安全退出登录！", Severity.Warning);
             await InvokeAsync(StateHasChanged);
@@ -785,6 +858,7 @@
         if (success && user != null)
         {
             _currentUser = user;
+            await SaveSessionTokenToBrowserAsync(user.Id);
             Snackbar.Add(message, Severity.Success);
             await LoadUserDataAsync();
 
@@ -811,6 +885,7 @@
         if (success && user != null)
         {
             _currentUser = user;
+            await SaveSessionTokenToBrowserAsync(user.Id);
             Snackbar.Add(message, Severity.Success);
             await LoadUserDataAsync();
             NavigationManager.NavigateTo("/", forceLoad: false);
@@ -828,6 +903,7 @@
         if (success && user != null)
         {
             _currentUser = user;
+            await SaveSessionTokenToBrowserAsync(user.Id);
             Snackbar.Add(message, Severity.Success);
             await LoadUserDataAsync();
             NavigationManager.NavigateTo("/", forceLoad: false);
@@ -907,6 +983,7 @@
         if (success && user != null)
         {
             _currentUser = user;
+            await SaveSessionTokenToBrowserAsync(user.Id);
             Snackbar.Add(message, Severity.Success);
             await LoadUserDataAsync();
 
@@ -1145,6 +1222,7 @@
                 if (_currentUser.AccountStatus == UserAccountStatus.Disabled)
                 {
                     await UserSessionService.LogoutAsync();
+                    await ClearSessionTokenFromBrowserAsync();
                     _currentUser = null;
                     Snackbar.Add("当前体验账号在正式模式下已禁用，已自动退出。", Severity.Warning);
                 }
@@ -1169,6 +1247,7 @@
     private async Task LogoutAsync()
     {
         await UserSessionService.LogoutAsync();
+        await ClearSessionTokenFromBrowserAsync();
         _currentUser = null;
         Snackbar.Add("您已成功安全退出登录！", Severity.Info);
         await InvokeAsync(StateHasChanged);

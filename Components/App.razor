@@ -33,6 +33,29 @@
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     
     <script>
+        // 全局会话凭证持久化网关 (支持刷新 F5 自动免重新登录)
+        window.northtropicAuth = {
+            saveToken: function (token) {
+                try {
+                    localStorage.setItem('northtropic_session_token', token);
+                } catch (e) {
+                    console.warn('保存会话凭证失败:', e);
+                }
+            },
+            getToken: function () {
+                try {
+                    return localStorage.getItem('northtropic_session_token');
+                } catch (e) {
+                    return null;
+                }
+            },
+            clearToken: function () {
+                try {
+                    localStorage.removeItem('northtropic_session_token');
+                } catch (e) { }
+            }
+        };
+
         // 全局理科公式渲染引擎 (KaTeX)
         window.renderAllMath = function (targetSelector) {
             let attempts = 0;

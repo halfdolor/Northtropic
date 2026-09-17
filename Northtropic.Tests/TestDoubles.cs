@@ -82,6 +82,24 @@ namespace Northtropic.Tests
             }
             return Task.FromResult(user);
         }
+
+        public string GenerateSessionToken(Guid userId) => $"fake_token_{userId}";
+        public Task<(bool Success, User? User)> RestoreSessionFromTokenAsync(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token) || !token.StartsWith("fake_token_"))
+            {
+                return Task.FromResult<(bool, User?)>((false, null));
+            }
+            var idStr = token.Substring("fake_token_".Length);
+            if (Guid.TryParse(idStr, out var id))
+            {
+                var user = ActiveUser ?? new User { Id = id, Username = "恢复测试用户" };
+                user.Id = id;
+                ActiveUser = user;
+                return Task.FromResult<(bool, User?)>((true, user));
+            }
+            return Task.FromResult<(bool, User?)>((false, null));
+        }
     }
 
     public class FakeGamificationService : IGamificationService

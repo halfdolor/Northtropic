@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Northtropic.Data;
 using Northtropic.Helpers;
 using Northtropic.Models;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace Northtropic.Services
 {
@@ -146,11 +147,21 @@ namespace Northtropic.Services
 
         public event Action? OnUserChanged;
 
-        public UserSessionService(AppDbContext context, HttpClient httpClient, IDbContextFactory<AppDbContext>? dbContextFactory = null)
+        private readonly IDataProtector? _dataProtector;
+
+        public UserSessionService(
+            AppDbContext context,
+            HttpClient httpClient,
+            IDbContextFactory<AppDbContext>? dbContextFactory = null,
+            IDataProtectionProvider? dataProtectionProvider = null)
         {
             _context = context;
             _httpClient = httpClient;
             _dbContextFactory = dbContextFactory;
+            if (dataProtectionProvider != null)
+            {
+                _dataProtector = dataProtectionProvider.CreateProtector("Northtropic.UserSession.AuthToken.v1");
+            }
         }
 
         private ValueTask<AsyncDbScope> CreateDbScopeAsync()
@@ -1739,6 +1750,80 @@ namespace Northtropic.Services
             }
 
             return user;
+        }
+
+        // 浏览器端安全会话凭证 (支持页面刷新 F5 自动无缝保持登录态)
+        public string GenerateSessionToken(Guid userId)
+        {
+            if (userId == Guid.Empty) return string.Empty;
+            // 7 天有效期
+            var expireAt = DateTime.UtcNow.AddDays(7).Ticks;
+            var payload = $"{userId:D}:{expireAt}";
+
+            if (_dataProtector != null)
+            {
+                return _dataProtector.Protect(payload);
+            }
+
+            // 测试或备用 Base64 方案
+            var bytes = Encoding.UTF8.GetBytes(payload);
+            return "plain_" + Convert.ToBase64String(bytes);
+        }
+
+        public async Task<(bool Success, User? User)> RestoreSessionFromTokenAsync(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token)) return (false, null);
+
+            try
+            {
+                string payload;
+                if (_dataProtector != null && !token.StartsWith("plain_"))
+                {
+                    payload = _dataProtector.Unprotect(token);
+                }
+                else if (token.StartsWith("plain_"))
+                {
+                    var base64 = token.Substring("plain_".Length);
+                    payload = Encoding.UTF8.GetString(Convert.FromBase64String(base64));
+                }
+                else
+                {
+                    return (false, null);
+                }
+
+                var parts = payload.Split(':');
+                if (parts.Length != 2) return (false, null);
+
+                if (!Guid.TryParse(parts[0], out var userId)) return (false, null);
+                if (!long.TryParse(parts[1], out var expireTicks)) return (false, null);
+
+                if (DateTime.UtcNow.Ticks > expireTicks)
+                {
+                    // 凭证已过期
+                    return (false, null);
+                }
+
+                await using var dbScope = await CreateDbScopeAsync();
+                var user = await dbScope.Context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+                if (user == null) return (false, null);
+
+                if (user.AccountStatus == UserAccountStatus.Disabled)
+                {
+                    return (false, null);
+                }
+
+                // 成功恢复登录态
+                _activeUserId = user.Id;
+                _isAuthenticated = true;
+                _lastActivityTime = DateTime.UtcNow;
+
+                OnUserChanged?.Invoke();
+                return (true, user);
+            }
+            catch
+            {
+                return (false, null);
+            }
         }
     }
 }
