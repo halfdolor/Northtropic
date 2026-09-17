@@ -201,11 +201,9 @@ namespace Northtropic.Services
             bool inQuotes = false;
             int currentLine = 0;
 
-            while (!reader.EndOfStream)
+            while (await reader.ReadLineAsync() is { } line)
             {
                 currentLine++;
-                string? line = await reader.ReadLineAsync();
-                if (line == null) break;
 
                 if (currentRecordBuilder.Length > 0)
                 {
