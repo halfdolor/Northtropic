@@ -368,19 +368,21 @@ namespace Northtropic.Services
 
         public async Task<List<string>> GetCategoriesAsync(bool forceRefresh = false)
         {
-            if (!forceRefresh && _cachedCategories != null && (DateTime.UtcNow - _categoryCacheTime) < _categoryCacheTtl)
+            var fastSnapshot = _cachedCategories;
+            if (!forceRefresh && fastSnapshot != null && (DateTime.UtcNow - _categoryCacheTime) < _categoryCacheTtl)
             {
                 Interlocked.Increment(ref _categoryCacheHitCount);
-                return new List<string>(_cachedCategories);
+                return new List<string>(fastSnapshot);
             }
 
             await _categoryCacheLock.WaitAsync();
             try
             {
-                if (!forceRefresh && _cachedCategories != null && (DateTime.UtcNow - _categoryCacheTime) < _categoryCacheTtl)
+                var lockSnapshot = _cachedCategories;
+                if (!forceRefresh && lockSnapshot != null && (DateTime.UtcNow - _categoryCacheTime) < _categoryCacheTtl)
                 {
                     Interlocked.Increment(ref _categoryCacheHitCount);
-                    return new List<string>(_cachedCategories);
+                    return new List<string>(lockSnapshot);
                 }
 
                 Interlocked.Increment(ref _categoryCacheMissCount);
@@ -658,6 +660,23 @@ namespace Northtropic.Services
                     return $"理化复合单位智能对齐等价：已自动识别摩尔质量/摩尔体积等理化单位，对应标准答案 [{correct}]";
                 }
 
+                // 对数底数、真数与记号等价 (\ln(x) vs \log_e(x), \lg(x) vs \log_{10}(x), \log_2(x) 等)
+                if ((normU.Contains("log") || normU.Contains("ln") || normU.Contains("lg")) &&
+                    (normC.Contains("log") || normC.Contains("ln") || normC.Contains("lg")))
+                {
+                    return $"对数记号与底数等价：已自动识别以 e 为底的自然对数 (\\ln)、以 10 为底的常用对数 (\\lg) 及对数 \\log_b(x) 的符号等价性，对应标准答案 [{correct}]";
+                }
+
+                // 速度、加速度、密度、压强、功率等理科复合单位智能对齐等价
+                if (normU.Contains("m/s") || normC.Contains("m/s") || normU.Contains("m·s") || normC.Contains("m·s") || normU.Contains("m*s") || normC.Contains("m*s") ||
+                    normU.Contains("米/秒") || normC.Contains("米/秒") || normU.Contains("米每秒") || normC.Contains("米每秒") ||
+                    normU.Contains("kg/m") || normC.Contains("kg/m") || normU.Contains("千克/立方米") || normC.Contains("千克/立方米") || normU.Contains("千克每立方米") || normC.Contains("千克每立方米") ||
+                    normU.Contains("pa") || normC.Contains("pa") || normU.Contains("帕") || normC.Contains("帕") ||
+                    normU.Contains("j/s") || normC.Contains("j/s") || normU.Contains("焦/秒") || normC.Contains("焦/秒") || normU.Contains("焦每秒") || normC.Contains("焦每秒"))
+                {
+                    return $"物理/科学单位智能对齐等价（理科复合单位）：已自动识别物理量数值并对齐复合单位（如速度、加速度、密度、压强或功率等），对应标准答案 [{correct}]";
+                }
+
                 bool isDisjU = user.Contains("或") || user.Contains("或者");
                 bool isDisjC = correct.Contains("或") || correct.Contains("或者");
                 if (isDisjU || isDisjC)
@@ -725,6 +744,21 @@ namespace Northtropic.Services
                 }
 
 
+                // 空间/平面向量列矩阵与坐标表达等价 (\begin{pmatrix} 2 \\ -3 \end{pmatrix} vs (2,-3))
+                if ((user.Contains("pmatrix") || user.Contains("bmatrix") || correct.Contains("pmatrix") || correct.Contains("bmatrix")) &&
+                    (user.Contains("(") || correct.Contains("(") || user.Contains(",") || correct.Contains(",")))
+                {
+                    return $"空间/平面向量矩阵与坐标表达等价：已自动识别列向量/矩阵形式与坐标形式 (x, y) 的数学等价性，对应标准答案 [{correct}]";
+                }
+
+                // 数理区间/点坐标中文分号分隔符等价 ([-1; 2] vs [-1, 2], [-2; 3) vs [-2, 3))
+                if ((user.Contains(";") || user.Contains("；") || correct.Contains(";") || correct.Contains("；")) &&
+                    (((user.Contains("[") || user.Contains("(")) && (user.Contains("]") || user.Contains(")"))) ||
+                     ((correct.Contains("[") || correct.Contains("(")) && (correct.Contains("]") || correct.Contains(")")))))
+                {
+                    return $"数理区间/点坐标分隔符等价：已自动识别中文教材中分号 ';' 与标准逗号 ',' 分隔的数学等价性，对应标准表达 [{correct}]";
+                }
+
                 // 空间/平面向量基底与坐标表达等价 (2\vec{i}+3\vec{j} vs (2,3))
                 if ((user.Contains("i") || user.Contains("j") || correct.Contains("i") || correct.Contains("j")) &&
                     (user.Contains("(") || correct.Contains("(")) &&
@@ -756,13 +790,15 @@ namespace Northtropic.Services
                 }
 
                 // 三角特殊角角度制与弧度制等价 (\pi/6 = 30°, \pi/4 = 45°, \pi/3 = 60° 等)
-                if ((user.Contains("pi") || user.Contains("π") || user.Contains("\\pi") || correct.Contains("pi") || correct.Contains("π") || correct.Contains("\\pi")) &&
-                    (user.Contains("°") || user.Contains("度") || correct.Contains("°") || correct.Contains("度") || (normU.Length > 0 && char.IsDigit(normU[0])) || (normC.Length > 0 && char.IsDigit(normC[0]))))
+                if (CheckAngleAndRadianEquivalence(user, correct) || CheckAngleAndRadianEquivalence(normU, normC))
                 {
-                    if (normU.Contains("pi") || normC.Contains("pi"))
-                    {
-                        return $"三角角度与弧度制等价：已自动识别角度制 (°) 与弧度制 (\\pi) 的数理等价转换，对应标准答案 [{correct}]";
-                    }
+                    return $"三角角度与弧度制等价：已自动识别角度制 (如 30°、45°、90°) 与弧度制 (如 \\pi/6、\\pi/4、\\pi/2) 的精确数理等价对应，对应标准答案 [{correct}]";
+                }
+
+                // 国际单位制科学词头换算等价 (如 kHz 与 Hz、kJ 与 J、kV 与 V、kΩ 与 Ω 等)
+                if (CheckScientificUnitMultiplierEquivalence(user, correct) || CheckScientificUnitMultiplierEquivalence(normU, normC))
+                {
+                    return $"国际单位制科学词头换算等价：已自动对齐频率、能量、电压、阻抗或力学等国际制单位词头倍数（如 kHz 与 Hz、kJ 与 J、kV 与 V 等），对应标准答案 [{correct}]";
                 }
 
                 // 复数代数形式等价 (z = a + bi, bi + a, 0 + bi 等，需包含虚数单位 i)
@@ -2068,10 +2104,14 @@ namespace Northtropic.Services
             static string StripPrefix(string s)
             {
                 s = s.Trim();
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"^(?:\\vec\{[a-zA-Z]\}\s*=\s*|[a-zA-Z]\s*=\s*(?=\()|\([xyzXYZ]\s*,\s*[xyzXYZ](?:\s*,\s*[xyzXYZ])?\)\s*=\s*)", "");
-                if (System.Text.RegularExpressions.Regex.IsMatch(s, @"^[a-zA-Z]\s*\("))
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"^(?:点\s*[a-zA-Z]?\s*|[a-zA-Z]\s*(?=\()|\\vec\{[a-zA-Z]\}\s*=\s*|[a-zA-Z]\s*=\s*(?=\()|\([xyzXYZ]\s*,\s*[xyzXYZ](?:\s*,\s*[xyzXYZ])?\)\s*=\s*)", "");
+                if (System.Text.RegularExpressions.Regex.IsMatch(s, @"^(?:点\s*)?[a-zA-Z]?\s*\("))
                 {
-                    s = s.Substring(s.IndexOf('(')).Trim();
+                    int openParen = s.IndexOf('(');
+                    if (openParen >= 0)
+                    {
+                        s = s.Substring(openParen).Trim();
+                    }
                 }
                 return s.Trim();
             }
@@ -2098,6 +2138,22 @@ namespace Northtropic.Services
                 string a = m.Groups[1].Value.Trim();
                 string b = m.Groups[2].Value.Trim();
 
+                var otherM = System.Text.RegularExpressions.Regex.Match(otherStr, @"^\(\s*([^,()]+)\s*,\s*([^,()]+)\s*\)$");
+                if (otherM.Success)
+                {
+                    // 双方均为二维元组，严格保序比对各分量
+                    string oA = otherM.Groups[1].Value.Trim();
+                    string oB = otherM.Groups[2].Value.Trim();
+                    if ((a == oA || CheckFillInBlankMatch(a, oA)) && (b == oB || CheckFillInBlankMatch(b, oB)))
+                        return true;
+                    if (TryParseFractionOrDouble(a, out double valA) && TryParseFractionOrDouble(b, out double valB) &&
+                        TryParseFractionOrDouble(oA, out double valOA) && TryParseFractionOrDouble(oB, out double valOB))
+                    {
+                        if (AreNumbersClose(valA, valOA) && AreNumbersClose(valB, valOB)) return true;
+                    }
+                    return false;
+                }
+
                 if (CheckFillInBlankMatch($"x={a},y={b}", otherStr) || CheckFillInBlankMatch($"y={b},x={a}", otherStr))
                 {
                     return true;
@@ -2108,20 +2164,6 @@ namespace Northtropic.Services
                     if (TryParseFractionOrDouble(a, out double uA) && TryParseFractionOrDouble(b, out double uB))
                     {
                         if (AreNumbersClose(uA, oX) && AreNumbersClose(uB, oY)) return true;
-                    }
-                }
-
-                var otherM = System.Text.RegularExpressions.Regex.Match(otherStr, @"^\(\s*([^,()]+)\s*,\s*([^,()]+)\s*\)$");
-                if (otherM.Success)
-                {
-                    string oA = otherM.Groups[1].Value.Trim();
-                    string oB = otherM.Groups[2].Value.Trim();
-                    if ((a == oA || CheckFillInBlankMatch(a, oA)) && (b == oB || CheckFillInBlankMatch(b, oB)))
-                        return true;
-                    if (TryParseFractionOrDouble(a, out double valA) && TryParseFractionOrDouble(b, out double valB) &&
-                        TryParseFractionOrDouble(oA, out double valOA) && TryParseFractionOrDouble(oB, out double valOB))
-                    {
-                        if (AreNumbersClose(valA, valOA) && AreNumbersClose(valB, valOB)) return true;
                     }
                 }
 
@@ -2137,29 +2179,10 @@ namespace Northtropic.Services
                 string b = m.Groups[2].Value.Trim();
                 string d = m.Groups[3].Value.Trim();
 
-                if (CheckFillInBlankMatch($"x={a},y={b},z={d}", otherStr) ||
-                    CheckFillInBlankMatch($"x={a},z={d},y={b}", otherStr) ||
-                    CheckFillInBlankMatch($"y={b},x={a},z={d}", otherStr) ||
-                    CheckFillInBlankMatch($"y={b},z={d},x={a}", otherStr) ||
-                    CheckFillInBlankMatch($"z={d},x={a},y={b}", otherStr) ||
-                    CheckFillInBlankMatch($"z={d},y={b},x={a}", otherStr))
-                {
-                    return true;
-                }
-
-                if (TryParseBasisVector3D(otherStr, out double oX, out double oY, out double oZ))
-                {
-                    if (TryParseFractionOrDouble(a, out double uA) &&
-                        TryParseFractionOrDouble(b, out double uB) &&
-                        TryParseFractionOrDouble(d, out double uD))
-                    {
-                        if (AreNumbersClose(uA, oX) && AreNumbersClose(uB, oY) && AreNumbersClose(uD, oZ)) return true;
-                    }
-                }
-
-                var otherM = System.Text.RegularExpressions.Regex.Match(otherStr, @"^\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*\)$");
+                var otherM = System.Text.RegularExpressions.Regex.Match(otherStr, @"^\(\s*([^,()]+)\s*,\s*([^,()]+)\s*,\s*([^,()]+)\s*\)$");
                 if (otherM.Success)
                 {
+                    // 双方均为三维空间元组，严格保序比对各分量
                     string oA = otherM.Groups[1].Value.Trim();
                     string oB = otherM.Groups[2].Value.Trim();
                     string oD = otherM.Groups[3].Value.Trim();
@@ -2171,6 +2194,22 @@ namespace Northtropic.Services
                         TryParseFractionOrDouble(oA, out double valOA) && TryParseFractionOrDouble(oB, out double valOB) && TryParseFractionOrDouble(oD, out double valOD))
                     {
                         if (AreNumbersClose(valA, valOA) && AreNumbersClose(valB, valOB) && AreNumbersClose(valD, valOD)) return true;
+                    }
+                    return false;
+                }
+
+                if (CheckFillInBlankMatch($"x={a},y={b},z={d}", otherStr))
+                {
+                    return true;
+                }
+
+                if (TryParseBasisVector3D(otherStr, out double oX, out double oY, out double oZ))
+                {
+                    if (TryParseFractionOrDouble(a, out double uA) &&
+                        TryParseFractionOrDouble(b, out double uB) &&
+                        TryParseFractionOrDouble(d, out double uD))
+                    {
+                        if (AreNumbersClose(uA, oX) && AreNumbersClose(uB, oY) && AreNumbersClose(uD, oZ)) return true;
                     }
                 }
 
@@ -2274,7 +2313,7 @@ namespace Northtropic.Services
         {
             if (string.IsNullOrWhiteSpace(s)) return string.Empty;
             s = s.Trim();
-            var unitPattern = @"(?<=\d|\d\.\d+|\})\s*(\\mu m|\\mu s|\\mu a|\\mu c|\\mu f|\\mu v|\\mu h|\\mu t|\\mu mol|mu m|mu s|mu a|mu c|mu f|mu v|mu h|mu t|mu mol|mum|mus|mua|muc|muf|muv|muh|mut|mumol|μm|μs|μa|μc|μf|μv|μh|μt|μmol|um|us|ua|uc|uf|uv|uh|ut|umol|nm|pm|ns|ps|pf|nf|mt|mh|kj/mol|j/mol|kj\*mol\^\{-1\}|kj\*mol\^-1|kj·mol\^-1|kj·mol\^\{-1\}|j\*mol\^\{-1\}|j\*mol\^-1|j·mol\^-1|千焦/摩尔|千焦每摩尔|焦/摩尔|焦每摩尔|g/mol|g\*mol\^\{-1\}|g\*mol\^-1|g·mol\^-1|g·mol\^\{-1\}|l/mol|l\*mol\^\{-1\}|l\*mol\^-1|l·mol\^-1|l·mol\^\{-1\}|mol\^\{-1\}|mol\^-1|/mol|克/摩尔|克每摩尔|升/摩尔|升每摩尔|mol/l|mol·l\^\{-1\}|mol\*l\^\{-1\}|mol·l\^-1|mol\*l\^-1|mol·l\{-1\}|mol/L|摩尔/升|摩尔每升|g/ml|g/l|g/mL|克/毫升|克/升|克每升|克每毫升|m\*s\^\{-?[12]\}|m\*s\^-?[12]|m·s\^-?[12]|m/s\^2|m/s²|m/s2|m/s|km/h|km\*h\^\{-1\}|km\*h\^-1|km/时|公里/小时|公里每小时|千米/小时|千米每小时|千米/时|mol|cm\^3|m\^3|dm\^3|mm\^3|cm³|m³|dm³|mm³|立方厘米|立方分米|立方毫米|立方米|cm\^2|m\^2|dm\^2|mm\^2|km\^2|cm²|m²|dm²|mm²|km²|平方厘米|平方分米|平方毫米|平方米|平方千米|平方公里|kg\*m/s\^2|n\*m|n·m|牛·米|牛\*米|牛顿·米|牛顿\*米|牛米|牛顿米|g/cm\^3|g/cm³|g/cm3|kg/m\^3|kg/m³|kg/m3|kw\*h|kw·h|kwh|j/\(kg\*℃\)|j/\(kg·℃\)|j/\(kg\*c\)|j/\(kg·c\)|j/\(kg\*k\)|j/\(kg·k\)|j/kg\*k|j/kg\*c|n/kg|n\*kg\^\{-1\}|n\*kg\^-1|pa\*s|pa·s|pa|kpa|mpa|hpa|千帕|兆帕|百帕|atm|mmhg|hz|khz|mhz|ghz|kg|mg|cm|mm|dm|km|t|ml|v|kv|mv|a|ma|w|kw|mw|gw|千瓦|兆瓦|j|kj|mj|gj|千焦|兆焦|kn|n|c|ev|kev|mev|gev|wb|h|komega|momega|gomega|kohm|mohm|gohm|kω|mω|gω|ω|kΩ|mΩ|gΩ|Ω|千欧|兆欧|ohm|omega|bar|mbar|°c|deg|l|g|kb|mb|gb|tb|rad/s|rad|db|微米|纳米|皮米|微秒|纳秒|毫秒|微安|毫安|微法|纳法|皮法|微库|毫库|微伏|毫伏|毫特|微特|毫亨|微亨|牛顿?|焦耳?/\(千克[\*·]?(?:摄氏度|℃|度)\)|焦/\(千克[\*·]?(?:摄氏度|℃|度)\)|焦耳?/\(千克·摄氏度\)|焦/\(千克·摄氏度\)|焦/\(千克·度\)|焦/\(千克·℃\)|焦/\(千克\*℃\)|焦每千克摄氏度|焦耳?|瓦特?|帕斯卡?|帕·秒|帕\*秒|帕秒|帕|牛/千克|牛每千克|牛顿每千克|标准大气压|毫米汞柱|米/秒|米每秒|千瓦时|千瓦·时|千瓦\*时|度|摄氏度|℃|开尔文|k|厘米|毫米|分米|千米|米|克/立方厘米|千克/立方米|克|千克|公斤|吨|升|毫升|摩尔|伏特?|伏|安培?|安|欧姆|欧|库仑?|库|特斯拉?|韦伯?|亨利?|电子伏特?|电子伏|字节|弧度|分贝|种|个|条|类|只|支|组|份|位|次|倍|对|双|根|颗|粒|株|块|幅|门|项|节|题|道|把|套)$";
+            var unitPattern = @"(?<=\d|\d\.\d+|\})\s*(\\mu m|\\mu s|\\mu a|\\mu c|\\mu f|\\mu v|\\mu h|\\mu t|\\mu mol|mu m|mu s|mu a|mu c|mu f|mu v|mu h|mu t|mu mol|mum|mus|mua|muc|muf|muv|muh|mut|mumol|μm|μs|μa|μc|μf|μv|μh|μt|μmol|um|us|ua|uc|uf|uv|uh|ut|umol|nm|pm|ns|ps|pf|nf|mt|mh|kj/mol|j/mol|kj\*mol\^\{-1\}|kj\*mol\^-1|kj·mol\^-1|kj·mol\^\{-1\}|j\*mol\^\{-1\}|j\*mol\^-1|j·mol\^-1|千焦/摩尔|千焦每摩尔|焦/摩尔|焦每摩尔|g/mol|g\*mol\^\{-1\}|g\*mol\^-1|g·mol\^-1|g·mol\^\{-1\}|l/mol|l\*mol\^\{-1\}|l\*mol\^-1|l·mol\^-1|l·mol\^\{-1\}|mol\^\{-1\}|mol\^-1|/mol|克/摩尔|克每摩尔|升/摩尔|升每摩尔|mol/l|mol·l\^\{-1\}|mol\*l\^\{-1\}|mol·l\^-1|mol\*l\^-1|mol·l\{-1\}|mol/L|摩尔/升|摩尔每升|g/ml|g/l|g/mL|克/毫升|克/升|克每升|克每毫升|m\*s\^\{-?[12]\}|m\*s\^-?[12]|m·s\^\{-?[12]\}|m·s\^-?[12]|m/s\^2|m/s²|m/s2|m/s|km/h|km\*h\^\{-1\}|km\*h\^-1|km/时|公里/小时|公里每小时|千米/小时|千米每小时|千米/时|mol|cm\^3|m\^3|dm\^3|mm\^3|cm³|m³|dm³|mm³|立方厘米|立方分米|立方毫米|立方米|cm\^2|m\^2|dm\^2|mm\^2|km\^2|cm²|m²|dm²|mm²|km²|平方厘米|平方分米|平方毫米|平方米|平方千米|平方公里|kg\*m/s\^2|n\*m|n·m|牛·米|牛\*米|牛顿·米|牛顿\*米|牛米|牛顿米|g/cm\^3|g/cm³|g/cm3|g·cm\^\{-?3\}|g·cm\^-?3|g\*cm\^\{-?3\}|g\*cm\^-?3|kg/m\^3|kg/m³|kg/m3|kg·m\^\{-?3\}|kg·m\^-?3|kg\*m\^\{-?3\}|kg\*m\^-?3|kw\*h|kw·h|kwh|j/\(kg\*℃\)|j/\(kg·℃\)|j/\(kg\*c\)|j/\(kg·c\)|j/\(kg\*k\)|j/\(kg·k\)|j/kg\*k|j/kg\*c|n/kg|n\*kg\^\{-1\}|n\*kg\^-1|n/m\^2|n/m²|n/m2|n\*m\^\{-?2\}|n\*m\^-?2|n·m\^\{-?2\}|n·m\^-?2|j/s|j\*s\^\{-?1\}|j\*s\^-?1|j·s\^\{-?1\}|j·s\^-?1|v/m|n/c|pa\*s|pa·s|pa|kpa|mpa|hpa|千帕|兆帕|百帕|atm|mmhg|hz|khz|mhz|ghz|kg|mg|cm|mm|dm|km|t|ml|v|kv|mv|a|ma|w|kw|mw|gw|千瓦|兆瓦|j|kj|mj|gj|千焦|兆焦|kn|n|c|ev|kev|mev|gev|wb|h|komega|momega|gomega|kohm|mohm|gohm|kω|mω|gω|ω|kΩ|mΩ|gΩ|Ω|千欧|兆欧|ohm|omega|bar|mbar|°c|deg|l|g|kb|mb|gb|tb|rad/s|rad|db|微米|纳米|皮米|微秒|纳秒|毫秒|微安|毫安|微法|纳法|皮法|微库|毫库|微伏|毫伏|毫特|微特|毫亨|微亨|牛顿?|焦耳?/\(千克[\*·]?(?:摄氏度|℃|度)\)|焦/\(千克[\*·]?(?:摄氏度|℃|度)\)|焦耳?/\(千克·摄氏度\)|焦/\(千克·摄氏度\)|焦/\(千克·度\)|焦/\(千克·℃\)|焦/\(千克\*℃\)|焦每千克摄氏度|焦耳?|瓦特?|帕斯卡?|帕·秒|帕\*秒|帕秒|帕|牛/千克|牛每千克|牛顿每千克|牛/平方米|牛每平方米|焦/秒|焦每秒|伏/米|伏每米|牛/库仑?|牛每库仑?|标准大气压|毫米汞柱|米/秒²|米/秒\^2|米每秒二次方|米每二次方秒|米每秒的平方|米/秒|米每秒|千瓦时|千瓦·时|千瓦\*时|度|摄氏度|℃|开尔文|k|厘米|毫米|分米|千米|米|克/立方厘米|克每立方厘米|千克/立方米|千克每立方米|克|千克|公斤|吨|升|毫升|摩尔|伏特?|伏|安培?|安|欧姆|欧|库仑?|库|特斯拉?|韦伯?|亨利?|电子伏特?|电子伏|字节|弧度|分贝|种|个|条|类|只|支|组|份|位|次|倍|对|双|根|颗|粒|株|块|幅|门|项|节|题|道|把|套)$";
             return System.Text.RegularExpressions.Regex.Replace(s, unitPattern, "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
         }
 
@@ -2282,7 +2321,7 @@ namespace Northtropic.Services
         {
             // 氧化物与水
             ["水"] = "h2o", ["水蒸气"] = "h2o", ["冰"] = "h2o",
-            ["二氧化碳"] = "co2", ["一氧化碳"] = "co",
+            ["二氧化碳"] = "co2", ["一氧化碳"] = "co", ["干冰"] = "co2",
             ["二氧化硫"] = "so2", ["三氧化硫"] = "so3",
             ["一氧化氮"] = "no", ["二氧化氮"] = "no2",
             ["氧化钙"] = "cao", ["生石灰"] = "cao",
@@ -2360,7 +2399,7 @@ namespace Northtropic.Services
             // 常见单质
             ["氧气"] = "o2", ["氢气"] = "h2", ["氮气"] = "n2", ["氯气"] = "cl2", ["臭氧"] = "o3",
             ["铁"] = "fe", ["铁粉"] = "fe", ["铜"] = "cu", ["铝"] = "al", ["锌"] = "zn", ["镁"] = "mg",
-            ["银"] = "ag", ["金"] = "au",
+            ["银"] = "ag", ["金"] = "au", ["水银"] = "hg", ["汞"] = "hg",
             ["碳"] = "c", ["木炭"] = "c", ["焦炭"] = "c", ["金刚石"] = "c", ["石墨"] = "c",
             ["硫"] = "s", ["硫磺"] = "s",
             ["磷"] = "p", ["红磷"] = "p", ["白磷"] = "p",
@@ -2667,6 +2706,8 @@ namespace Northtropic.Services
                 s = s.Replace("^^", "^");
 
                 s = s.Replace("（", "(").Replace("）", ")").Replace("，", ",").Replace("：", ":");
+                // 中文教材分号区间与点坐标智能对齐 (如 [-1; 2] -> [-1, 2], (3; 4) -> (3, 4))
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=[\[\(][^\]\)]*?)[;；](?=[^\[\)]*?[\]\)])", ",");
                 // 全角数学运算符与符号归一
                 s = s.Replace("％", "%").Replace("＋", "+").Replace("－", "-").Replace("＊", "*").Replace("／", "/").Replace("＝", "=");
                 // LaTeX 百分比转义符解构
@@ -2681,6 +2722,20 @@ namespace Northtropic.Services
                      .Replace("\\left.", "").Replace("\\right.", "")
                      .Replace("\\vert", "|")
                      .Replace("$", "");
+                // LaTeX 矩阵列向量解构 (支持 \begin{pmatrix} a \\ b \end{pmatrix}, \begin{bmatrix} a \\ b \end{bmatrix}, 3维列向量等映射为标准坐标 (a, b) / (a, b, c))
+                s = System.Text.RegularExpressions.Regex.Replace(s,
+                    @"\\begin\{(?:pmatrix|bmatrix|vmatrix|matrix)\}\s*([^\\]+?)\s*\\\\\s*([^\\]+?)(?:\s*\\\\\s*([^\\]+?))?\s*\\end\{(?:pmatrix|bmatrix|vmatrix|matrix)\}",
+                    m =>
+                    {
+                        var v1 = m.Groups[1].Value.Trim();
+                        var v2 = m.Groups[2].Value.Trim();
+                        if (m.Groups[3].Success && !string.IsNullOrWhiteSpace(m.Groups[3].Value))
+                        {
+                            var v3 = m.Groups[3].Value.Trim();
+                            return $"({v1},{v2},{v3})";
+                        }
+                        return $"({v1},{v2})";
+                    }, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 // 化学反应扩展箭头优先解构 (支持 \xrightarrow[\Delta]{MnO2}, \xrightarrow{加热}, \xlongequal 等)
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:xrightarrow|xlongequal)(?:\[[^\]]*\]|\{[^}]*\})*", "->");
                 // 剥离气体与沉淀箭头 (支持 ↑, ↓, \uparrow, \downarrow)
@@ -2733,13 +2788,20 @@ namespace Northtropic.Services
                 // 三角函数与对数函数前缀反斜杠剥离与自适应空白 (如 \cos\theta -> cos theta, \sin x -> sin x, \ln 2 -> ln 2, \log_2 8 -> log_2 8)
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|lg|log|exp)(?=[a-zA-Z\\(])", "$1 ");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|lg|log|exp)(?=[^a-zA-Z]|$)", "$1");
-                // 对数底数与真数 LaTeX 格式规范化: \log_{2}{8} / \log_2{8} / \log_2 8 -> log(2,8)
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?(\d+(?:\.\d+)?)\}?\s*\{(\d+(?:\.\d+)?)\}", "log($1,$2)");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?(\d+(?:\.\d+)?)\}?\s*\(?\s*(\d+(?:\.\d+)?)\s*\)?", "log($1,$2)");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?lg\s*\{(\d+(?:\.\d+)?)\}", "lg($1)");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?ln\s*\{([a-zA-Z0-9\^]+)\}", "ln($1)");
-                // 三角与对数函数单项括号等价规范: 如 sin(x) -> sin x, ln(2) -> ln 2, log(x) -> log x
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|lg|log|exp)\s*\(\s*([a-zA-Z0-9]+)\s*\)", "$1 $2");
+                // 对数底数与真数 LaTeX 格式规范化:
+                // 1. 特殊对数底数映射: \log_e -> ln, \log_{10} -> lg
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?e\}?\s*", "ln ");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?10\}?\s*", "lg ");
+                // 2. 通用对数: \log_{2}{x} / \log_2{x} / \log_2(x) / \log_2 x -> log(2,x)
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?([a-zA-Z0-9]+(?:\.[0-9]+)?)\}?\s*\{([a-zA-Z0-9\+\-\*\/\^]+)\}", "log($1,$2)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?([a-zA-Z0-9]+(?:\.[0-9]+)?)\}?\s*\(\s*([a-zA-Z0-9\+\-\*\/\^]+)\s*\)", "log($1,$2)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?([a-zA-Z0-9]+(?:\.[0-9]+)?)\}?\s+([a-zA-Z0-9]+)\b", "log($1,$2)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\blog\s*\(\s*([a-zA-Z0-9]+(?:\.[0-9]+)?)\s*,\s*([a-zA-Z0-9\+\-\*\/\^]+)\s*\)", "log($1,$2)");
+                // 3. lg 与 ln 花括号规范化
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?lg\s*\{([a-zA-Z0-9\+\-\*\/\^]+)\}", "lg($1)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?ln\s*\{([a-zA-Z0-9\+\-\*\/\^]+)\}", "ln($1)");
+                // 4. 三角与对数函数单项括号等价规范: 如 sin(x) -> sin x, ln(2) -> ln 2, lg(x) -> lg x
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|lg|exp)\s*\(\s*([a-zA-Z0-9]+)\s*\)", "$1 $2");
                 // 常用希腊字母与物理常数反斜杠剥离与统一转录: \theta / θ -> theta, \eta / η -> eta, \nu / ν -> nu, \Delta / Δ -> delta 等
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(theta|alpha|beta|gamma|lambda|mu|rho|omega|phi|sigma|delta|tau|eta|nu|epsilon|Delta|Omega|Phi)\b", "$1", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = s.Replace("θ", "theta").Replace("α", "alpha").Replace("β", "beta").Replace("γ", "gamma")
@@ -2760,7 +2822,7 @@ namespace Northtropic.Services
                 s = s.Replace("\\pi", "pi").Replace("π", "pi");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?:\\angle|∠)\s*", "∠");
                 // LaTeX 运算符与关系符解构
-                s = s.Replace("\\times", "*").Replace("\\cdot", "*").Replace("\\div", "/");
+                s = s.Replace("\\times", "*").Replace("\\cdot", "*").Replace("\\div", "/").Replace("×", "*").Replace("·", "*").Replace("•", "*").Replace("∙", "*");
                 s = s.Replace("\\leq", "<=").Replace("\\le", "<=").Replace("\\geq", ">=").Replace("\\ge", ">=");
                 s = s.Replace("≤", "<=").Replace("≥", ">=");
                 s = s.Replace("\\neq", "!=").Replace("≠", "!=").Replace("≈", "~");
@@ -3342,6 +3404,31 @@ namespace Northtropic.Services
                     }
                 }
 
+                // 4. 无括号逗号/分号/顿号连接的纯标量列表 (如 "1, -2", "2; 1", "1、2")
+                // 严密排除方程组(含 '=')、有序区间与空间点坐标
+                if (!s.Contains('=') &&
+                    (s.Contains(',') || s.Contains('，') || s.Contains(';') || s.Contains('；') || s.Contains('、')) &&
+                    !s.StartsWith("(") && !s.EndsWith(")") && !s.StartsWith("[") && !s.EndsWith("]"))
+                {
+                    var parts = s.Split(new[] { ',', '，', ';', '；', '、' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length >= 2)
+                    {
+                        var tempRoots = new List<string>();
+                        bool allValid = true;
+                        foreach (var p in parts)
+                        {
+                            var trimmed = p.Trim();
+                            if (string.IsNullOrWhiteSpace(trimmed)) { allValid = false; break; }
+                            tempRoots.Add(trimmed);
+                        }
+                        if (allValid && tempRoots.Count >= 2)
+                        {
+                            roots = tempRoots;
+                            return true;
+                        }
+                    }
+                }
+
                 return false;
             }
 
@@ -3364,9 +3451,12 @@ namespace Northtropic.Services
                     if (allMatched && remainingC.Count == 0) return true;
                 }
             }
-            else if (uHasRoots && !cHasRoots && normCorrect.Contains(','))
+            else if (uHasRoots && !cHasRoots &&
+                     !normCorrect.StartsWith("(") && !normCorrect.EndsWith(")") &&
+                     !normCorrect.StartsWith("[") && !normCorrect.EndsWith("]") &&
+                     (normCorrect.Contains(',') || normCorrect.Contains('，') || normCorrect.Contains(';') || normCorrect.Contains('；') || normCorrect.Contains('、')))
             {
-                var cParts = normCorrect.Split(new[] { ',', '，', ';', '；' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToList();
+                var cParts = normCorrect.Split(new[] { ',', '，', ';', '；', '、' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToList();
                 if (cParts.Count == userRoots.Count && userRoots.Count >= 2)
                 {
                     var remainingC = new List<string>(cParts);
@@ -3380,9 +3470,12 @@ namespace Northtropic.Services
                     if (allMatched && remainingC.Count == 0) return true;
                 }
             }
-            else if (!uHasRoots && cHasRoots && normUser.Contains(','))
+            else if (!uHasRoots && cHasRoots &&
+                     !normUser.StartsWith("(") && !normUser.EndsWith(")") &&
+                     !normUser.StartsWith("[") && !normUser.EndsWith("]") &&
+                     (normUser.Contains(',') || normUser.Contains('，') || normUser.Contains(';') || normUser.Contains('；') || normUser.Contains('、')))
             {
-                var uParts = normUser.Split(new[] { ',', '，', ';', '；' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToList();
+                var uParts = normUser.Split(new[] { ',', '，', ';', '；', '、' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToList();
                 if (uParts.Count == corrRoots.Count && corrRoots.Count >= 2)
                 {
                     var remainingC = new List<string>(corrRoots);
@@ -3993,8 +4086,8 @@ namespace Northtropic.Services
                     }
                 }
 
-                // 匹配形如 3.0*10^8, 3.0x10^8, 3.0×10^8, 3*10^{8}, 3*10^(8), 1.6*10^-19, 1.6*10^{-19}, 1.6*10^(-19) 以及 .5*10^3
-                var sciMatch = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+))\s*(?:\*|x|×|\\times|\\cdot)\s*10\^[\{\(]?([+-]?\d+)[\}\)]?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                // 匹配形如 3.0*10^8, 3.0x10^8, 3.0×10^8, 3.0·10^8, 3*10^{8}, 3*10^(8), 1.6*10^-19, 1.6*10^{-19}, 1.6*10^(-19) 以及 .5*10^3
+                var sciMatch = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+))\s*(?:\*|x|×|·|•|∙|\\times|\\cdot)\s*10\^[\{\(]?([+-]?\d+)[\}\)]?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 if (sciMatch.Success)
                 {
                     if (double.TryParse(sciMatch.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var mantissa) &&
@@ -4227,6 +4320,16 @@ namespace Northtropic.Services
                 // 若单项可直接求值（如 0.5, sqrt(4), 2*sqrt(3), pi）
                 if (TryParseSingleTerm(s, out val)) return true;
 
+                // 乘法因数算式 (如 2*3, 2.5*4, 1.5*2)
+                var prodParts = s.Split('*');
+                if (prodParts.Length == 2 &&
+                    TryParseSingleTerm(prodParts[0].Trim(), out var f1) &&
+                    TryParseSingleTerm(prodParts[1].Trim(), out var f2))
+                {
+                    val = f1 * f2;
+                    return true;
+                }
+
                 // 简易分数、比例及分母有理化根式分数 (如 1/2, 2/3, 3:4, sqrt(2)/2, 1/sqrt(2), sqrt(3)/3, (-sqrt(2))/2, -1/sqrt(2))
                 var cleanFraction = s.Trim();
                 bool isOuterNeg = false;
@@ -4289,6 +4392,244 @@ namespace Northtropic.Services
             else if (TryParseScientificOrNumber(numCorrStr, out var corrNumber2))
             {
                 if (TryParseScientificOrNumber(numUserStr, out var userNumber2) && AreNumbersClose(userNumber2, corrNumber2))
+                {
+                    return true;
+                }
+            }
+
+            // 中学与大学三角特殊角角度制与弧度制双向等价 (如 30° vs \pi/6, 45° vs \pi/4, 90° vs \pi/2, 180° vs \pi, 360° vs 2\pi)
+            if (CheckAngleAndRadianEquivalence(user, correct) || CheckAngleAndRadianEquivalence(normUser, normCorrect)) return true;
+
+            // 国际单位制常用科学词头换算等价 (如 kHz 与 Hz、MHz 与 Hz、kJ 与 J、kV 与 V、kΩ 与 Ω 等)
+            if (CheckScientificUnitMultiplierEquivalence(user, correct) || CheckScientificUnitMultiplierEquivalence(normUser, normCorrect)) return true;
+
+            return false;
+        }
+
+        public static bool CheckAngleAndRadianEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            u = u.Trim();
+            c = c.Trim();
+
+            static bool TryExtractAngleDegrees(string s, out double deg)
+            {
+                deg = 0;
+                if (string.IsNullOrWhiteSpace(s)) return false;
+                s = s.Trim().Replace(" ", "").Replace("°", "").Replace("度", "").Replace("deg", "").Replace("\\circ", "").Replace("^{\\circ}", "").Replace("^\\circ", "");
+                return double.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out deg);
+            }
+
+            static bool TryExtractAngleRadians(string s, out double rad)
+            {
+                rad = 0;
+                if (string.IsNullOrWhiteSpace(s)) return false;
+                s = s.Trim().Replace(" ", "").Replace("π", "pi").Replace("\\pi", "pi").Replace("rad", "").Replace("弧度", "");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:frac|dfrac|tfrac)\s*\{([^}]+)\}\s*\{([^}]+)\}", "$1/$2");
+                s = s.Trim('(', ')');
+                if (s == "pi" || s == "+pi") { rad = Math.PI; return true; }
+                if (s == "-pi") { rad = -Math.PI; return true; }
+                if (s == "2pi" || s == "2*pi") { rad = 2 * Math.PI; return true; }
+
+                var mRadian = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?(?:\d+(?:\.\d+)?)?)?\*?pi(?:/(\d+(?:\.\d+)?))?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (mRadian.Success)
+                {
+                    string cStr = mRadian.Groups[1].Value;
+                    double coeff = 1.0;
+                    if (cStr == "-") coeff = -1.0;
+                    else if (!string.IsNullOrEmpty(cStr) && cStr != "+")
+                    {
+                        if (!double.TryParse(cStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out coeff)) return false;
+                    }
+                    double den = 1.0;
+                    if (mRadian.Groups[2].Success)
+                    {
+                        if (!double.TryParse(mRadian.Groups[2].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out den) || Math.Abs(den) < 1e-9) return false;
+                    }
+                    rad = coeff * Math.PI / den;
+                    return true;
+                }
+
+                if (double.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out rad))
+                {
+                    return true;
+                }
+                return false;
+            }
+
+            bool uHasDegMarker = u.Contains("°") || u.Contains("度") || u.Contains("deg") || u.Contains("\\circ");
+            bool cHasDegMarker = c.Contains("°") || c.Contains("度") || c.Contains("deg") || c.Contains("\\circ");
+            bool uHasRadMarker = u.Contains("pi") || u.Contains("π") || u.Contains("\\pi") || u.Contains("rad") || u.Contains("弧度");
+            bool cHasRadMarker = c.Contains("pi") || c.Contains("π") || c.Contains("\\pi") || c.Contains("rad") || c.Contains("弧度");
+
+            // 至少一方需要包含角度或弧度特征（如 °、度、deg、\circ、pi、π、\pi、rad、弧度）
+            if (!uHasDegMarker && !cHasDegMarker && !uHasRadMarker && !cHasRadMarker)
+            {
+                return false;
+            }
+
+            // 情况一：一边是角度标识（或显式数值），另一边是弧度标识（或纯弧度表达式）
+            if ((uHasDegMarker || (!uHasRadMarker && cHasRadMarker)) && TryExtractAngleDegrees(u, out var degU) && TryExtractAngleRadians(c, out var radC))
+            {
+                double expectedRad = degU * Math.PI / 180.0;
+                if (Math.Abs(expectedRad - radC) < 1e-4) return true;
+            }
+
+            if ((cHasDegMarker || (!cHasRadMarker && uHasRadMarker)) && TryExtractAngleDegrees(c, out var degC) && TryExtractAngleRadians(u, out var radU))
+            {
+                double expectedRad = degC * Math.PI / 180.0;
+                if (Math.Abs(expectedRad - radU) < 1e-4) return true;
+            }
+
+            // 情况二：若双方都带有角度标识 (如 30° vs 30度)
+            if (uHasDegMarker && cHasDegMarker)
+            {
+                if (TryExtractAngleDegrees(u, out var d1) && TryExtractAngleDegrees(c, out var d2))
+                {
+                    if (Math.Abs(d1 - d2) < 1e-4) return true;
+                }
+            }
+
+            // 情况三：若双方都带有弧度标识 (如 \frac{\pi}{6} vs pi/6)
+            if (uHasRadMarker && cHasRadMarker)
+            {
+                if (TryExtractAngleRadians(u, out var r1) && TryExtractAngleRadians(c, out var r2))
+                {
+                    if (Math.Abs(r1 - r2) < 1e-4) return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static bool CheckScientificUnitMultiplierEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+
+            static bool TryParseUnitNumber(string s, out double num)
+            {
+                num = 0;
+                if (string.IsNullOrWhiteSpace(s)) return false;
+                s = s.Trim().Replace(" ", "");
+                if (double.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out num)) return true;
+
+                // 科学记数法: 如 3.0*10^8, 1.5×10^-3, 6.02E23
+                var sciMatch = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+))\s*(?:\*|x|×|·|•|\\times|\\cdot)?\s*(?:10\^[\{\(]?([+-]?\d+)[\}\)]?|[eE]([+-]?\d+))$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (sciMatch.Success &&
+                    double.TryParse(sciMatch.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var baseNum))
+                {
+                    string expStr = sciMatch.Groups[2].Success ? sciMatch.Groups[2].Value : sciMatch.Groups[3].Value;
+                    if (int.TryParse(expStr, out var exp))
+                    {
+                        num = baseNum * Math.Pow(10, exp);
+                        return true;
+                    }
+                }
+
+                // 简易分数: 如 1/2, 3/4
+                var fracParts = s.Split('/');
+                if (fracParts.Length == 2 &&
+                    double.TryParse(fracParts[0].Trim('(', ')'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var n) &&
+                    double.TryParse(fracParts[1].Trim('(', ')'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) &&
+                    Math.Abs(d) > 1e-9)
+                {
+                    num = n / d;
+                    return true;
+                }
+
+                return false;
+            }
+
+            static bool TryParsePrefixedQuantity(string s, out double baseValue, out string family)
+            {
+                baseValue = 0;
+                family = string.Empty;
+                if (string.IsNullOrWhiteSpace(s)) return false;
+                s = s.Trim().ToLowerInvariant();
+                s = s.Replace("~", "").Replace("\\,", "").Replace("\\text{", "").Replace("\\mathrm{", "").Replace("}", "").Replace("$", "");
+                s = s.Replace("×", "*").Replace("·", "*").Replace("•", "*").Replace("\\times", "*").Replace("\\cdot", "*");
+
+                var prefixUnits = new (string pattern, double multiplier, string fam)[]
+                {
+                    ("ghz|吉赫", 1e9, "freq"),
+                    ("mhz|兆赫", 1e6, "freq"),
+                    ("khz|千赫", 1e3, "freq"),
+                    ("hz|赫兹|赫", 1.0, "freq"),
+
+                    ("gj|吉焦", 1e9, "energy"),
+                    ("mj|兆焦", 1e6, "energy"),
+                    ("kj|千焦", 1e3, "energy"),
+                    ("j|焦耳|焦", 1.0, "energy"),
+
+                    (@"g\\omega|gω|gΩ|gomega", 1e9, "res"),
+                    (@"m\\omega|mω|mΩ|momega|兆欧", 1e6, "res"),
+                    (@"k\\omega|kω|kΩ|komega|千欧", 1e3, "res"),
+                    (@"\\omega|ω|Ω|omega|ohm|欧姆|欧", 1.0, "res"),
+
+                    ("kv|千伏", 1e3, "volt"),
+                    ("mv|毫伏", 1e-3, "volt"),
+                    ("v|伏特|伏", 1.0, "volt"),
+
+                    ("mpa|兆帕", 1e6, "press"),
+                    ("kpa|千帕", 1e3, "press"),
+                    ("pa|帕斯卡|帕", 1.0, "press"),
+
+                    ("kn|千牛", 1e3, "force"),
+                    ("n|牛顿|牛", 1.0, "force"),
+
+                    ("gw|吉瓦", 1e9, "power"),
+                    ("mw|兆瓦", 1e6, "power"),
+                    ("kw|千瓦", 1e3, "power"),
+                    ("w|瓦特|瓦", 1.0, "power"),
+
+                    ("km|千米|公里", 1e3, "len"),
+                    ("dm|分米", 0.1, "len"),
+                    ("cm|厘米", 0.01, "len"),
+                    ("mm|毫米", 0.001, "len"),
+                    ("m|米", 1.0, "len"),
+
+                    ("t|吨", 1e3, "mass"),
+                    ("kg|千克|公斤", 1.0, "mass"),
+                    ("mg|毫克", 1e-6, "mass"),
+                    ("g|克", 1e-3, "mass")
+                };
+
+                // 分离尾部单位 (匹配上述模式之一)
+                foreach (var pu in prefixUnits)
+                {
+                    var regex = new System.Text.RegularExpressions.Regex(@"^(.*?)\s*(?:" + pu.pattern + @")$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    var match = regex.Match(s);
+                    if (match.Success)
+                    {
+                        var numPart = match.Groups[1].Value.Trim();
+                        numPart = numPart.TrimEnd('*', ' ');
+                        if (TryParseUnitNumber(numPart, out var num))
+                        {
+                            baseValue = num * pu.multiplier;
+                            family = pu.fam;
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            }
+
+            static bool AreValuesClose(double a, double b)
+            {
+                if (double.IsNaN(a) || double.IsNaN(b)) return false;
+                if (double.IsInfinity(a) || double.IsInfinity(b)) return a == b;
+                if (a == b) return true;
+                double diff = Math.Abs(a - b);
+                double maxVal = Math.Max(Math.Abs(a), Math.Abs(b));
+                if (maxVal < 1e-9) return diff < 1e-9;
+                return (diff / maxVal) < 1e-4;
+            }
+
+            if (TryParsePrefixedQuantity(u, out var uBase, out var uFam) &&
+                TryParsePrefixedQuantity(c, out var cBase, out var cFam))
+            {
+                if (uFam == cFam && AreValuesClose(uBase, cBase))
                 {
                     return true;
                 }

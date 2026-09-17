@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -319,6 +319,7 @@ namespace Northtropic.Tests
                 Assert.Equal(q2.Id, userRecords[0].QuestionId); // 倒序排在首位
 
                 // 3. 按科目查询题目分类
+                PracticeService.InvalidateCategoryCache();
                 var categories = await practiceService.GetCategoriesBySubjectAsync("物理");
                 Assert.Contains("力学与牛顿定律", categories);
                 Assert.Contains("电磁学", categories);

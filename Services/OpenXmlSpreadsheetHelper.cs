@@ -235,6 +235,16 @@ namespace Northtropic.Services
                             var tNodes = cellElem.Descendants().Where(d => d.Name.LocalName == "t").Select(d => d.Value);
                             val = string.Concat(tNodes);
                         }
+                        else if (typeAttr == "b")
+                        {
+                            var vElem = cellElem.Elements().FirstOrDefault(e => e.Name.LocalName == "v");
+                            val = vElem?.Value == "1" ? "True" : (vElem?.Value == "0" ? "False" : (vElem?.Value ?? ""));
+                        }
+                        else if (typeAttr == "str")
+                        {
+                            var vElem = cellElem.Elements().FirstOrDefault(e => e.Name.LocalName == "v");
+                            val = vElem?.Value ?? "";
+                        }
                         else
                         {
                             var vElem = cellElem.Elements().FirstOrDefault(e => e.Name.LocalName == "v");

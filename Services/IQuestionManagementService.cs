@@ -7,7 +7,7 @@ namespace Northtropic.Services
 {
     public interface IQuestionManagementService
     {
-        Task<List<Question>> GetQuestionsForManagementAsync(Guid currentUserId, string? subject = null, string? category = null, bool? isPublic = null, PublishStatusEnum? status = null, IEnumerable<Guid>? specificQuestionIds = null);
+        Task<List<Question>> GetQuestionsForManagementAsync(Guid currentUserId, string? subject = null, string? category = null, bool? isPublic = null, PublishStatusEnum? status = null, IEnumerable<Guid>? specificQuestionIds = null, QuestionType? questionType = null, int? difficulty = null);
         Task<Question?> GetQuestionByIdAsync(Guid id);
         Task<(bool Success, string Message, Question? Question)> AddQuestionAsync(Question question, Guid? userId = null);
         Task<bool> UpdateQuestionAsync(Question question, Guid? userId = null);

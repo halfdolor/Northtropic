@@ -45,13 +45,15 @@
                     <MudTabPanel Text="🔑 密码登录" Icon="@Icons.Material.Filled.Password">
                         <div class="d-flex flex-column gap-4">
                             <MudTextField T="string" @bind-Value="_loginAccount" Label="手机号 / 账号名" Variant="Variant.Outlined"
-                                          Placeholder="请输入手机号码或用户名..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AccountCircle" />
+                                          Placeholder="请输入手机号码或用户名..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AccountCircle"
+                                          OnKeyDown="HandlePasswordLoginKeyDown" />
 
                             <MudTextField T="string" @bind-Value="_loginPassword" Label="登录密码" Variant="Variant.Outlined"
                                           InputType="@(_showPassword ? InputType.Text : InputType.Password)"
                                           Placeholder="请输入登录密码 (默认初始密码 123456)..."
                                           Adornment="Adornment.End" AdornmentIcon="@(_showPassword ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff)"
-                                          OnAdornmentClick="() => _showPassword = !_showPassword" />
+                                          OnAdornmentClick="() => _showPassword = !_showPassword"
+                                          OnKeyDown="HandlePasswordLoginKeyDown" />
 
                             <MudAlert Severity="Severity.Info" Variant="Variant.Text" Class="py-1">
                                 💡 提示：所有新开通账号默认密码为 <code>123456</code>，登录后将要求修改密码。
@@ -78,7 +80,8 @@
                             <div class="d-flex align-center gap-2">
                                 <MudTextField T="string" @bind-Value="_smsPhone" Label="手机号码 (11位)" Variant="Variant.Outlined"
                                               Placeholder="请输入 11 位已注册手机号..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.PhoneAndroid"
-                                              Immediate="true" Class="flex-grow-1" />
+                                              Immediate="true" Class="flex-grow-1"
+                                              OnKeyDown="HandleSmsLoginKeyDown" />
 
                                 <MudButton Variant="Variant.Filled" Color="Color.Secondary" Disabled="@(_countdown > 0 || _isSendingCode)"
                                            OnClick="SendSmsCodeAsync" Style="height: 56px; min-width: 130px;">
@@ -100,7 +103,8 @@
 
                             <MudTextField T="string" @bind-Value="_smsCode" Label="6位短信验证码" Variant="Variant.Outlined"
                                           Placeholder="输入收到的短信验证码..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.LockClock"
-                                          MaxLength="6" Immediate="true" />
+                                          MaxLength="6" Immediate="true"
+                                          OnKeyDown="HandleSmsLoginKeyDown" />
 
                             <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Login"
                                        OnClick="SubmitSmsLoginAsync" Disabled="@_isLoggingIn" Class="font-weight-bold py-3 mt-2" Style="border-radius: 10px;">
@@ -745,6 +749,22 @@
             _currentUser = null;
             Snackbar.Add("⏱️ 系统检测到您已超过 30 分钟无操作，已自动安全退出登录！", Severity.Warning);
             await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task HandlePasswordLoginKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !_isLoggingIn)
+        {
+            await SubmitPasswordLoginAsync();
+        }
+    }
+
+    private async Task HandleSmsLoginKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !_isLoggingIn)
+        {
+            await SubmitSmsLoginAsync();
         }
     }
 

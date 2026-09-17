@@ -23,18 +23,21 @@ namespace Northtropic.Services
         private readonly AppDbContext _dbContext;
         private readonly IDbContextFactory<AppDbContext>? _dbContextFactory;
         private readonly HttpClient _httpClient;
+        private readonly ISystemHealthService? _systemHealthService;
 
         public AiQuestionGeneratorService(
             IGamificationService gamificationService,
             AppDbContext dbContext,
             IHttpClientFactory httpClientFactory,
-            IDbContextFactory<AppDbContext>? dbContextFactory = null)
+            IDbContextFactory<AppDbContext>? dbContextFactory = null,
+            ISystemHealthService? systemHealthService = null)
         {
             _gamificationService = gamificationService;
             _dbContext = dbContext;
             _dbContextFactory = dbContextFactory;
             _httpClient = httpClientFactory.CreateClient();
             _httpClient.Timeout = TimeSpan.FromSeconds(30);
+            _systemHealthService = systemHealthService;
         }
 
         private async Task SaveQuestionsAndLogsAsync(IEnumerable<Question> questions, IEnumerable<LlmGenerationLog> logs)
@@ -84,9 +87,10 @@ namespace Northtropic.Services
                 }
                 return await GenerateHeuristicBatchQuestionsAsync(user, grade, subject, category, count);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 网络波动或 API 异常时智能降级为启发式题库，绝不阻断学习
+                _systemHealthService?.RecordArchitectureEvent("AiGenerator", "Warning", $"LLM 题库批量生成异常降级: {ex.Message}");
                 return await GenerateHeuristicBatchQuestionsAsync(user, grade, subject, category, count);
             }
         }

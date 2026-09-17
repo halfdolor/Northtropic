@@ -901,7 +901,7 @@
                         bool isMultiBlank = q.Type == QuestionType.FillInBlank && (q.Stem.Contains("①") || q.Stem.Contains("②") || q.Stem.Contains("(1)") || q.Stem.Contains("(2)") || q.Stem.Contains("（1）") || q.Stem.Contains("（2）") || q.CorrectAnswer.Contains(";") || q.CorrectAnswer.Contains("；") || q.CorrectAnswer.Contains("、"));
                         string helperText = isMultiBlank 
                             ? "💡 提示：本题包含多个填空，支持使用分号 (；)、顿号 (、) 或空格分隔各空答案；按 Enter 键交卷" 
-                            : "💡 提示：支持输入 KaTeX 理科公式；填空题可按 Enter 键直接交卷，大题可按 Ctrl + Enter 快速交卷";
+                            : "💡 提示：支持输入 KaTeX 公式、区间/点坐标 (逗号/分号)、科学记数法及化学式；按 Enter 键快速交卷";
 
                         <MudTextField T="string" Value="@_textAnswer" ValueChanged="OnTextAnswerChanged" Label="@label" Variant="Variant.Outlined" Lines="@lines" Disabled="@_submitted" Class="mb-2" Immediate="true" HelperText="@helperText" OnKeyDown="OnTextInputKeyDown" />
 
@@ -1096,16 +1096,6 @@
                         }
                     </div>
                 </div>
-
-                @if (_lastResult.IsEquivalentMatch && !string.IsNullOrWhiteSpace(_lastResult.EquivalentMatchReason))
-                {
-                    <div class="pa-3 my-2 d-flex align-center gap-2" style="background: rgba(16, 185, 129, 0.12); border-left: 4px solid #10b981; border-radius: 8px;">
-                        <MudIcon Icon="@Icons.Material.Filled.Verified" Color="Color.Success" Size="Size.Small" />
-                        <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary); font-weight: 500;">
-                            <strong style="color: #10b981;">智能数理等价认定：</strong>@_lastResult.EquivalentMatchReason
-                        </MudText>
-                    </div>
-                }
 
                 @if (_lastResult.SubjectiveGrading != null)
                 {
@@ -3674,6 +3664,13 @@
                 else
                 {
                     await SubmitAnswerAsync();
+                }
+            }
+            else if (_submitted && !_evalMode.Contains("整卷统一") && !_paperSubmitted && !_submittingPaper)
+            {
+                if (_currentIndex < _questions.Count)
+                {
+                    await NextQuestionAsync();
                 }
             }
         }

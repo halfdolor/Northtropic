@@ -24,21 +24,37 @@ if (!Directory.Exists(tempKeysPath))
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(tempKeysPath));
 
-// 2. 配置 SQLite 数据库 (具备高并发 5 秒 Busy Timeout 防死锁与 WAL 读写并发)
-var defaultDbPath = Path.Combine(baseDirectory, "northtropic_study.db");
-var rawConnStr = builder.Configuration.GetConnectionString("DefaultConnection") ?? $"Data Source={defaultDbPath}";
-var sqliteBuilder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(rawConnStr);
-if (sqliteBuilder.DefaultTimeout < 5)
-{
-    sqliteBuilder.DefaultTimeout = 5;
-}
-sqliteBuilder.Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadWriteCreate;
-var dbConnectionString = sqliteBuilder.ToString();
+// 兼容旧版 DateTime 行为 (支持 Local/Unspecified DateTime 与 PostgreSQL timestamp 无缝映射)
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(dbConnectionString));
-builder.Services.AddDbContextFactory<AppDbContext>(options =>
-    options.UseSqlite(dbConnectionString));
+// 2. 配置数据库提供程序 (支持 PostgreSQL 与 SQLite 灵活配置与平滑切换)
+var dbProvider = builder.Configuration["DatabaseProvider"] ?? "PostgreSQL";
+var rawConnStr = builder.Configuration.GetConnectionString("DefaultConnection");
+
+bool isPostgres = string.Equals(dbProvider, "PostgreSQL", StringComparison.OrdinalIgnoreCase) ||
+    (!string.IsNullOrWhiteSpace(rawConnStr) && (rawConnStr.Contains("Host=", StringComparison.OrdinalIgnoreCase) || rawConnStr.Contains("Server=", StringComparison.OrdinalIgnoreCase)));
+
+if (isPostgres)
+{
+    var pgConnStr = rawConnStr ?? "Host=120.192.20.243;Port=5432;Username=postgres;Password=sa@123!@#;Database=northtropic_study;Include Error Detail=true;";
+    builder.Services.AddDbContextFactory<AppDbContext>(options =>
+        options.UseNpgsql(pgConnStr));
+}
+else
+{
+    var defaultDbPath = Path.Combine(baseDirectory, "northtropic_study.db");
+    var connStr = rawConnStr ?? $"Data Source={defaultDbPath}";
+    var sqliteBuilder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connStr);
+    if (sqliteBuilder.DefaultTimeout < 5)
+    {
+        sqliteBuilder.DefaultTimeout = 5;
+    }
+    sqliteBuilder.Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadWriteCreate;
+    builder.Services.AddDbContextFactory<AppDbContext>(options =>
+        options.UseSqlite(sqliteBuilder.ToString()));
+}
+builder.Services.AddScoped(sp =>
+    sp.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext());
 
 // 3. 注册应用业务服务 (Scoped/Transient)
 builder.Services.AddHttpClient();
@@ -235,11 +251,55 @@ app.MapGet("/api/system/backups/download", async (
     }
 });
 
-// 系统架构诊断审计快照安全导出 API (面向超级管理员 / SRE 架构师)
+// 系统微服务 / 探针标准健康检查接口 (200 OK / 503 Service Unavailable)
+app.MapGet("/api/health", async (
+    ISystemHealthService healthService,
+    Northtropic.Data.AppDbContext dbContext) =>
+{
+    try
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        bool canConnect = await dbContext.Database.CanConnectAsync();
+        sw.Stop();
+
+        var metrics = await healthService.GetSystemHealthAsync();
+
+        var payload = new
+        {
+            status = canConnect ? "Healthy" : "Degraded",
+            timestamp = DateTime.UtcNow,
+            databaseConnected = canConnect,
+            databaseLatencyMs = sw.Elapsed.TotalMilliseconds,
+            processUptime = metrics.ProcessUptimeFormatted,
+            gcMemory = metrics.GcMemoryFormatted,
+            databaseSizeBytes = metrics.DatabaseSizeBytes,
+            walSizeBytes = metrics.WalSizeBytes,
+            healthScore = metrics.HealthScore,
+            healthRating = metrics.HealthRating,
+            totalPracticeRecords = metrics.TotalPracticeRecords,
+            totalErrorItems = metrics.TotalErrorItems,
+            threadPoolSaturation = metrics.ThreadPoolSaturationRatio
+        };
+
+        return canConnect ? Results.Ok(payload) : Results.Json(payload, statusCode: 503);
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new
+        {
+            status = "Unhealthy",
+            timestamp = DateTime.UtcNow,
+            error = ex.Message
+        }, statusCode: 503);
+    }
+});
+
+// 系统架构诊断审计快照安全导出 API (面向超级管理员 / SRE 架构师，支持 JSON 及 Markdown 格式)
 app.MapGet("/api/system/diagnostics/export", async (
     ISystemHealthService healthService,
     IUserSessionService userSession,
     Northtropic.Data.AppDbContext dbContext,
+    string? format,
     string? ticket) =>
 {
     try
@@ -274,6 +334,19 @@ app.MapGet("/api/system/diagnostics/export", async (
         if (!authorized)
         {
             return Results.StatusCode(403);
+        }
+
+        bool isMarkdown = string.Equals(format, "markdown", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(format, "md", StringComparison.OrdinalIgnoreCase);
+
+        if (isMarkdown)
+        {
+            var mdReport = await healthService.ExportArchitectureDiagnosticReportMarkdownAsync();
+            var mdBytes = System.Text.Encoding.UTF8.GetBytes(mdReport);
+            var mdFileName = $"Northtropic_Architecture_Diagnostics_{DateTime.Now:yyyyMMdd_HHmmss}.md";
+
+            healthService.RecordArchitectureEvent("Telemetry", "Info", $"系统管理员 {authorizedUsername} 导出了 Markdown 架构诊断档案: {mdFileName}");
+            return Results.File(mdBytes, "text/markdown; charset=utf-8", mdFileName);
         }
 
         var jsonReport = await healthService.ExportArchitectureDiagnosticReportJsonAsync();

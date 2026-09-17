@@ -23,13 +23,15 @@
                 <MudTabPanel Text="🔑 密码登录" Icon="@Icons.Material.Filled.Password">
                     <div class="d-flex flex-column gap-4">
                         <MudTextField T="string" @bind-Value="_passwordAccount" Label="手机号 / 账号名" Variant="Variant.Outlined"
-                                      Placeholder="请输入 11 位手机号或账号名..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AccountCircle" />
+                                      Placeholder="请输入 11 位手机号或账号名..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AccountCircle"
+                                      OnKeyDown="HandlePasswordLoginKeyDown" />
 
                         <MudTextField T="string" @bind-Value="_passwordValue" Label="登录密码" Variant="Variant.Outlined"
                                       InputType="@(_showPassword ? InputType.Text : InputType.Password)"
                                       Placeholder="请输入登录密码 (初始默认密码为 123456)..."
                                       Adornment="Adornment.End" AdornmentIcon="@(_showPassword ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff)"
-                                      OnAdornmentClick="() => _showPassword = !_showPassword" />
+                                      OnAdornmentClick="() => _showPassword = !_showPassword"
+                                      OnKeyDown="HandlePasswordLoginKeyDown" />
 
                         <MudAlert Severity="Severity.Info" Variant="Variant.Text" Class="py-1">
                             提示：所有新开通账号初始默认密码均为 <code>123456</code>，登录后系统将要求修改密码。
@@ -56,7 +58,8 @@
                         <div class="d-flex align-center gap-2">
                             <MudTextField T="string" @bind-Value="_smsPhoneNumber" Label="手机号码 (11位)" Variant="Variant.Outlined"
                                           Placeholder="请输入 11 位手机号码..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.PhoneAndroid"
-                                          Immediate="true" Class="flex-grow-1" />
+                                          Immediate="true" Class="flex-grow-1"
+                                          OnKeyDown="HandleSmsLoginKeyDown" />
 
                             <MudButton Variant="Variant.Filled" Color="Color.Secondary" Disabled="@(_countdown > 0 || _isSendingCode)"
                                        OnClick="SendSmsCodeAsync" Style="height: 56px; min-width: 130px;">
@@ -78,7 +81,8 @@
 
                         <MudTextField T="string" @bind-Value="_smsCode" Label="6位短信验证码" Variant="Variant.Outlined"
                                       Placeholder="输入收到的 6 位短信验证码..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.LockClock"
-                                      MaxLength="6" Immediate="true" />
+                                      MaxLength="6" Immediate="true"
+                                      OnKeyDown="HandleSmsLoginKeyDown" />
 
                         <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Login"
                                    OnClick="SubmitSmsLoginAsync" Disabled="@_isLoggingIn" Class="font-weight-bold py-3 mt-2" Style="border-radius: 8px;">
@@ -247,6 +251,22 @@
     private bool _isRegSendingCode = false;
     private bool _isRegistering = false;
     private string _regSuccessMessage = string.Empty;
+
+    private async Task HandlePasswordLoginKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !_isLoggingIn)
+        {
+            await SubmitPasswordLoginAsync();
+        }
+    }
+
+    private async Task HandleSmsLoginKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !_isLoggingIn)
+        {
+            await SubmitSmsLoginAsync();
+        }
+    }
 
     private async Task SubmitPasswordLoginAsync()
     {

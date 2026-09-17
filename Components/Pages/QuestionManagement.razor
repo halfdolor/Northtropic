@@ -72,7 +72,7 @@
     <!-- 筛选控制栏 -->
     <div class="glass-card pa-4 mb-6">
         <MudGrid align-items="center">
-            <MudItem xs="12" sm="4" md="3">
+            <MudItem xs="12" sm="6" md="3">
                 <MudTextField T="string" Value="@_searchQuery" ValueChanged="OnSearchQueryChanged" Placeholder="搜索题干或关键字..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" />
             </MudItem>
             <MudItem xs="6" sm="3" md="2">
@@ -85,6 +85,26 @@
                 </MudSelect>
             </MudItem>
             <MudItem xs="6" sm="3" md="2">
+                <MudSelect T="string" Value="@_typeFilter" ValueChanged="OnTypeFilterChanged" Label="试题题型" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="@("全部题型")">全部题型</MudSelectItem>
+                    <MudSelectItem Value="@("单选题")">单选题</MudSelectItem>
+                    <MudSelectItem Value="@("多选题")">多选题</MudSelectItem>
+                    <MudSelectItem Value="@("填空题")">填空题</MudSelectItem>
+                    <MudSelectItem Value="@("简答题")">简答题</MudSelectItem>
+                    <MudSelectItem Value="@("综合大题")">综合大题</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6" sm="3" md="2">
+                <MudSelect T="string" Value="@_difficultyFilter" ValueChanged="OnDifficultyFilterChanged" Label="难度梯度" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="@("全部难度")">全部难度</MudSelectItem>
+                    <MudSelectItem Value="@("1星 (基础入门)")">1星 (基础入门)</MudSelectItem>
+                    <MudSelectItem Value="@("2星 (巩固基础)")">2星 (巩固基础)</MudSelectItem>
+                    <MudSelectItem Value="@("3星 (能力提升)")">3星 (能力提升)</MudSelectItem>
+                    <MudSelectItem Value="@("4星 (进阶拔高)")">4星 (进阶拔高)</MudSelectItem>
+                    <MudSelectItem Value="@("5星 (冲刺压轴)")">5星 (冲刺压轴)</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6" sm="3" md="2">
                 <MudSelect T="string" Value="@_scopeFilter" ValueChanged="OnScopeFilterChanged" Label="题库范围" Variant="Variant.Outlined" Margin="Margin.Dense">
                     <MudSelectItem Value="@("全部题库")">全部题库</MudSelectItem>
                     <MudSelectItem Value="@("全网公共题库")">全网公共题库</MudSelectItem>
@@ -92,15 +112,55 @@
                     <MudSelectItem Value="@("待审核转公开")">待审核转公开</MudSelectItem>
                 </MudSelect>
             </MudItem>
-            <MudItem xs="12" sm="2" md="5" Class="d-flex justify-end gap-2 align-center">
-                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.SelectAll" OnClick="ToggleSelectAll">
-                    @(PagedQuestions.Count > 0 && PagedQuestions.All(q => _selectedQuestionIds.Contains(q.Id)) ? "取消本页全选" : "全选当前页")
+            <MudItem xs="12" sm="6" md="1" Class="d-flex justify-end gap-2 align-center">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.SelectAll" OnClick="ToggleSelectAll" Style="white-space: nowrap;">
+                    @(PagedQuestions.Count > 0 && PagedQuestions.All(q => _selectedQuestionIds.Contains(q.Id)) ? "反选" : "全选")
                 </MudButton>
-                <MudText Typo="Typo.caption" Class="mud-text-secondary align-self-center">
-                    共 <strong>@FilteredQuestions.Count</strong> 道题目
-                </MudText>
             </MudItem>
         </MudGrid>
+
+        @if (HasActiveFilters)
+        {
+            <div class="d-flex align-center gap-2 flex-wrap mt-3 pt-2" style="border-top: 1px dashed rgba(255,255,255,0.1);">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">当前激活过滤：</MudText>
+                @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                {
+                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => OnSearchQueryChanged(string.Empty)">
+                        关键字: @_searchQuery
+                    </MudChip>
+                }
+                @if (_selectedSubject != "全部分科")
+                {
+                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined" OnClose='() => OnSubjectFilterChanged("全部分科")'>
+                        学科: @_selectedSubject
+                    </MudChip>
+                }
+                @if (_typeFilter != "全部题型")
+                {
+                    <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Outlined" OnClose='() => OnTypeFilterChanged("全部题型")'>
+                        题型: @_typeFilter
+                    </MudChip>
+                }
+                @if (_difficultyFilter != "全部难度")
+                {
+                    <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Outlined" OnClose='() => OnDifficultyFilterChanged("全部难度")'>
+                        难度: @_difficultyFilter
+                    </MudChip>
+                }
+                @if (_scopeFilter != "全部题库")
+                {
+                    <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Outlined" OnClose='() => OnScopeFilterChanged("全部题库")'>
+                        范围: @_scopeFilter
+                    </MudChip>
+                }
+                <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.FilterAltOff" OnClick="ResetFilters">
+                    清空所有筛选
+                </MudButton>
+                <div class="ml-auto mud-text-secondary" style="font-size: 0.8rem;">
+                    匹配到 <strong>@FilteredQuestions.Count</strong> 道题目
+                </div>
+            </div>
+        }
     </div>
 
     <!-- 批量操作控制浮动栏 (当有选中题目时展示) -->
@@ -213,6 +273,9 @@
                                 <MudChip T="string" Color="Color.Primary" Size="Size.Small">@q.Subject</MudChip>
                                 <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">@q.Category</MudChip>
                                 <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">@q.TypeDisplayName</MudChip>
+                                <MudChip T="string" Color="@(q.Difficulty >= 4 ? Color.Error : (q.Difficulty >= 3 ? Color.Warning : Color.Success))" Variant="Variant.Outlined" Size="Size.Small">
+                                    @($"⭐ {q.Difficulty}星难度")
+                                </MudChip>
 
                                 @if (q.IsPublic)
                                 {
@@ -383,6 +446,14 @@
     private string _searchQuery = string.Empty;
     private string _selectedSubject = "全部分科";
     private string _scopeFilter = "全部题库";
+    private string _typeFilter = "全部题型";
+    private string _difficultyFilter = "全部难度";
+
+    private bool HasActiveFilters => !string.IsNullOrWhiteSpace(_searchQuery) ||
+                                     _selectedSubject != "全部分科" ||
+                                     _scopeFilter != "全部题库" ||
+                                     _typeFilter != "全部题型" ||
+                                     _difficultyFilter != "全部难度";
 
     private int _currentPage = 1;
     private int _pageSize = 10;
@@ -531,6 +602,18 @@
             {
                 res = res.Where(q => q.PublishStatus == PublishStatusEnum.Pending);
             }
+            if (_typeFilter != "全部题型")
+            {
+                res = res.Where(q => q.TypeDisplayName == _typeFilter ||
+                                     (_typeFilter == "综合解析题" && q.Type == QuestionType.EssayAnalysis));
+            }
+            if (_difficultyFilter != "全部难度")
+            {
+                if (int.TryParse(_difficultyFilter.Substring(0, 1), out int diff))
+                {
+                    res = res.Where(q => q.Difficulty == diff);
+                }
+            }
             return res.ToList();
         }
     }
@@ -538,6 +621,8 @@
     private void OnSearchQueryChanged(string val) { _searchQuery = val; _currentPage = 1; }
     private void OnSubjectFilterChanged(string val) { _selectedSubject = val; _currentPage = 1; }
     private void OnScopeFilterChanged(string val) { _scopeFilter = val; _currentPage = 1; }
+    private void OnTypeFilterChanged(string val) { _typeFilter = val; _currentPage = 1; }
+    private void OnDifficultyFilterChanged(string val) { _difficultyFilter = val; _currentPage = 1; }
 
     private void OnPageChanged(int newPage)
     {
@@ -555,6 +640,8 @@
         _searchQuery = string.Empty;
         _selectedSubject = "全部分科";
         _scopeFilter = "全部题库";
+        _typeFilter = "全部题型";
+        _difficultyFilter = "全部难度";
         _currentPage = 1;
     }
 
@@ -734,7 +821,7 @@
 
             string base64 = Convert.ToBase64String(csvBytes);
             await JSRuntime.InvokeVoidAsync("downloadBase64File", fileName, base64, "text/csv;charset=utf-8");
-            Snackbar.Add($"🎉 成功导出题库 Excel 表格：{fileName}！", Severity.Success);
+            Snackbar.Add($"🎉 成功导出题库通用 CSV 数据表：{fileName}！", Severity.Success);
         }
         catch (Exception ex)
         {

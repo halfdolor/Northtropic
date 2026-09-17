@@ -69,6 +69,18 @@ namespace Northtropic.Services
         // 运行时与内存指标
         public long GcMemoryBytes { get; set; }
         public string GcMemoryFormatted => $"{GcMemoryBytes / (1024.0 * 1024.0):F2} MB";
+        public long TotalAvailableMemoryBytes { get; set; }
+        public string TotalAvailableMemoryFormatted => TotalAvailableMemoryBytes switch
+        {
+            >= 1024L * 1024 * 1024 => $"{TotalAvailableMemoryBytes / (1024.0 * 1024.0 * 1024.0):F2} GB",
+            >= 1024 * 1024 => $"{TotalAvailableMemoryBytes / (1024.0 * 1024.0):F1} MB",
+            _ => $"{TotalAvailableMemoryBytes} Bytes"
+        };
+        public long MemoryLoadBytes { get; set; }
+        public double MemoryPressurePercentage => TotalAvailableMemoryBytes > 0
+            ? Math.Round((double)MemoryLoadBytes / TotalAvailableMemoryBytes * 100.0, 1)
+            : 0.0;
+        public double GcPauseRatio { get; set; }
         public string DotNetVersion { get; set; } = Environment.Version.ToString();
         public TimeSpan ProcessUptime { get; set; }
         public string ProcessUptimeFormatted => $"{(int)ProcessUptime.TotalHours}小时 {ProcessUptime.Minutes}分 {ProcessUptime.Seconds}秒";
@@ -163,6 +175,12 @@ namespace Northtropic.Services
         public double VerificationDurationMs { get; set; }
         public DateTime CheckedAt { get; set; } = DateTime.Now;
         public string? ErrorMessage { get; set; }
+        public Dictionary<string, int> TableRowCounts { get; set; } = new();
+        public bool ParityVerified { get; set; } = false;
+        public bool HeaderValidated { get; set; } = false;
+        public int PageSize { get; set; } = 0;
+        public string ForeignKeyStatus { get; set; } = "Unknown";
+        public bool IsForeignKeyHealthy => ForeignKeyStatus.Equals("ok", StringComparison.OrdinalIgnoreCase);
     }
 
     public class SystemArchitectureEvent
@@ -187,7 +205,46 @@ namespace Northtropic.Services
         public long TotalQuestionsScanned { get; set; }
         public long GcMemoryBytes { get; set; }
         public string LatencyRating { get; set; } = "Optimal";
+        public bool ConcurrencyStressPassed { get; set; } = true;
+        public double ConcurrencyThroughputQps { get; set; }
         public List<string> DiagnosticCheckpoints { get; set; } = new();
+    }
+
+    public class ArchitectureTelemetrySummaryDto
+    {
+        public int TotalEvents { get; set; }
+        public int ErrorCount { get; set; }
+        public int WarningCount { get; set; }
+        public int SuccessCount { get; set; }
+        public int InfoCount { get; set; }
+        public double ReliabilityScore { get; set; } = 100.0;
+        public double? AverageDurationMs { get; set; }
+    }
+
+    public class AdaptiveMaintenancePlanDto
+    {
+        public bool RequiresOptimization { get; set; }
+        public bool RequiresVacuum { get; set; }
+        public bool RequiresWalCheckpoint { get; set; }
+        public string UrgencyLevel { get; set; } = "Low"; // "Low", "Medium", "High", "Critical"
+        public List<string> ActionReasons { get; set; } = new();
+    }
+
+    public class AdaptiveMaintenanceExecutionResultDto
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public double ElapsedMilliseconds { get; set; }
+        public long BytesReclaimed { get; set; }
+        public List<string> ExecutedActions { get; set; } = new();
+        public long BeforeWalSizeBytes { get; set; }
+        public long AfterWalSizeBytes { get; set; }
+        public double BeforeFragmentationRatio { get; set; }
+        public double AfterFragmentationRatio { get; set; }
+        public double BeforeLatencyMs { get; set; }
+        public double AfterLatencyMs { get; set; }
+        public bool IntegrityVerified { get; set; } = true;
+        public DateTime ExecutedAt { get; set; } = DateTime.Now;
     }
 
     public interface ISystemHealthService
@@ -205,9 +262,13 @@ namespace Northtropic.Services
         Task<string?> CalculateBackupSha256Async(string fileName, string? targetDir = null);
         Task<BackupVerificationResultDto> VerifyBackupSnapshotAsync(string fileName, string? targetDir = null);
         Task<string> ExportArchitectureDiagnosticReportJsonAsync();
+        Task<string> ExportArchitectureDiagnosticReportMarkdownAsync();
         Task<List<TableStorageMetricDto>> GetTableStorageMetricsAsync();
         Task<ArchitecturalDiagnosticResultDto> RunArchitecturalSelfDiagnosticAsync();
-        IReadOnlyList<SystemArchitectureEvent> GetRecentArchitectureEvents();
+        IReadOnlyList<SystemArchitectureEvent> GetRecentArchitectureEvents(string? category = null, string? level = null, int? maxCount = null);
+        ArchitectureTelemetrySummaryDto GetArchitectureTelemetrySummary();
+        Task<AdaptiveMaintenancePlanDto> EvaluateAdaptiveMaintenancePlanAsync();
+        Task<AdaptiveMaintenanceExecutionResultDto> ExecuteAdaptiveMaintenancePlanAsync(AdaptiveMaintenancePlanDto? plan = null);
         void RecordArchitectureEvent(string category, string level, string message, double? durationMs = null);
     }
 }

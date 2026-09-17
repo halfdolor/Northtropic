@@ -24,7 +24,7 @@ namespace Northtropic.Services
             _dbContextFactory = dbContextFactory;
         }
 
-        public async Task<List<Question>> GetQuestionsForManagementAsync(Guid currentUserId, string? subject = null, string? category = null, bool? isPublic = null, PublishStatusEnum? status = null, IEnumerable<Guid>? specificQuestionIds = null)
+        public async Task<List<Question>> GetQuestionsForManagementAsync(Guid currentUserId, string? subject = null, string? category = null, bool? isPublic = null, PublishStatusEnum? status = null, IEnumerable<Guid>? specificQuestionIds = null, QuestionType? questionType = null, int? difficulty = null)
         {
             await using var dbScope = await CreateDbScopeAsync();
             var db = dbScope.Context;
@@ -54,6 +54,14 @@ namespace Northtropic.Services
             if (status.HasValue)
             {
                 query = query.Where(q => q.PublishStatus == status.Value);
+            }
+            if (questionType.HasValue)
+            {
+                query = query.Where(q => q.Type == questionType.Value);
+            }
+            if (difficulty.HasValue && difficulty.Value > 0)
+            {
+                query = query.Where(q => q.Difficulty == difficulty.Value);
             }
 
             // 规则：超级管理员可统览所有题目；其它用户只看全网共享公共题库 (IsPublic==true) 与自己的私有题库 (CreatedByUserId==currentUserId)

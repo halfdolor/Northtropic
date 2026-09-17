@@ -12,148 +12,151 @@ namespace Northtropic.Data
         {
             context.Database.EnsureCreated();
 
-            // 优化 SQLite 并发读写与锁等待配置 (WAL 预写日志模式，支持读写并发，避免 "database is locked" 异常)
-            try
+            if (context.Database.IsSqlite())
             {
-                context.Database.ExecuteSqlRaw("PRAGMA journal_mode = WAL;");
-                context.Database.ExecuteSqlRaw("PRAGMA busy_timeout = 5000;");
-                context.Database.ExecuteSqlRaw("PRAGMA synchronous = NORMAL;");
+                // 优化 SQLite 并发读写与锁等待配置 (WAL 预写日志模式，支持读写并发，避免 "database is locked" 异常)
+                try
+                {
+                    context.Database.ExecuteSqlRaw("PRAGMA journal_mode = WAL;");
+                    context.Database.ExecuteSqlRaw("PRAGMA busy_timeout = 5000;");
+                    context.Database.ExecuteSqlRaw("PRAGMA synchronous = NORMAL;");
+                }
+                catch { }
+
+                // 确保 SQLite 中存在 LlmGenerationLogs 数据表
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS ""LlmGenerationLogs"" (
+                        ""Id"" TEXT NOT NULL CONSTRAINT ""PK_LlmGenerationLogs"" PRIMARY KEY,
+                        ""UserId"" TEXT NOT NULL,
+                        ""QuestionId"" TEXT NULL,
+                        ""ModelName"" TEXT NOT NULL,
+                        ""Subject"" TEXT NOT NULL,
+                        ""Category"" TEXT NOT NULL,
+                        ""PromptTokens"" INTEGER NOT NULL,
+                        ""CompletionTokens"" INTEGER NOT NULL,
+                        ""TotalTokens"" INTEGER NOT NULL,
+                        ""GeneratedAt"" TEXT NOT NULL
+                    );
+                ");
+
+                // 确保 SQLite 中存在 StudentParentBindings 数据表
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS ""StudentParentBindings"" (
+                        ""Id"" TEXT NOT NULL CONSTRAINT ""PK_StudentParentBindings"" PRIMARY KEY,
+                        ""ParentUserId"" TEXT NOT NULL,
+                        ""StudentUserId"" TEXT NOT NULL,
+                        ""RelationType"" TEXT NOT NULL DEFAULT '监护人',
+                        ""CreatedAt"" TEXT NOT NULL
+                    );
+                ");
+
+                // 确保 SQLite 中存在 UserFavorites 数据表
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS ""UserFavorites"" (
+                        ""Id"" TEXT NOT NULL CONSTRAINT ""PK_UserFavorites"" PRIMARY KEY,
+                        ""UserId"" TEXT NOT NULL,
+                        ""QuestionId"" TEXT NOT NULL,
+                        ""Note"" TEXT NOT NULL DEFAULT '',
+                        ""CreatedAt"" TEXT NOT NULL
+                    );
+                ");
+
+                // 确保 SQLite 中存在 CurriculumSubjectConfigs 数据表
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS ""CurriculumSubjectConfigs"" (
+                        ""Id"" TEXT NOT NULL CONSTRAINT ""PK_CurriculumSubjectConfigs"" PRIMARY KEY,
+                        ""Grade"" TEXT NOT NULL,
+                        ""Subject"" TEXT NOT NULL,
+                        ""TopicsJson"" TEXT NOT NULL DEFAULT '[]',
+                        ""SortOrder"" INTEGER NOT NULL DEFAULT 0,
+                        ""IsBuiltIn"" INTEGER NOT NULL DEFAULT 1,
+                        ""UpdatedAt"" TEXT NOT NULL
+                    );
+                ");
+
+                // 确保 SQLite 中存在 HomeworkAssignments 数据表
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS ""HomeworkAssignments"" (
+                        ""Id"" TEXT NOT NULL CONSTRAINT ""PK_HomeworkAssignments"" PRIMARY KEY,
+                        ""CreatorUserId"" TEXT NOT NULL,
+                        ""StudentUserId"" TEXT NOT NULL,
+                        ""Title"" TEXT NOT NULL,
+                        ""Subject"" TEXT NOT NULL,
+                        ""Category"" TEXT NOT NULL DEFAULT '全部分类',
+                        ""QuestionCount"" INTEGER NOT NULL DEFAULT 5,
+                        ""TargetDifficulty"" INTEGER NOT NULL DEFAULT 3,
+                        ""Deadline"" TEXT NULL,
+                        ""ParentNote"" TEXT NOT NULL DEFAULT '',
+                        ""IsCompleted"" INTEGER NOT NULL DEFAULT 0,
+                        ""Score"" INTEGER NOT NULL DEFAULT 0,
+                        ""AccuracyRate"" INTEGER NOT NULL DEFAULT 0,
+                        ""CorrectCount"" INTEGER NOT NULL DEFAULT 0,
+                        ""TotalAnswered"" INTEGER NOT NULL DEFAULT 0,
+                        ""CompletedAt"" TEXT NULL,
+                        ""CreatedAt"" TEXT NOT NULL
+                    );
+                ");
+
+                // 安全补全 Users 表的所有列
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""PhoneNumber"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""Role"" INTEGER NOT NULL DEFAULT 3;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""BindingCode"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""TodayAnsweredCount"" INTEGER NOT NULL DEFAULT 0;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""TodayCountDate"" TEXT NOT NULL DEFAULT '2026-01-01';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ActiveTitle"" TEXT NOT NULL DEFAULT '青铜学童';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""SoundEffectsEnabled"" INTEGER NOT NULL DEFAULT 1;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ConfettiEnabled"" INTEGER NOT NULL DEFAULT 1;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ExpBoostUntil"" TEXT NULL;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""GoldBoostUntil"" TEXT NULL;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ComboShieldCount"" INTEGER NOT NULL DEFAULT 0;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""DailyTargetQuestions"" INTEGER NOT NULL DEFAULT 20;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AutoVoiceGuidance"" INTEGER NOT NULL DEFAULT 1;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""OcrProvider"" TEXT NOT NULL DEFAULT 'PaddleOcr';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""BaiduApiKey"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""BaiduSecretKey"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""BaiduOcrEndpoint"" TEXT NOT NULL DEFAULT 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""Password"" TEXT NOT NULL DEFAULT '123456';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""MustChangePassword"" INTEGER NOT NULL DEFAULT 1;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""SmsToken"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""SmsApiEndpoint"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"UPDATE ""Users"" SET ""SmsToken"" = '', ""SmsApiEndpoint"" = '' WHERE ""SmsApiEndpoint"" LIKE '%iorai%' OR ""SmsToken"" LIKE '77C69%';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""SmsTemplate"" TEXT NOT NULL DEFAULT '您的登录验证码为{0}';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""SessionTimeoutMinutes"" INTEGER NOT NULL DEFAULT 30;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""Email"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AccountStatus"" INTEGER NOT NULL DEFAULT 0;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""RejectReason"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""RegisteredAt"" TEXT NOT NULL DEFAULT '2026-01-01';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ApprovedAt"" TEXT NULL;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunAccessKeyId"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunAccessKeySecret"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunSmsSignName"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunSmsTemplateCode"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunSmsTemplateParam"" TEXT NOT NULL DEFAULT 'code';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunSmsEndpoint"" TEXT NOT NULL DEFAULT 'dysmsapi.aliyuncs.com';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunSmsRegionId"" TEXT NOT NULL DEFAULT 'cn-hangzhou';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""Avatar"" TEXT NOT NULL DEFAULT '🎓';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""LastDailyRewardClaimDate"" TEXT NULL;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ParentEncouragementNote"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ParentNoteUpdatedAt"" TEXT NULL;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""IsBuiltInDemo"" INTEGER NOT NULL DEFAULT 0;");
+
+                // 若超级管理员手机号为空，默认初始化为 13800000000
+                SafeExecuteSql(context, @"UPDATE ""Users"" SET ""PhoneNumber"" = '13800000000' WHERE ""Role"" = 0 AND (""PhoneNumber"" IS NULL OR ""PhoneNumber"" = '');");
+
+                // 将系统历史内置的演示账号标记为 IsBuiltInDemo = 1
+                SafeExecuteSql(context, @"UPDATE ""Users"" SET ""IsBuiltInDemo"" = 1 WHERE ""PhoneNumber"" IN ('13800000001', '13800000002', '13800000003', '13900000000', '13600000000', '13700000000') OR ""Id"" IN ('22222222-2222-2222-2222-222222222222', '33333333-3333-3333-3333-333333333333', '44444444-4444-4444-4444-444444444444');");
+
+                // 安全补全 Questions 表的新增公私有列
+                SafeExecuteSql(context, @"ALTER TABLE ""Questions"" ADD COLUMN ""CreatedByUserId"" TEXT NULL;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Questions"" ADD COLUMN ""IsPublic"" INTEGER NOT NULL DEFAULT 0;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Questions"" ADD COLUMN ""PublishStatus"" INTEGER NOT NULL DEFAULT 0;");
+                SafeExecuteSql(context, @"ALTER TABLE ""Questions"" ADD COLUMN ""CreatedAt"" TEXT NOT NULL DEFAULT '2026-01-01';");
+
+                // 安全补全 ErrorItems 表的新增列
+                SafeExecuteSql(context, @"ALTER TABLE ""ErrorItems"" ADD COLUMN ""ErrorReasonCategory"" TEXT NOT NULL DEFAULT '未分类';");
+                SafeExecuteSql(context, @"ALTER TABLE ""ErrorItems"" ADD COLUMN ""AiCustomAdvice"" TEXT NOT NULL DEFAULT '';");
+                SafeExecuteSql(context, @"ALTER TABLE ""ErrorItems"" ADD COLUMN ""LastRevisedAt"" TEXT NULL;");
             }
-            catch { }
-
-            // 确保 SQLite 中存在 LlmGenerationLogs 数据表
-            context.Database.ExecuteSqlRaw(@"
-                CREATE TABLE IF NOT EXISTS ""LlmGenerationLogs"" (
-                    ""Id"" TEXT NOT NULL CONSTRAINT ""PK_LlmGenerationLogs"" PRIMARY KEY,
-                    ""UserId"" TEXT NOT NULL,
-                    ""QuestionId"" TEXT NULL,
-                    ""ModelName"" TEXT NOT NULL,
-                    ""Subject"" TEXT NOT NULL,
-                    ""Category"" TEXT NOT NULL,
-                    ""PromptTokens"" INTEGER NOT NULL,
-                    ""CompletionTokens"" INTEGER NOT NULL,
-                    ""TotalTokens"" INTEGER NOT NULL,
-                    ""GeneratedAt"" TEXT NOT NULL
-                );
-            ");
-
-            // 确保 SQLite 中存在 StudentParentBindings 数据表
-            context.Database.ExecuteSqlRaw(@"
-                CREATE TABLE IF NOT EXISTS ""StudentParentBindings"" (
-                    ""Id"" TEXT NOT NULL CONSTRAINT ""PK_StudentParentBindings"" PRIMARY KEY,
-                    ""ParentUserId"" TEXT NOT NULL,
-                    ""StudentUserId"" TEXT NOT NULL,
-                    ""RelationType"" TEXT NOT NULL DEFAULT '监护人',
-                    ""CreatedAt"" TEXT NOT NULL
-                );
-            ");
-
-            // 确保 SQLite 中存在 UserFavorites 数据表
-            context.Database.ExecuteSqlRaw(@"
-                CREATE TABLE IF NOT EXISTS ""UserFavorites"" (
-                    ""Id"" TEXT NOT NULL CONSTRAINT ""PK_UserFavorites"" PRIMARY KEY,
-                    ""UserId"" TEXT NOT NULL,
-                    ""QuestionId"" TEXT NOT NULL,
-                    ""Note"" TEXT NOT NULL DEFAULT '',
-                    ""CreatedAt"" TEXT NOT NULL
-                );
-            ");
-
-            // 确保 SQLite 中存在 CurriculumSubjectConfigs 数据表
-            context.Database.ExecuteSqlRaw(@"
-                CREATE TABLE IF NOT EXISTS ""CurriculumSubjectConfigs"" (
-                    ""Id"" TEXT NOT NULL CONSTRAINT ""PK_CurriculumSubjectConfigs"" PRIMARY KEY,
-                    ""Grade"" TEXT NOT NULL,
-                    ""Subject"" TEXT NOT NULL,
-                    ""TopicsJson"" TEXT NOT NULL DEFAULT '[]',
-                    ""SortOrder"" INTEGER NOT NULL DEFAULT 0,
-                    ""IsBuiltIn"" INTEGER NOT NULL DEFAULT 1,
-                    ""UpdatedAt"" TEXT NOT NULL
-                );
-            ");
-
-            // 确保 SQLite 中存在 HomeworkAssignments 数据表
-            context.Database.ExecuteSqlRaw(@"
-                CREATE TABLE IF NOT EXISTS ""HomeworkAssignments"" (
-                    ""Id"" TEXT NOT NULL CONSTRAINT ""PK_HomeworkAssignments"" PRIMARY KEY,
-                    ""CreatorUserId"" TEXT NOT NULL,
-                    ""StudentUserId"" TEXT NOT NULL,
-                    ""Title"" TEXT NOT NULL,
-                    ""Subject"" TEXT NOT NULL,
-                    ""Category"" TEXT NOT NULL DEFAULT '全部分类',
-                    ""QuestionCount"" INTEGER NOT NULL DEFAULT 5,
-                    ""TargetDifficulty"" INTEGER NOT NULL DEFAULT 3,
-                    ""Deadline"" TEXT NULL,
-                    ""ParentNote"" TEXT NOT NULL DEFAULT '',
-                    ""IsCompleted"" INTEGER NOT NULL DEFAULT 0,
-                    ""Score"" INTEGER NOT NULL DEFAULT 0,
-                    ""AccuracyRate"" INTEGER NOT NULL DEFAULT 0,
-                    ""CorrectCount"" INTEGER NOT NULL DEFAULT 0,
-                    ""TotalAnswered"" INTEGER NOT NULL DEFAULT 0,
-                    ""CompletedAt"" TEXT NULL,
-                    ""CreatedAt"" TEXT NOT NULL
-                );
-            ");
-
-            // 安全补全 Users 表的所有列
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""PhoneNumber"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""Role"" INTEGER NOT NULL DEFAULT 3;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""BindingCode"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""TodayAnsweredCount"" INTEGER NOT NULL DEFAULT 0;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""TodayCountDate"" TEXT NOT NULL DEFAULT '2026-01-01';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ActiveTitle"" TEXT NOT NULL DEFAULT '青铜学童';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""SoundEffectsEnabled"" INTEGER NOT NULL DEFAULT 1;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ConfettiEnabled"" INTEGER NOT NULL DEFAULT 1;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ExpBoostUntil"" TEXT NULL;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""GoldBoostUntil"" TEXT NULL;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ComboShieldCount"" INTEGER NOT NULL DEFAULT 0;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""DailyTargetQuestions"" INTEGER NOT NULL DEFAULT 20;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AutoVoiceGuidance"" INTEGER NOT NULL DEFAULT 1;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""OcrProvider"" TEXT NOT NULL DEFAULT 'PaddleOcr';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""BaiduApiKey"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""BaiduSecretKey"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""BaiduOcrEndpoint"" TEXT NOT NULL DEFAULT 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""Password"" TEXT NOT NULL DEFAULT '123456';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""MustChangePassword"" INTEGER NOT NULL DEFAULT 1;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""SmsToken"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""SmsApiEndpoint"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"UPDATE ""Users"" SET ""SmsToken"" = '', ""SmsApiEndpoint"" = '' WHERE ""SmsApiEndpoint"" LIKE '%iorai%' OR ""SmsToken"" LIKE '77C69%';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""SmsTemplate"" TEXT NOT NULL DEFAULT '您的登录验证码为{0}';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""SessionTimeoutMinutes"" INTEGER NOT NULL DEFAULT 30;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""Email"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AccountStatus"" INTEGER NOT NULL DEFAULT 0;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""RejectReason"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""RegisteredAt"" TEXT NOT NULL DEFAULT '2026-01-01';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ApprovedAt"" TEXT NULL;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunAccessKeyId"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunAccessKeySecret"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunSmsSignName"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunSmsTemplateCode"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunSmsTemplateParam"" TEXT NOT NULL DEFAULT 'code';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunSmsEndpoint"" TEXT NOT NULL DEFAULT 'dysmsapi.aliyuncs.com';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""AliyunSmsRegionId"" TEXT NOT NULL DEFAULT 'cn-hangzhou';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""Avatar"" TEXT NOT NULL DEFAULT '🎓';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""LastDailyRewardClaimDate"" TEXT NULL;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ParentEncouragementNote"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""ParentNoteUpdatedAt"" TEXT NULL;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""IsBuiltInDemo"" INTEGER NOT NULL DEFAULT 0;");
-
-            // 若超级管理员手机号为空，默认初始化为 13800000000
-            SafeExecuteSql(context, @"UPDATE ""Users"" SET ""PhoneNumber"" = '13800000000' WHERE ""Role"" = 0 AND (""PhoneNumber"" IS NULL OR ""PhoneNumber"" = '');");
-
-            // 将系统历史内置的演示账号标记为 IsBuiltInDemo = 1
-            SafeExecuteSql(context, @"UPDATE ""Users"" SET ""IsBuiltInDemo"" = 1 WHERE ""PhoneNumber"" IN ('13800000001', '13800000002', '13800000003', '13900000000', '13600000000', '13700000000') OR ""Id"" IN ('22222222-2222-2222-2222-222222222222', '33333333-3333-3333-3333-333333333333', '44444444-4444-4444-4444-444444444444');");
-
-            // 安全补全 Questions 表的新增公私有列
-            SafeExecuteSql(context, @"ALTER TABLE ""Questions"" ADD COLUMN ""CreatedByUserId"" TEXT NULL;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Questions"" ADD COLUMN ""IsPublic"" INTEGER NOT NULL DEFAULT 0;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Questions"" ADD COLUMN ""PublishStatus"" INTEGER NOT NULL DEFAULT 0;");
-            SafeExecuteSql(context, @"ALTER TABLE ""Questions"" ADD COLUMN ""CreatedAt"" TEXT NOT NULL DEFAULT '2026-01-01';");
-
-            // 安全补全 ErrorItems 表的新增列
-            SafeExecuteSql(context, @"ALTER TABLE ""ErrorItems"" ADD COLUMN ""ErrorReasonCategory"" TEXT NOT NULL DEFAULT '未分类';");
-            SafeExecuteSql(context, @"ALTER TABLE ""ErrorItems"" ADD COLUMN ""AiCustomAdvice"" TEXT NOT NULL DEFAULT '';");
-            SafeExecuteSql(context, @"ALTER TABLE ""ErrorItems"" ADD COLUMN ""LastRevisedAt"" TEXT NULL;");
 
             // 确保系统中存在 4 大体验账号 (管理员、学员李小明、家长李大强、名师张老师)
             var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");

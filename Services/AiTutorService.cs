@@ -18,18 +18,21 @@ namespace Northtropic.Services
         private readonly HttpClient _httpClient;
         private readonly AppDbContext? _dbContext;
         private readonly IDbContextFactory<AppDbContext>? _dbContextFactory;
+        private readonly ISystemHealthService? _systemHealthService;
 
         public AiTutorService(
             IGamificationService gamificationService, 
             IHttpClientFactory httpClientFactory, 
             AppDbContext? dbContext = null,
-            IDbContextFactory<AppDbContext>? dbContextFactory = null)
+            IDbContextFactory<AppDbContext>? dbContextFactory = null,
+            ISystemHealthService? systemHealthService = null)
         {
             _gamificationService = gamificationService;
             _httpClient = httpClientFactory.CreateClient();
             _httpClient.Timeout = TimeSpan.FromSeconds(25);
             _dbContext = dbContext;
             _dbContextFactory = dbContextFactory;
+            _systemHealthService = systemHealthService;
         }
 
         public async Task<AiExplanationResult> GetExplanationAsync(Question question, string? userAnswer = null)
@@ -41,8 +44,9 @@ namespace Northtropic.Services
                 {
                     return await CallLlmExplanationAsync(user, question, userAnswer);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    _systemHealthService?.RecordArchitectureEvent("AiTutor", "Warning", $"LLM 解析生成异常降级: {ex.Message}");
                     // 若 API 调用失败，自动降级回启发式智能解析
                 }
             }
@@ -59,8 +63,9 @@ namespace Northtropic.Services
                 {
                     return await CallLlmSocraticAsync(user, question, userAnswer);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    _systemHealthService?.RecordArchitectureEvent("AiTutor", "Warning", $"LLM 苏格拉底式提问生成异常降级: {ex.Message}");
                     // 降级生成苏格拉底式提问
                 }
             }
@@ -77,8 +82,9 @@ namespace Northtropic.Services
                 {
                     return await CallLlmVariationAsync(user, originalQuestion);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    _systemHealthService?.RecordArchitectureEvent("AiTutor", "Warning", $"LLM 变式题生成异常降级: {ex.Message}");
                     // 降级生成变式
                 }
             }
@@ -113,8 +119,9 @@ namespace Northtropic.Services
                 {
                     return await CallLlmSubjectiveGradingAsync(user, question, userAnswer);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    _systemHealthService?.RecordArchitectureEvent("AiTutor", "Warning", $"LLM 主观题智能判分异常降级: {ex.Message}");
                     // 降级主观题打分
                 }
             }

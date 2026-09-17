@@ -72,5 +72,83 @@ namespace Northtropic.Data
                 _ownedContext.Dispose();
             }
         }
+
+        /// <summary>
+        /// 针对 SQLite 并发繁忙/写锁冲突 (SQLITE_BUSY / SQLITE_LOCKED) 提供的自适应重试弹性执行策略。
+        /// 采用指数退避加随机抖动算法，提升并发事务与密集写场景下的鲁棒性。
+        /// </summary>
+        public static async Task<T> ExecuteWithRetryAsync<T>(
+            Func<Task<T>> operation,
+            int maxRetries = 3,
+            int initialDelayMs = 50,
+            CancellationToken cancellationToken = default)
+        {
+            int attempt = 0;
+            while (true)
+            {
+                try
+                {
+                    return await operation().ConfigureAwait(false);
+                }
+                catch (Exception ex) when (attempt < maxRetries && IsTransientSqliteLockException(ex))
+                {
+                    attempt++;
+                    int delay = initialDelayMs * (int)Math.Pow(2, attempt - 1) + Random.Shared.Next(10, 30);
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 针对无返回值的数据库操作提供自适应重试弹性执行策略。
+        /// </summary>
+        public static async Task ExecuteWithRetryAsync(
+            Func<Task> operation,
+            int maxRetries = 3,
+            int initialDelayMs = 50,
+            CancellationToken cancellationToken = default)
+        {
+            await ExecuteWithRetryAsync(async () =>
+            {
+                await operation().ConfigureAwait(false);
+                return true;
+            }, maxRetries, initialDelayMs, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 递归探测异常及其内部异常链中是否包含 SQLite 锁冲突 (5: SQLITE_BUSY, 6: SQLITE_LOCKED) 或 PostgreSQL 瞬时重试异常。
+        /// </summary>
+        public static bool IsTransientSqliteLockException(Exception? ex)
+        {
+            if (ex == null) return false;
+
+            if (ex is Microsoft.Data.Sqlite.SqliteException sqliteEx)
+            {
+                return sqliteEx.SqliteErrorCode == 5 || sqliteEx.SqliteErrorCode == 6;
+            }
+
+            if (ex is Npgsql.NpgsqlException npgsqlEx && npgsqlEx.IsTransient)
+            {
+                return true;
+            }
+
+            if (ex is System.Net.Sockets.SocketException || ex is TimeoutException)
+            {
+                return true;
+            }
+
+            if (ex is DbUpdateException dbUpdateEx && dbUpdateEx.InnerException != null)
+            {
+                return IsTransientSqliteLockException(dbUpdateEx.InnerException);
+            }
+
+            if (ex.InnerException != null)
+            {
+                return IsTransientSqliteLockException(ex.InnerException);
+            }
+
+            return false;
+        }
     }
 }
+

@@ -10,6 +10,7 @@
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
 
 <PageTitle>系统配置 - Northtropic</PageTitle>
 
@@ -640,7 +641,7 @@
                                 </MudText>
                                 <div class="d-flex align-center justify-space-between mt-1" style="font-size: 0.78rem; color: #64748b;">
                                     <span>WAL 日志: <strong style="color: #3b82f6;">@_healthDto.WalSizeFormatted</strong></span>
-                                    <span>碎片率: <strong style="color: @(_healthDto.FragmentationRatio > 0.3 ? "#ef4444" : "#10b981");">@_healthDto.FragmentationRatio.ToString("P1")</strong></span>
+                                    <span>碎片率: <strong style="color: @(_healthDto.FragmentationRatio > 30.0 ? "#ef4444" : (_healthDto.FragmentationRatio > 15.0 ? "#f59e0b" : "#10b981"));">@($"{_healthDto.FragmentationRatio:F1}%")</strong></span>
                                 </div>
                                 <div class="d-flex align-center justify-space-between mt-1" style="font-size: 0.75rem; color: #64748b;">
                                     <span>分页: @_healthDto.PageCount (空闲 @_healthDto.FreelistCount)</span>
@@ -684,10 +685,20 @@
                                     <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Outlined">.NET @_healthDto.DotNetVersion.Split('+')[0]</MudChip>
                                 </div>
                                 <MudText Typo="Typo.h5" Class="font-weight-bold">@_healthDto.GcMemoryFormatted</MudText>
-                                <span style="font-size: 0.75rem; color: #64748b;">线程数: @_healthDto.ThreadCount 个</span>
+                                <div class="d-flex align-center justify-space-between flex-wrap gap-1" style="font-size: 0.75rem; color: #64748b;">
+                                    <span>线程数: @_healthDto.ThreadCount 个</span>
+                                    @if (_healthDto.TotalAvailableMemoryBytes > 0)
+                                    {
+                                        <span>物理载荷: @_healthDto.MemoryPressurePercentage%</span>
+                                    }
+                                </div>
                             </div>
-                            <div class="mt-2 pt-1 border-t border-solid" style="border-color: rgba(139, 92, 246, 0.2); font-size: 0.72rem; color: #94a3b8;">
-                                持续运行: @_healthDto.ProcessUptimeFormatted
+                            <div class="mt-2 pt-1 border-t border-solid d-flex align-center justify-space-between" style="border-color: rgba(139, 92, 246, 0.2); font-size: 0.72rem; color: #94a3b8;">
+                                <span>持续运行: @_healthDto.ProcessUptimeFormatted</span>
+                                @if (_healthDto.GcPauseRatio > 0)
+                                {
+                                    <span>GC 暂停: @_healthDto.GcPauseRatio%</span>
+                                }
                             </div>
                         </div>
                     </MudItem>
@@ -789,6 +800,15 @@
                                             <span style="font-size: 0.72rem; color: @(vRes.IsHealthy ? "#34d399" : "#f87171");" title="@vRes.ErrorMessage">
                                                 @(vRes.IsHealthy ? $"✓ 物理与Schema自检合格 ({vRes.TableCount} 张表, {vRes.VerificationDurationMs}ms)" : $"✗ 深度校验异常: {vRes.ErrorMessage}")
                                             </span>
+                                            @if (vRes.HeaderValidated)
+                                            {
+                                                <span style="font-size: 0.7rem; color: #38bdf8;">
+                                                    ✓ SQLite 16B魔数头校验通过 (PageSize: @(vRes.PageSize)B)
+                                                </span>
+                                            }
+                                            <span style="font-size: 0.7rem; color: @(vRes.IsForeignKeyHealthy ? "#34d399" : "#f87171");">
+                                                @(vRes.IsForeignKeyHealthy ? "✓ PRAGMA 外键约束健康" : $"⚠️ 外键异常: {vRes.ForeignKeyStatus}")
+                                            </span>
                                         }
                                         @if (_sha256Cache.TryGetValue(context.BackupFileName, out var hashVal))
                                         {
@@ -801,9 +821,17 @@
                                 <MudTd DataLabel="大小">@context.FileSizeFormatted</MudTd>
                                 <MudTd DataLabel="时间">@context.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
                                 <MudTd DataLabel="完整性">
-                                    <MudChip T="string" Color="@(context.IntegrityVerified ? Color.Success : Color.Warning)" Size="Size.Small" Variant="Variant.Filled">
-                                        @(context.IntegrityVerified ? "✓ PRAGMA ok" : "⚠️ 校验未过")
-                                    </MudChip>
+                                    <div class="d-flex flex-column gap-1">
+                                        <MudChip T="string" Color="@(context.IntegrityVerified ? Color.Success : Color.Warning)" Size="Size.Small" Variant="Variant.Filled">
+                                            @(context.IntegrityVerified ? "✓ PRAGMA ok" : "⚠️ 校验未过")
+                                        </MudChip>
+                                        @if (_verifyResults.TryGetValue(context.BackupFileName, out var vRes))
+                                        {
+                                            <div style="font-size: 0.7rem; color: @(vRes.IsHealthy ? "#10b981" : "#f59e0b");">
+                                                @(vRes.ParityVerified ? $"✓ 全量对齐 ({vRes.TableCount}表)" : $"表数: {vRes.TableCount}")
+                                            </div>
+                                        }
+                                    </div>
                                 </MudTd>
                                 <MudTd DataLabel="操作" Style="text-align: right;">
                                     <div class="d-flex align-center justify-end gap-1 flex-wrap">
@@ -879,19 +907,130 @@
                             <div>
                                 <MudText Typo="Typo.subtitle1" Class="font-weight-bold">系统架构自愈遥测事件流 (Telemetry Event Stream)</MudText>
                                 <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                                    内存循环缓冲实时遥测核心架构事件 (WAL 截断、VACUUM 重整、热快照、防爆破限流)
+                                    内存循环缓冲实时遥测核心架构事件 (WAL 截断、VACUUM 重整、热快照、防爆破限流、自适应维护)
                                 </MudText>
                             </div>
                         </div>
-                        <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Outlined">
-                            实时环形缓冲 60 帧
-                        </MudChip>
+                        <div class="d-flex align-center gap-2 flex-wrap">
+                            <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.Description" OnClick="ExportDiagnosticDossierMarkdownAsync" Disabled="@_exportingDossier">
+                                @(_exportingDossier ? "生成诊断档案..." : "📋 导出系统架构诊断档案")
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick="EvaluateAdaptiveMaintenanceAsync" Disabled="@_evaluatingMaintenance">
+                                @(_evaluatingMaintenance ? "正在评估..." : "⚡ 自适应维护预评估")
+                            </MudButton>
+                            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Outlined">
+                                环形缓冲 60 帧
+                            </MudChip>
+                        </div>
                     </div>
+
+                    @if (_showDossierModal && !string.IsNullOrWhiteSpace(_exportedDossierMarkdown))
+                    {
+                        <div class="pa-4 mb-4 rounded-lg" style="background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.4); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);">
+                            <div class="d-flex align-center justify-space-between mb-2">
+                                <div class="d-flex align-center gap-2">
+                                    <MudIcon Icon="@Icons.Material.Filled.Article" Color="Color.Info" />
+                                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Style="color: #38bdf8;">📋 系统架构与运行韧性诊断档案 (Markdown)</MudText>
+                                </div>
+                                <div class="d-flex align-center gap-2">
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.Download" OnClick="DownloadDossierMarkdownAsync">
+                                        📥 下载 .md 报告
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="CopyDossierToClipboardAsync">
+                                        一键复制
+                                    </MudButton>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="() => _showDossierModal = false" />
+                                </div>
+                            </div>
+                            <pre style="max-height: 260px; overflow-y: auto; font-family: monospace; font-size: 0.78rem; background: rgba(0,0,0,0.5); padding: 12px; border-radius: 8px; color: #e2e8f0; white-space: pre-wrap; word-break: break-all;">@_exportedDossierMarkdown</pre>
+                        </div>
+                    }
+
+                    <!-- APM 指标总览与可靠性卡片 -->
+                    <div class="pa-3 mb-3 rounded d-flex align-center justify-space-between flex-wrap gap-2" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                        <div class="d-flex align-center gap-2 flex-wrap">
+                            <span>可靠性指数: <strong style="color: @(_telemetrySummary.ReliabilityScore >= 90 ? "#10b981" : (_telemetrySummary.ReliabilityScore >= 70 ? "#f59e0b" : "#ef4444"));">@($"{_telemetrySummary.ReliabilityScore:F1} 分")</strong></span>
+                            <span class="mud-text-secondary">|</span>
+                            <span>事件总量: <strong>@_telemetrySummary.TotalEvents</strong></span>
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled" Style="height: 20px; font-size: 0.7rem;">成功: @_telemetrySummary.SuccessCount</MudChip>
+                            <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled" Style="height: 20px; font-size: 0.7rem;">警告: @_telemetrySummary.WarningCount</MudChip>
+                            <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Filled" Style="height: 20px; font-size: 0.7rem;">异常: @_telemetrySummary.ErrorCount</MudChip>
+                            @if (_telemetrySummary.AverageDurationMs > 0)
+                            {
+                                <span class="mud-text-secondary" style="font-size: 0.75rem;">(平均耗时: @($"{_telemetrySummary.AverageDurationMs:F1}") ms)</span>
+                            }
+                        </div>
+                        <!-- 筛选标签 -->
+                        <div class="d-flex align-center gap-1 flex-wrap">
+                            <span style="font-size: 0.75rem; color: #94a3b8;">级别过滤:</span>
+                            @foreach (var lvl in new[] { "全部", "Error", "Warning", "Success", "Info" })
+                            {
+                                <MudChip T="string" Color="@(_selectedTelemetryLevel == lvl ? Color.Primary : Color.Default)" Size="Size.Small" Variant="@(_selectedTelemetryLevel == lvl ? Variant.Filled : Variant.Outlined)" OnClick="@(() => SetTelemetryFilter(null, lvl))" Style="cursor: pointer; height: 20px; font-size: 0.7rem;">
+                                    @lvl
+                                </MudChip>
+                            }
+                        </div>
+                    </div>
+
+                    @if (_adaptiveMaintenancePlan != null)
+                    {
+                        <div class="pa-3 mb-3 rounded" style="background: rgba(59, 130, 246, 0.08); border-left: 3px solid #3b82f6; font-size: 0.8rem;">
+                            <div class="d-flex align-center justify-space-between mb-1">
+                                <span class="font-weight-bold" style="color: #60a5fa;">📋 架构自适应维护建议方案：</span>
+                                <MudChip T="string" Color="@(_adaptiveMaintenancePlan.UrgencyLevel == "Critical" || _adaptiveMaintenancePlan.UrgencyLevel == "High" ? Color.Warning : Color.Success)" Size="Size.Small" Variant="Variant.Filled" Style="height: 20px; font-size: 0.7rem;">
+                                    紧急度: @_adaptiveMaintenancePlan.UrgencyLevel
+                                </MudChip>
+                            </div>
+                            <div class="mud-text-secondary mb-2">
+                                @string.Join("；", _adaptiveMaintenancePlan.ActionReasons)
+                            </div>
+                            @if (_adaptiveMaintenancePlan.RequiresWalCheckpoint || _adaptiveMaintenancePlan.RequiresVacuum || _adaptiveMaintenancePlan.RequiresOptimization)
+                            {
+                                <div class="d-flex align-center justify-end mt-2">
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Bolt" OnClick="ExecuteAdaptiveMaintenanceAsync" Disabled="@_executingMaintenance">
+                                        @if (_executingMaintenance)
+                                        {
+                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                            <span>正在执行自适应自愈与重整...</span>
+                                        }
+                                        else
+                                        {
+                                            <span>⚡ 一键执行自适应自愈规整</span>
+                                        }
+                                    </MudButton>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (_adaptiveExecutionResult != null)
+                    {
+                        <MudAlert Severity="@(_adaptiveExecutionResult.Success ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mb-3 rounded-lg" ShowCloseIcon="true" CloseIconClicked="() => _adaptiveExecutionResult = null">
+                            <div class="d-flex flex-column gap-1">
+                                <div class="d-flex align-center justify-space-between flex-wrap">
+                                    <span class="font-weight-bold">
+                                        @(_adaptiveExecutionResult.Success ? "✅ 自适应自愈重整执行成功" : "❌ 自适应重整执行中断")
+                                    </span>
+                                    <span style="font-size: 0.75rem; opacity: 0.9;">耗时: @_adaptiveExecutionResult.ElapsedMilliseconds ms</span>
+                                </div>
+                                <span style="font-size: 0.82rem;">@_adaptiveExecutionResult.Message</span>
+                                @if (_adaptiveExecutionResult.ExecutedActions.Any())
+                                {
+                                    <div class="d-flex align-center gap-1 flex-wrap mt-1">
+                                        @foreach (var act in _adaptiveExecutionResult.ExecutedActions)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Dark" Variant="Variant.Filled" Style="font-size: 0.7rem; height: 18px;">@act</MudChip>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </MudAlert>
+                    }
 
                     @if (_telemetryEvents.Count == 0)
                     {
                         <div class="pa-4 text-center mud-text-secondary" style="font-size: 0.85rem; border: 1px dashed rgba(255,255,255,0.1); border-radius: 8px;">
-                            架构事件流平稳运行中，暂无待警示异动事件。
+                            架构事件流平稳运行中，当前过滤条件下暂无匹配事件。
                         </div>
                     }
                     else
@@ -970,15 +1109,85 @@
     private Dictionary<string, BackupVerificationResultDto> _verifyResults = new();
     private List<DatabaseBackupResultDto> _backupsList = new();
     private List<SystemArchitectureEvent> _telemetryEvents = new();
+    private ArchitectureTelemetrySummaryDto _telemetrySummary = new();
+    private AdaptiveMaintenancePlanDto? _adaptiveMaintenancePlan;
+    private AdaptiveMaintenanceExecutionResultDto? _adaptiveExecutionResult;
+    private bool _evaluatingMaintenance = false;
+    private bool _executingMaintenance = false;
+    private string _selectedTelemetryCategory = "全部";
+    private string _selectedTelemetryLevel = "全部";
     private List<TableStorageMetricDto> _tableStorageMetrics = new();
     private Dictionary<string, string> _sha256Cache = new();
+
+    private void FilterTelemetryEvents()
+    {
+        _telemetryEvents = SystemHealthService.GetRecentArchitectureEvents(_selectedTelemetryCategory, _selectedTelemetryLevel, 30).ToList();
+        _telemetrySummary = SystemHealthService.GetArchitectureTelemetrySummary();
+    }
+
+    private void SetTelemetryFilter(string? category, string? level)
+    {
+        if (category != null) _selectedTelemetryCategory = category;
+        if (level != null) _selectedTelemetryLevel = level;
+        FilterTelemetryEvents();
+    }
+
+    private async Task EvaluateAdaptiveMaintenanceAsync()
+    {
+        _evaluatingMaintenance = true;
+        StateHasChanged();
+        try
+        {
+            _adaptiveMaintenancePlan = await SystemHealthService.EvaluateAdaptiveMaintenancePlanAsync();
+            Snackbar.Add($"📋 自适应维护评估完成：紧急度【{_adaptiveMaintenancePlan.UrgencyLevel}】", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"评估异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _evaluatingMaintenance = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExecuteAdaptiveMaintenanceAsync()
+    {
+        _executingMaintenance = true;
+        StateHasChanged();
+        try
+        {
+            _adaptiveExecutionResult = await SystemHealthService.ExecuteAdaptiveMaintenancePlanAsync(_adaptiveMaintenancePlan);
+            if (_adaptiveExecutionResult.Success)
+            {
+                Snackbar.Add("🎉 自适应维护执行完成！", Severity.Success);
+                _healthDto = await SystemHealthService.GetSystemHealthAsync();
+                await LoadBackupsAndTelemetryAsync();
+                _adaptiveMaintenancePlan = await SystemHealthService.EvaluateAdaptiveMaintenancePlanAsync();
+            }
+            else
+            {
+                Snackbar.Add($"维护执行异常: {_adaptiveExecutionResult.Message}", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"执行自适应自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _executingMaintenance = false;
+            StateHasChanged();
+        }
+    }
 
     private async Task LoadBackupsAndTelemetryAsync()
     {
         try
         {
             _backupsList = await SystemHealthService.GetBackupsListAsync();
-            _telemetryEvents = SystemHealthService.GetRecentArchitectureEvents().Take(20).ToList();
+            FilterTelemetryEvents();
             _tableStorageMetrics = await SystemHealthService.GetTableStorageMetricsAsync();
         }
         catch
@@ -1137,6 +1346,71 @@
         {
             _isExportingReport = false;
             StateHasChanged();
+        }
+    }
+
+    private bool _exportingDossier = false;
+    private bool _showDossierModal = false;
+    private string? _exportedDossierMarkdown = null;
+
+    private async Task ExportDiagnosticDossierMarkdownAsync()
+    {
+        _exportingDossier = true;
+        StateHasChanged();
+        try
+        {
+            _exportedDossierMarkdown = await SystemHealthService.ExportArchitectureDiagnosticReportMarkdownAsync();
+            _showDossierModal = true;
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", _exportedDossierMarkdown);
+                Snackbar.Add("📋 系统架构诊断档案 (Markdown) 已生成并复制到剪贴板！", Severity.Success);
+            }
+            catch
+            {
+                Snackbar.Add("📋 系统架构诊断档案 (Markdown) 已生成，可在窗口中查阅并复制！", Severity.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"导出系统架构诊断档案失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _exportingDossier = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CopyDossierToClipboardAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_exportedDossierMarkdown))
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", _exportedDossierMarkdown);
+                Snackbar.Add("✓ 诊断档案内容已成功复制到剪贴板！", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"复制到剪贴板失败: {ex.Message}", Severity.Warning);
+            }
+        }
+    }
+
+    private async Task DownloadDossierMarkdownAsync()
+    {
+        try
+        {
+            var activeUser = await UserSessionService.GetActiveUserAsync();
+            var ticket = await UserSessionService.GenerateDownloadTicketAsync(
+                activeUser?.Id ?? Guid.Empty, "diagnostics_export");
+            NavigationManager.NavigateTo($"/api/system/diagnostics/export?format=markdown&ticket={ticket}", forceLoad: true);
+            Snackbar.Add("📥 已启动 Markdown 架构诊断档案下载", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"启动下载失败: {ex.Message}", Severity.Error);
         }
     }
 
