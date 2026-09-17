@@ -68,5 +68,9 @@ namespace Northtropic.Services
         Task<string> GenerateDownloadTicketAsync(Guid userId, string purpose, string? resource = null);
         Task<(bool Valid, Guid UserId, string Purpose, string? Resource)> ValidateAndConsumeDownloadTicketAsync(string ticket);
         int ActiveDownloadTicketsCount { get; }
+
+        // 全局大模型与 OCR 参数继承解析 (支持普通学员无缝继承系统管理员全局配置)
+        Task<User?> GetSystemAdminUserAsync();
+        Task<User> ResolveEffectiveUserLlmConfigAsync(User? user = null);
     }
 }

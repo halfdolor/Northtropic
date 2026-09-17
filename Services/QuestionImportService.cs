@@ -728,6 +728,7 @@ namespace Northtropic.Services
                 try
                 {
                     user = await _userSessionService.GetActiveUserAsync();
+                    user = await _userSessionService.ResolveEffectiveUserLlmConfigAsync(user);
                 }
                 catch { }
             }
@@ -836,6 +837,7 @@ namespace Northtropic.Services
                 try
                 {
                     user = await _userSessionService.GetActiveUserAsync();
+                    user = await _userSessionService.ResolveEffectiveUserLlmConfigAsync(user);
                 }
                 catch { }
             }

@@ -1577,6 +1577,12 @@ namespace Northtropic.Services
             existing.SessionTimeoutMinutes = user.SessionTimeoutMinutes;
 
             await context.SaveChangesAsync();
+
+            if (existing.Role == UserRole.SuperAdmin || user.Role == UserRole.SuperAdmin)
+            {
+                _cachedAdminUser = null;
+            }
+
             OnUserChanged?.Invoke();
             return true;
         }
@@ -1654,6 +1660,85 @@ namespace Northtropic.Services
                     _downloadTicketStore.TryRemove(kvp.Key, out _);
                 }
             }
+        }
+
+        // 方案 A：全局超级管理员大模型配置会话级缓存与学员智能继承机制
+        private User? _cachedAdminUser = null;
+        private DateTime _cachedAdminUserTime = DateTime.MinValue;
+
+        public async Task<User?> GetSystemAdminUserAsync()
+        {
+            var now = DateTime.UtcNow;
+            if (_cachedAdminUser != null && (now - _cachedAdminUserTime).TotalMinutes < 5)
+            {
+                return _cachedAdminUser;
+            }
+
+            await using var dbScope = await CreateDbScopeAsync();
+            // 优先寻找配置了 LlmApiKey 的超级管理员
+            var admin = await dbScope.Context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Role == UserRole.SuperAdmin && !string.IsNullOrWhiteSpace(u.LlmApiKey));
+
+            // 若没有配置 Key 的，退而求其次寻找任意超级管理员
+            admin ??= await dbScope.Context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Role == UserRole.SuperAdmin);
+
+            _cachedAdminUser = admin;
+            _cachedAdminUserTime = DateTime.UtcNow;
+
+            return admin;
+        }
+
+        public async Task<User> ResolveEffectiveUserLlmConfigAsync(User? user = null)
+        {
+            user ??= await GetActiveUserAsync() ?? new User { Id = Guid.Empty, Username = "未登录用户", Role = UserRole.Student };
+
+            // 1. 若用户自身已配置专属私有 Key，优先使用自身私有配置
+            if (!string.IsNullOrWhiteSpace(user.LlmApiKey))
+            {
+                return user;
+            }
+
+            // 2. 方案 A：普通学员/未配置 Key 用户自动继承超级管理员配置的大模型与 OCR 参数
+            var admin = await GetSystemAdminUserAsync();
+            if (admin != null && !string.IsNullOrWhiteSpace(admin.LlmApiKey))
+            {
+                return new User
+                {
+                    Id = user.Id,
+                    Username = user.Username,
+                    Grade = user.Grade,
+                    Role = user.Role,
+                    Level = user.Level,
+                    Exp = user.Exp,
+                    Coins = user.Coins,
+                    CurrentStreak = user.CurrentStreak,
+                    LastStudyDate = user.LastStudyDate,
+                    MaxCombo = user.MaxCombo,
+                    TotalAnswered = user.TotalAnswered,
+                    TotalCorrect = user.TotalCorrect,
+                    ResolvedErrorsCount = user.ResolvedErrorsCount,
+                    BindingCode = user.BindingCode,
+                    PhoneNumber = user.PhoneNumber,
+                    Email = user.Email,
+                    Avatar = user.Avatar,
+                    LlmApiKey = admin.LlmApiKey,
+                    LlmBaseUrl = string.IsNullOrWhiteSpace(admin.LlmBaseUrl) ? "https://generativelanguage.googleapis.com/v1beta/openai/" : admin.LlmBaseUrl,
+                    LlmModelName = string.IsNullOrWhiteSpace(admin.LlmModelName) ? "gemini-1.5-flash" : admin.LlmModelName,
+                    OcrProvider = string.IsNullOrWhiteSpace(user.OcrProvider) ? admin.OcrProvider : user.OcrProvider,
+                    BaiduApiKey = string.IsNullOrWhiteSpace(user.BaiduApiKey) ? admin.BaiduApiKey : user.BaiduApiKey,
+                    BaiduSecretKey = string.IsNullOrWhiteSpace(user.BaiduSecretKey) ? admin.BaiduSecretKey : user.BaiduSecretKey,
+                    BaiduOcrEndpoint = string.IsNullOrWhiteSpace(user.BaiduOcrEndpoint) ? admin.BaiduOcrEndpoint : user.BaiduOcrEndpoint,
+                    DailyTargetQuestions = user.DailyTargetQuestions,
+                    SoundEffectsEnabled = user.SoundEffectsEnabled,
+                    AccountStatus = user.AccountStatus,
+                    IsBuiltInDemo = user.IsBuiltInDemo
+                };
+            }
+
+            return user;
         }
     }
 }

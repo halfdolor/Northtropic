@@ -19,13 +19,15 @@ namespace Northtropic.Services
         private readonly AppDbContext? _dbContext;
         private readonly IDbContextFactory<AppDbContext>? _dbContextFactory;
         private readonly ISystemHealthService? _systemHealthService;
+        private readonly IUserSessionService? _userSessionService;
 
         public AiTutorService(
             IGamificationService gamificationService, 
             IHttpClientFactory httpClientFactory, 
             AppDbContext? dbContext = null,
             IDbContextFactory<AppDbContext>? dbContextFactory = null,
-            ISystemHealthService? systemHealthService = null)
+            ISystemHealthService? systemHealthService = null,
+            IUserSessionService? userSessionService = null)
         {
             _gamificationService = gamificationService;
             _httpClient = httpClientFactory.CreateClient();
@@ -33,16 +35,65 @@ namespace Northtropic.Services
             _dbContext = dbContext;
             _dbContextFactory = dbContextFactory;
             _systemHealthService = systemHealthService;
+            _userSessionService = userSessionService;
+        }
+
+        private async Task<User> ResolveEffectiveUserAsync(User user)
+        {
+            if (_userSessionService != null)
+            {
+                return await _userSessionService.ResolveEffectiveUserLlmConfigAsync(user);
+            }
+
+            if (!string.IsNullOrWhiteSpace(user.LlmApiKey))
+            {
+                return user;
+            }
+
+            try
+            {
+                if (_dbContextFactory != null || _dbContext != null)
+                {
+                    await using var dbScope = await AsyncDbScope.CreateAsync(_dbContextFactory, _dbContext!);
+                    var admin = await dbScope.Context.Users
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(u => u.Role == UserRole.SuperAdmin && !string.IsNullOrWhiteSpace(u.LlmApiKey));
+                    admin ??= await dbScope.Context.Users
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(u => u.Role == UserRole.SuperAdmin);
+
+                    if (admin != null && !string.IsNullOrWhiteSpace(admin.LlmApiKey))
+                    {
+                        return new User
+                        {
+                            Id = user.Id,
+                            Username = user.Username,
+                            Grade = user.Grade,
+                            Role = user.Role,
+                            LlmApiKey = admin.LlmApiKey,
+                            LlmBaseUrl = string.IsNullOrWhiteSpace(admin.LlmBaseUrl) ? "https://generativelanguage.googleapis.com/v1beta/openai/" : admin.LlmBaseUrl,
+                            LlmModelName = string.IsNullOrWhiteSpace(admin.LlmModelName) ? "gemini-1.5-flash" : admin.LlmModelName
+                        };
+                    }
+                }
+            }
+            catch
+            {
+                // 忽略异常
+            }
+
+            return user;
         }
 
         public async Task<AiExplanationResult> GetExplanationAsync(Question question, string? userAnswer = null)
         {
             var user = await _gamificationService.GetCurrentUserAsync();
-            if (!string.IsNullOrWhiteSpace(user.LlmApiKey))
+            var effectiveUser = await ResolveEffectiveUserAsync(user);
+            if (!string.IsNullOrWhiteSpace(effectiveUser.LlmApiKey))
             {
                 try
                 {
-                    return await CallLlmExplanationAsync(user, question, userAnswer);
+                    return await CallLlmExplanationAsync(effectiveUser, question, userAnswer);
                 }
                 catch (Exception ex)
                 {
@@ -57,11 +108,12 @@ namespace Northtropic.Services
         public async Task<SocraticGuidanceResult> GetSocraticGuidanceAsync(Question question, string? userAnswer = null)
         {
             var user = await _gamificationService.GetCurrentUserAsync();
-            if (!string.IsNullOrWhiteSpace(user.LlmApiKey))
+            var effectiveUser = await ResolveEffectiveUserAsync(user);
+            if (!string.IsNullOrWhiteSpace(effectiveUser.LlmApiKey))
             {
                 try
                 {
-                    return await CallLlmSocraticAsync(user, question, userAnswer);
+                    return await CallLlmSocraticAsync(effectiveUser, question, userAnswer);
                 }
                 catch (Exception ex)
                 {
@@ -76,11 +128,12 @@ namespace Northtropic.Services
         public async Task<Question> GenerateVariationQuestionAsync(Question originalQuestion)
         {
             var user = await _gamificationService.GetCurrentUserAsync();
-            if (!string.IsNullOrWhiteSpace(user.LlmApiKey))
+            var effectiveUser = await ResolveEffectiveUserAsync(user);
+            if (!string.IsNullOrWhiteSpace(effectiveUser.LlmApiKey))
             {
                 try
                 {
-                    return await CallLlmVariationAsync(user, originalQuestion);
+                    return await CallLlmVariationAsync(effectiveUser, originalQuestion);
                 }
                 catch (Exception ex)
                 {
@@ -95,11 +148,12 @@ namespace Northtropic.Services
         public async Task<string> AskAiTutorAsync(string questionContext, string userPrompt)
         {
             var user = await _gamificationService.GetCurrentUserAsync();
-            if (!string.IsNullOrWhiteSpace(user.LlmApiKey))
+            var effectiveUser = await ResolveEffectiveUserAsync(user);
+            if (!string.IsNullOrWhiteSpace(effectiveUser.LlmApiKey))
             {
                 try
                 {
-                    return await CallLlmAskAsync(user, questionContext, userPrompt);
+                    return await CallLlmAskAsync(effectiveUser, questionContext, userPrompt);
                 }
                 catch (Exception ex)
                 {
@@ -113,11 +167,12 @@ namespace Northtropic.Services
         public async Task<SubjectiveGradingResult> GradeSubjectiveAnswerAsync(Question question, string userAnswer)
         {
             var user = await _gamificationService.GetCurrentUserAsync();
-            if (!string.IsNullOrWhiteSpace(user.LlmApiKey))
+            var effectiveUser = await ResolveEffectiveUserAsync(user);
+            if (!string.IsNullOrWhiteSpace(effectiveUser.LlmApiKey))
             {
                 try
                 {
-                    return await CallLlmSubjectiveGradingAsync(user, question, userAnswer);
+                    return await CallLlmSubjectiveGradingAsync(effectiveUser, question, userAnswer);
                 }
                 catch (Exception ex)
                 {

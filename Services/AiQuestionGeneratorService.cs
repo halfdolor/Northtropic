@@ -24,13 +24,15 @@ namespace Northtropic.Services
         private readonly IDbContextFactory<AppDbContext>? _dbContextFactory;
         private readonly HttpClient _httpClient;
         private readonly ISystemHealthService? _systemHealthService;
+        private readonly IUserSessionService? _userSessionService;
 
         public AiQuestionGeneratorService(
             IGamificationService gamificationService,
             AppDbContext dbContext,
             IHttpClientFactory httpClientFactory,
             IDbContextFactory<AppDbContext>? dbContextFactory = null,
-            ISystemHealthService? systemHealthService = null)
+            ISystemHealthService? systemHealthService = null,
+            IUserSessionService? userSessionService = null)
         {
             _gamificationService = gamificationService;
             _dbContext = dbContext;
@@ -38,6 +40,7 @@ namespace Northtropic.Services
             _httpClient = httpClientFactory.CreateClient();
             _httpClient.Timeout = TimeSpan.FromSeconds(30);
             _systemHealthService = systemHealthService;
+            _userSessionService = userSessionService;
         }
 
         private async Task SaveQuestionsAndLogsAsync(IEnumerable<Question> questions, IEnumerable<LlmGenerationLog> logs)
@@ -56,6 +59,51 @@ namespace Northtropic.Services
             return list.First();
         }
 
+        private async Task<User> ResolveEffectiveUserAsync(User user)
+        {
+            if (_userSessionService != null)
+            {
+                return await _userSessionService.ResolveEffectiveUserLlmConfigAsync(user);
+            }
+
+            if (!string.IsNullOrWhiteSpace(user.LlmApiKey))
+            {
+                return user;
+            }
+
+            // 若未注入 userSessionService，通过 DbContext 尝试继承超级管理员大模型配置
+            try
+            {
+                await using var dbScope = await AsyncDbScope.CreateAsync(_dbContextFactory, _dbContext);
+                var admin = await dbScope.Context.Users
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Role == UserRole.SuperAdmin && !string.IsNullOrWhiteSpace(u.LlmApiKey));
+                admin ??= await dbScope.Context.Users
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Role == UserRole.SuperAdmin);
+
+                if (admin != null && !string.IsNullOrWhiteSpace(admin.LlmApiKey))
+                {
+                    return new User
+                    {
+                        Id = user.Id,
+                        Username = user.Username,
+                        Grade = user.Grade,
+                        Role = user.Role,
+                        LlmApiKey = admin.LlmApiKey,
+                        LlmBaseUrl = string.IsNullOrWhiteSpace(admin.LlmBaseUrl) ? "https://generativelanguage.googleapis.com/v1beta/openai/" : admin.LlmBaseUrl,
+                        LlmModelName = string.IsNullOrWhiteSpace(admin.LlmModelName) ? "gemini-1.5-flash" : admin.LlmModelName
+                    };
+                }
+            }
+            catch
+            {
+                // 忽略异常保底
+            }
+
+            return user;
+        }
+
         public async Task<List<Question>> GenerateBatchQuestionsAsync(string grade, string subject, string? category = null, int count = 5)
         {
             var user = await _gamificationService.GetCurrentUserAsync();
@@ -63,7 +111,10 @@ namespace Northtropic.Services
             if (count < 1) count = 1;
             if (count > 50) count = 50;
 
-            if (string.IsNullOrWhiteSpace(user.LlmApiKey))
+            // 方案 A：普通学员自动继承超级管理员配置的大模型与 Key
+            var effectiveUser = await ResolveEffectiveUserAsync(user);
+
+            if (string.IsNullOrWhiteSpace(effectiveUser.LlmApiKey))
             {
                 // 启发式智能题库引擎：未配置 API Key 时自动派发精选多题型题集
                 return await GenerateHeuristicBatchQuestionsAsync(user, grade, subject, category, count);
@@ -71,7 +122,7 @@ namespace Northtropic.Services
 
             try
             {
-                var questions = await CallLlmBatchApiOrThrowAsync(user, grade, subject, category, count);
+                var questions = await CallLlmBatchApiOrThrowAsync(effectiveUser, grade, subject, category, count);
                 if (questions != null && questions.Count > 0)
                 {
                     // 确保返回的题目不重复

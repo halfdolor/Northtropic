@@ -282,12 +282,37 @@ namespace Northtropic.Services
                 }
             }
 
-            // AI 演进诊断评语
-            if (user != null && !string.IsNullOrWhiteSpace(user.LlmApiKey))
+            // AI 演进诊断评语 (方案 A：普通学员自动继承超级管理员配置的大模型)
+            var effectiveUser = user;
+            if (user != null && string.IsNullOrWhiteSpace(user.LlmApiKey))
+            {
+                var admin = await ctx.Users
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Role == UserRole.SuperAdmin && !string.IsNullOrWhiteSpace(u.LlmApiKey));
+                admin ??= await ctx.Users
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Role == UserRole.SuperAdmin);
+
+                if (admin != null && !string.IsNullOrWhiteSpace(admin.LlmApiKey))
+                {
+                    effectiveUser = new User
+                    {
+                        Id = user.Id,
+                        Username = user.Username,
+                        Grade = user.Grade,
+                        Role = user.Role,
+                        LlmApiKey = admin.LlmApiKey,
+                        LlmBaseUrl = string.IsNullOrWhiteSpace(admin.LlmBaseUrl) ? "https://generativelanguage.googleapis.com/v1beta/openai/" : admin.LlmBaseUrl,
+                        LlmModelName = string.IsNullOrWhiteSpace(admin.LlmModelName) ? "gemini-1.5-flash" : admin.LlmModelName
+                    };
+                }
+            }
+
+            if (effectiveUser != null && !string.IsNullOrWhiteSpace(effectiveUser.LlmApiKey))
             {
                 try
                 {
-                    report.AiGrowthAdvice = await CallLlmDiagnosisAdviceAsync(user, report, practiced);
+                    report.AiGrowthAdvice = await CallLlmDiagnosisAdviceAsync(effectiveUser, report, practiced);
                     return report;
                 }
                 catch (Exception)

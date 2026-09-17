@@ -56,6 +56,32 @@ namespace Northtropic.Tests
         public Task<string> GenerateDownloadTicketAsync(Guid userId, string purpose, string? resource = null) => Task.FromResult(Guid.NewGuid().ToString("N"));
         public Task<(bool Valid, Guid UserId, string Purpose, string? Resource)> ValidateAndConsumeDownloadTicketAsync(string ticket) => Task.FromResult<(bool, Guid, string, string?)>((true, ActiveUser?.Id ?? Guid.NewGuid(), "backup_download", null));
         public int ActiveDownloadTicketsCount => 0;
+
+        public User? SystemAdminUser { get; set; } = null;
+        public Task<User?> GetSystemAdminUserAsync() => Task.FromResult(SystemAdminUser);
+        public Task<User> ResolveEffectiveUserLlmConfigAsync(User? user = null)
+        {
+            user ??= ActiveUser ?? new User { Id = Guid.Empty, Username = "测试用户", Role = UserRole.Student };
+            if (!string.IsNullOrWhiteSpace(user.LlmApiKey)) return Task.FromResult(user);
+            if (SystemAdminUser != null && !string.IsNullOrWhiteSpace(SystemAdminUser.LlmApiKey))
+            {
+                var effective = new User
+                {
+                    Id = user.Id,
+                    Username = user.Username,
+                    Grade = user.Grade,
+                    Role = user.Role,
+                    LlmApiKey = SystemAdminUser.LlmApiKey,
+                    LlmBaseUrl = SystemAdminUser.LlmBaseUrl,
+                    LlmModelName = SystemAdminUser.LlmModelName,
+                    BaiduApiKey = string.IsNullOrWhiteSpace(user.BaiduApiKey) ? SystemAdminUser.BaiduApiKey : user.BaiduApiKey,
+                    BaiduSecretKey = string.IsNullOrWhiteSpace(user.BaiduSecretKey) ? SystemAdminUser.BaiduSecretKey : user.BaiduSecretKey,
+                    BaiduOcrEndpoint = string.IsNullOrWhiteSpace(user.BaiduOcrEndpoint) ? SystemAdminUser.BaiduOcrEndpoint : user.BaiduOcrEndpoint
+                };
+                return Task.FromResult(effective);
+            }
+            return Task.FromResult(user);
+        }
     }
 
     public class FakeGamificationService : IGamificationService

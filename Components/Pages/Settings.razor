@@ -1,4 +1,4 @@
-﻿@page "/settings"
+@page "/settings"
 @using Northtropic.Models
 @using Northtropic.Services
 @inject IGamificationService GamificationService
@@ -271,6 +271,10 @@
                     </MudButton>
                 </div>
             </div>
+
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4 rounded-lg">
+                <strong>💡 全局继承机制已生效（方案 A · 教学团队/全校模式）：</strong> 此处配置的模型与密钥将自动共享继承给所有未配置独立 Key 的学生与教师。普通学员无需单独配 Key 即可直接享受真实大模型出题与智能苏格拉底辅导！
+            </MudAlert>
 
             <div class="d-flex flex-column gap-4">
                 <MudTextField T="string" Label="LLM API Key (密钥)" @bind-Value="_currentUser.LlmApiKey" InputType="InputType.Password" Placeholder="AIzaSy... (仅需填写 Key)" Variant="Variant.Outlined" HelperText="密钥安全存储于 PostgreSQL 数据库中" Class="font-weight-bold" />
