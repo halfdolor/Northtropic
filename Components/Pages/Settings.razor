@@ -296,6 +296,18 @@
                             <span>🧪 一键测试 API 连通性与模型响应</span>
                         }
                     </MudButton>
+
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveLlmSettingsAsync" Disabled="@_isSavingLlm" Class="font-weight-bold">
+                        @if (_isSavingLlm)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                            <span>保存中...</span>
+                        }
+                        else
+                        {
+                            <span>💾 立即保存大模型配置</span>
+                        }
+                    </MudButton>
                 </div>
 
                 @if (_testResult != null)
@@ -1900,6 +1912,44 @@
         }
     }
 
+    private bool _isSavingLlm = false;
+    private async Task SaveLlmSettingsAsync()
+    {
+        if (_currentUser == null) return;
+        _isSavingLlm = true;
+        StateHasChanged();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_currentUser.LlmBaseUrl))
+            {
+                _currentUser.LlmBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/";
+            }
+            if (string.IsNullOrWhiteSpace(_currentUser.LlmModelName))
+            {
+                _currentUser.LlmModelName = "gemini-1.5-flash";
+            }
+
+            var success = await UserSessionService.UpdateUserSettingsAsync(_currentUser);
+            if (success)
+            {
+                Snackbar.Add($"✅ 大模型配置已成功保存！当前模型：{_currentUser.LlmModelName}", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("❌ 保存失败，当前会话已失效或用户不存在，请重新登录超级管理员账号！", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"保存异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isSavingLlm = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task SaveSettingsAsync()
     {
         if (_currentUser != null)
@@ -1921,8 +1971,15 @@
                 _currentUser.AliyunSmsTemplateParam = "code";
             }
 
-            await UserSessionService.UpdateUserSettingsAsync(_currentUser);
-            Snackbar.Add("阿里云短信、OCR 与系统安全配置已成功保存！", Severity.Success);
+            var success = await UserSessionService.UpdateUserSettingsAsync(_currentUser);
+            if (success)
+            {
+                Snackbar.Add("✅ 系统全局配置已成功保存！", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("❌ 保存失败，当前会话可能已过期，请重新登录！", Severity.Error);
+            }
         }
     }
 
