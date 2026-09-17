@@ -1,15 +1,15 @@
 # Northtropic 智能学习系统
 
 <p align="center">
-  <strong>基于 .NET 8 Blazor 与 MudBlazor 构建的高性能 AI 智适应精准助学与错题净化提分系统</strong>
+  <strong>基于 .NET 10 Blazor 与 MudBlazor 构建的高性能 AI 智适应精准助学与错题净化提分系统</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/.NET-8.0-512BD4?style=flat-square&logo=dotnet" alt=".NET 8" />
+  <img src="https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square&logo=dotnet" alt=".NET 10" />
   <img src="https://img.shields.io/badge/Blazor-Interactive%20Server-512BD4?style=flat-square&logo=blazor" alt="Blazor" />
   <img src="https://img.shields.io/badge/UI-MudBlazor%207-7E6FFF?style=flat-square" alt="MudBlazor" />
-  <img src="https://img.shields.io/badge/Database-SQLite%20(WAL%20Mode)-003B57?style=flat-square&logo=sqlite" alt="SQLite" />
-  <img src="https://img.shields.io/badge/OCR-PaddleOCR%20Offline-blue?style=flat-square" alt="PaddleOCR" />
+  <img src="https://img.shields.io/badge/Database-PostgreSQL%20%7C%20SQLite-336791?style=flat-square&logo=postgresql" alt="PostgreSQL / SQLite" />
+  <img src="https://img.shields.io/badge/CI%2FCD-Gitea%20Webhook%20AutoDeploy-28a745?style=flat-square&logo=gitea" alt="Gitea AutoDeploy" />
   <img src="https://img.shields.io/badge/Deployment-Windows%20Service-0078D6?style=flat-square&logo=windows" alt="Windows Service" />
 </p>
 
