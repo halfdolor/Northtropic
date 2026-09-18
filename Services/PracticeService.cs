@@ -525,6 +525,8 @@ namespace Northtropic.Services
             bool isHistoryWrong = currentUserId != Guid.Empty && await ctx.ErrorItems.AnyAsync(e => e.UserId == currentUserId && e.QuestionId == questionId && !e.IsMastered);
             var rewardResult = await _gamificationService.ProcessAnswerRewardAsync(isCorrect, activeQuestion.BaseExpReward, currentCombo, activeQuestion.Difficulty, timeTakenSeconds, isHistoryWrong, currentUserId, ctx);
 
+            string? planFeedback = null;
+
             // 2. 若为有效登录用户，持久化保存答题记录与错题本；若为未鉴权访客（currentUserId == Guid.Empty），仅返回判分与模拟奖励，杜绝写入孤儿记录与数据库污染
             if (currentUserId != Guid.Empty)
             {
@@ -599,6 +601,52 @@ namespace Northtropic.Services
                     }
                 }
 
+                // 4. 智能学习计划任务同步推进与自适应闭环联动
+                try
+                {
+                    var activePlan = await ctx.StudyPlans
+                        .Include(p => p.Tasks)
+                        .Where(p => p.UserId == currentUserId && p.Status == StudyPlanStatus.Active)
+                        .OrderByDescending(p => p.CreatedAt)
+                        .FirstOrDefaultAsync(cancellationToken);
+
+                    if (activePlan != null && activePlan.Tasks != null && activePlan.Tasks.Count > 0)
+                    {
+                        var targetTask = activePlan.Tasks
+                            .Where(t => !t.IsCompleted && t.Subject == activeQuestion.Subject && t.Category == activeQuestion.Category)
+                            .FirstOrDefault()
+                            ?? activePlan.Tasks
+                                .Where(t => !t.IsCompleted && t.Subject == activeQuestion.Subject && (t.Category == "全部分类" || t.TaskType == StudyPlanTaskType.ComprehensiveSprint))
+                                .FirstOrDefault()
+                            ?? activePlan.Tasks.Where(t => !t.IsCompleted).FirstOrDefault();
+
+                        if (targetTask != null)
+                        {
+                            targetTask.CompletedCount++;
+                            if (targetTask.CompletedCount >= targetTask.TargetCount)
+                            {
+                                targetTask.IsCompleted = true;
+                                targetTask.CompletedAt = DateTime.Now;
+                            }
+                            activePlan.UpdatedAt = DateTime.Now;
+
+                            if (activePlan.Tasks.All(t => t.IsCompleted))
+                            {
+                                activePlan.Status = StudyPlanStatus.Completed;
+                                activePlan.CompletedDate = DateTime.Now;
+                                planFeedback = $"🏆 太棒了！你已圆满达成当前提分学习计划全部任务指标！";
+                            }
+                            else
+                            {
+                                planFeedback = targetTask.IsCompleted
+                                    ? $"🎉 恭喜达成学习计划任务【{targetTask.Title}】({targetTask.CompletedCount}/{targetTask.TargetCount})！"
+                                    : $"🎯 学习计划推进：【{targetTask.Title}】已完成 {targetTask.CompletedCount}/{targetTask.TargetCount} 题！";
+                            }
+                        }
+                    }
+                }
+                catch { }
+
                 await ctx.SaveChangesAsync(cancellationToken);
             }
 
@@ -627,7 +675,8 @@ namespace Northtropic.Services
                 IsEquivalentMatch = isEquivalentMatch,
                 EquivalentMatchReason = matchReason,
                 CognitiveClassification = cognitiveClass,
-                CognitiveBadgeText = cognitiveBadge
+                CognitiveBadgeText = cognitiveBadge,
+                StudyPlanProgressFeedback = planFeedback
             };
         }
 

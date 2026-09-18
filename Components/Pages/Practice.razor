@@ -2802,6 +2802,11 @@
                 string paidNote = _lastResult.Reward.IsPaidQuestion ? $" (已扣除入场费 {_lastResult.Reward.PaidEntryFee} 金币)" : "";
                 Snackbar.Add($"❌ 答错/超时！扣除 -{penaltyCoins} 金币{paidNote}，题目已放入错题净化副本", Severity.Error);
             }
+
+            if (!string.IsNullOrWhiteSpace(_lastResult.StudyPlanProgressFeedback))
+            {
+                Snackbar.Add(_lastResult.StudyPlanProgressFeedback, Severity.Info);
+            }
         }
         catch (Exception ex)
         {

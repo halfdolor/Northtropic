@@ -6,6 +6,7 @@
 @inject IPracticeService PracticeService
 @inject ICurriculumConfigService CurriculumConfigService
 @inject IStudentEvolutionService StudentEvolutionService
+@inject IStudyPlanService StudyPlanService
 @inject IErrorBookService ErrorBookService
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
@@ -375,6 +376,144 @@
                         </MudText>
                     }
                 </MudPaper>
+
+                <!-- 子女专属自适应提分计划与超级助学督促进展 -->
+                @if (_childPlan != null)
+                {
+                    <div class="glass-card pa-6 mb-6" style="border-left: 5px solid #3b82f6; background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(30, 41, 59, 0.45) 100%); border-radius: 16px;">
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                            <div class="d-flex align-center gap-2">
+                                <MudIcon Icon="@Icons.Material.Filled.SmartToy" Color="Color.Primary" Size="Size.Large" />
+                                <div>
+                                    <div class="d-flex align-center gap-2 flex-wrap">
+                                        <MudText Typo="Typo.h6" Class="font-weight-bold">
+                                            @_childPlan.Title
+                                        </MudText>
+                                        <MudChip T="string" Color="Color.Primary" Size="Size.Small">
+                                            剩余 @_childPlan.RemainingDays 天
+                                        </MudChip>
+                                        <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Outlined">
+                                            目标正确率: @_childPlan.TargetAccuracyRate%
+                                        </MudChip>
+                                    </div>
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                                        @_childPlan.PlanGoalSummary
+                                    </MudText>
+                                </div>
+                            </div>
+                            <div>
+                                <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Filled" Icon="@Icons.Material.Filled.NotificationsActive">
+                                    AI 助手已督促 @_childPlan.SupervisionNudgeCount 次
+                                </MudChip>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(_childPlan.LatestSupervisionMessage))
+                        {
+                            <div class="pa-3 rounded mb-4" style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.25);">
+                                <MudText Typo="Typo.caption" Class="font-weight-bold" Color="Color.Primary">📢 最近一次助学督促：</MudText>
+                                <MudText Typo="Typo.body2" Style="font-weight: 500;">
+                                    @_childPlan.LatestSupervisionMessage
+                                </MudText>
+                            </div>
+                        }
+
+                        <div class="mb-3">
+                            <div class="d-flex justify-space-between align-center mb-1" style="font-size: 0.85rem;">
+                                <span class="font-weight-bold">计划总完成度</span>
+                                <span class="font-weight-bold" style="color: #3b82f6;">@_childPlan.ProgressPercent% (@_childPlan.Tasks.Count(t => t.IsCompleted)/@_childPlan.Tasks.Count 项任务达标)</span>
+                            </div>
+                            <MudProgressLinear Color="@(_childPlan.IsFullyCompleted ? Color.Success : Color.Primary)" Value="@_childPlan.ProgressPercent" Rounded="true" Style="height: 8px; border-radius: 4px;" />
+                        </div>
+
+                        <MudGrid Spacing="2">
+                            @foreach (var task in _childPlan.Tasks)
+                            {
+                                <MudItem xs="12" sm="6" md="3">
+                                    <div class="pa-3 glass-card" style="background: var(--sub-card-bg); border-left: 3px solid @(task.IsCompleted ? "#10b981" : "#3b82f6");">
+                                        <div class="d-flex justify-space-between align-center mb-1">
+                                            <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">@task.Subject</MudChip>
+                                            <span style="font-size: 0.75rem; font-weight: 700; color: @(task.IsCompleted ? "#10b981" : "#3b82f6");">
+                                                @(task.IsCompleted ? "✅ 已达标" : "进行中")
+                                            </span>
+                                        </div>
+                                        <MudText Typo="Typo.caption" Class="font-weight-bold" Style="display: block; min-height: 32px;">
+                                            @task.Title
+                                        </MudText>
+                                        <div class="d-flex justify-space-between mud-text-secondary" style="font-size: 0.75rem;">
+                                            <span>进度: @task.CompletedCount/@task.TargetCount 题</span>
+                                            <span>@task.TaskProgressPercent%</span>
+                                        </div>
+                                    </div>
+                                </MudItem>
+                            }
+                        </MudGrid>
+                    </div>
+                }
+
+                <!-- 子女持续迭代闭环复盘：孩子进步了吗？没进步原因是什么？有进步积累了什么经验？ -->
+                @if (_childClosedLoopInsight != null)
+                {
+                    <div class="glass-card pa-6 mb-6" style="border-left: 5px solid #10b981; background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(30, 41, 59, 0.45) 100%); border-radius: 16px;">
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                            <div class="d-flex align-center gap-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Insights" Color="Color.Success" Size="Size.Large" />
+                                <div>
+                                    <div class="d-flex align-center gap-2">
+                                        <MudText Typo="Typo.h6" Class="font-weight-bold">
+                                            持续迭代闭环复盘：孩子进步了吗？
+                                        </MudText>
+                                        <MudChip T="string" Color="@(_childClosedLoopInsight.HasImproved ? Color.Success : (_childClosedLoopInsight.EvaluationStatus == ProgressEvaluationStatus.Stagnant ? Color.Warning : Color.Error))" Size="Size.Small" Variant="Variant.Filled" Style="font-weight: 800;">
+                                            @_childClosedLoopInsight.StatusBadgeTitle
+                                        </MudChip>
+                                    </div>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                        客观多维数据追踪 · 周度正确率变动: @(_childClosedLoopInsight.AccuracyDelta >= 0 ? "+" : "")@_childClosedLoopInsight.AccuracyDelta% ｜ 解题提速: @(_childClosedLoopInsight.SpeedDeltaSeconds >= 0 ? "+" : "")@_childClosedLoopInsight.SpeedDeltaSeconds 秒 ｜ 攻克弱项: @_childClosedLoopInsight.WeaknessOvercomeCount 个 ｜ 错题净化: @_childClosedLoopInsight.PurifiedErrorsCount 道
+                                    </MudText>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 没进步原因深度剖析与家长协同纠偏建议 -->
+                        @if (_childClosedLoopInsight.FailureReasons.Count > 0 || !_childClosedLoopInsight.HasImproved)
+                        {
+                            <div class="pa-4 mb-3 rounded" style="background: rgba(239, 68, 68, 0.08); border-left: 4px solid #ef4444; border: 1px solid rgba(239, 68, 68, 0.25);">
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Error">
+                                    🔍 没进步是什么原因？(深层根因剖析与家长协同处方)
+                                </MudText>
+                                <MudText Typo="Typo.body2" Style="line-height: 1.6; white-space: pre-line;" Class="my-2">
+                                    @_childClosedLoopInsight.RootCauseDiagnosis
+                                </MudText>
+                                <div class="pa-3 rounded" style="background: rgba(239, 68, 68, 0.1);">
+                                    <MudText Typo="Typo.caption" Class="font-weight-bold" Color="Color.Error">💡 家校协同处方建议：</MudText>
+                                    <MudText Typo="Typo.body2" Style="line-height: 1.5; white-space: pre-line;">
+                                        @_childClosedLoopInsight.CorrectivePrescription
+                                    </MudText>
+                                </div>
+                            </div>
+                        }
+
+                        <!-- 有进步经验宝藏沉淀 -->
+                        @if (_childClosedLoopInsight.SuccessExperiences.Count > 0 || _childClosedLoopInsight.HasImproved)
+                        {
+                            <div class="pa-4 mb-3 rounded" style="background: rgba(16, 185, 129, 0.08); border-left: 4px solid #10b981; border: 1px solid rgba(16, 185, 129, 0.25);">
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Success">
+                                    💎 有进步积累了什么经验？(提分成功经验沉淀)
+                                </MudText>
+                                <MudText Typo="Typo.body2" Style="line-height: 1.6; white-space: pre-line;" Class="mt-1">
+                                    @_childClosedLoopInsight.SuccessExperienceSummary
+                                </MudText>
+                            </div>
+                        }
+
+                        <div class="pa-3 rounded" style="background: rgba(139, 92, 246, 0.1); border: 1px dashed rgba(139, 92, 246, 0.3);">
+                            <MudText Typo="Typo.caption" Class="font-weight-bold" Color="Color.Secondary">🚀 下一阶段智能演进导向：</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                @_childClosedLoopInsight.NextEvolutionStrategy
+                            </MudText>
+                        </div>
+                    </div>
+                }
 
                 <!-- 学科知识点掌握度全景分布 -->
                 <div class="mb-6">
@@ -1162,6 +1301,8 @@
     private EvolutionDiagnosisReportDto? _diagnosisReport;
     private List<ErrorItem> _unmasteredErrors = new();
     private Dictionary<string, int> _errorReasonBreakdown = new();
+    private StudyPlan? _childPlan;
+    private ClosedLoopDiagnosisResultDto? _childClosedLoopInsight;
     private bool _isLoadingDetails = false;
 
     public class SubjectMasteryDto
@@ -1209,6 +1350,8 @@
                 _diagnosisReport = null;
                 _unmasteredErrors.Clear();
                 _errorReasonBreakdown.Clear();
+                _childPlan = null;
+                _childClosedLoopInsight = null;
             }
         }
         await InvokeAsync(StateHasChanged);
@@ -1243,6 +1386,10 @@
             _errorReasonBreakdown = _unmasteredErrors
                 .GroupBy(e => string.IsNullOrWhiteSpace(e.ErrorReasonCategory) ? "未归类错因" : e.ErrorReasonCategory)
                 .ToDictionary(g => g.Key, g => g.Count());
+
+            // 自适应学习计划与持续迭代闭环复盘加载
+            _childPlan = await StudyPlanService.EnsureActivePlanAsync(studentId);
+            _childClosedLoopInsight = await StudyPlanService.GetLatestClosedLoopInsightAsync(studentId) ?? await StudyPlanService.EvaluateClosedLoopProgressAsync(studentId);
         }
         catch (Exception ex)
         {

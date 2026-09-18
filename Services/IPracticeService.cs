@@ -16,6 +16,7 @@ namespace Northtropic.Services
         public string? EquivalentMatchReason { get; set; }
         public string? CognitiveClassification { get; set; }
         public string? CognitiveBadgeText { get; set; }
+        public string? StudyPlanProgressFeedback { get; set; }
     }
 
     public class SubjectAnalyticsDto

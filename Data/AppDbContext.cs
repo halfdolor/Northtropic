@@ -20,6 +20,9 @@ namespace Northtropic.Data
         public DbSet<UserFavorite> UserFavorites { get; set; } = null!;
         public DbSet<CurriculumSubjectConfig> CurriculumSubjectConfigs { get; set; } = null!;
         public DbSet<HomeworkAssignment> HomeworkAssignments { get; set; } = null!;
+        public DbSet<StudyPlan> StudyPlans { get; set; } = null!;
+        public DbSet<StudyPlanTask> StudyPlanTasks { get; set; } = null!;
+        public DbSet<EvolutionClosedLoopInsight> EvolutionClosedLoopInsights { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -53,6 +56,18 @@ namespace Northtropic.Data
                 .HasIndex(h => new { h.StudentUserId, h.IsCompleted });
             modelBuilder.Entity<HomeworkAssignment>()
                 .HasIndex(h => h.CreatorUserId);
+
+            // 智能学习计划与持续迭代闭环索引配置
+            modelBuilder.Entity<StudyPlan>()
+                .HasIndex(s => new { s.UserId, s.Status });
+            modelBuilder.Entity<StudyPlan>()
+                .HasIndex(s => s.CreatedAt);
+
+            modelBuilder.Entity<StudyPlanTask>()
+                .HasIndex(t => new { t.StudyPlanId, t.IsCompleted });
+
+            modelBuilder.Entity<EvolutionClosedLoopInsight>()
+                .HasIndex(c => new { c.UserId, c.AnalyzedAt });
 
             // 架构性能扩展索引：收藏夹、LLM 日志流水与成就达成判断
             modelBuilder.Entity<UserFavorite>()

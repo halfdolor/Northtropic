@@ -246,21 +246,57 @@ namespace Northtropic.Services
                 .ToListAsync();
 
             double recentAcc = recentRecords.Count > 0 ? (double)recentRecords.Count(r => r.IsCorrect) / recentRecords.Count * 100.0 : overallAccuracy;
-            double prevAcc = prevRecords.Count > 0 ? (double)prevRecords.Count(r => r.IsCorrect) / prevRecords.Count * 100.0 : recentAcc;
-
-            report.WeeklyAccuracyDelta = prevRecords.Count > 0 ? Math.Round(recentAcc - prevAcc, 1) : 0.0;
-
+            double prevAcc;
             double recentSpeed = recentRecords.Count > 0 ? recentRecords.Average(r => r.TimeTakenSeconds) : 0;
-            double prevSpeed = prevRecords.Count > 0 ? prevRecords.Average(r => r.TimeTakenSeconds) : recentSpeed;
-            report.SpeedImprovementSeconds = prevRecords.Count > 0 ? Math.Round(Math.Max(0, prevSpeed - recentSpeed), 1) : 0.0;
+            double prevSpeed;
 
-            report.WeakCategoriesReducedCount = Math.Max(0, 5 - report.TopWeakCategories.Count);
+            if (prevRecords.Count > 0)
+            {
+                prevAcc = (double)prevRecords.Count(r => r.IsCorrect) / prevRecords.Count * 100.0;
+                prevSpeed = prevRecords.Average(r => r.TimeTakenSeconds);
+                report.WeeklyAccuracyDelta = Math.Round(recentAcc - prevAcc, 1);
+                report.SpeedImprovementSeconds = Math.Round(Math.Max(0, prevSpeed - recentSpeed), 1);
+            }
+            else
+            {
+                // 尝试用更早的历史作答均线作为参照
+                var olderRecords = await ctx.PracticeRecords
+                    .AsNoTracking()
+                    .Where(r => r.UserId == userId && r.AnsweredAt < sevenDaysAgo)
+                    .Select(r => new { r.IsCorrect, r.TimeTakenSeconds })
+                    .ToListAsync();
+
+                if (olderRecords.Count > 0)
+                {
+                    prevAcc = (double)olderRecords.Count(r => r.IsCorrect) / olderRecords.Count * 100.0;
+                    prevSpeed = olderRecords.Average(r => r.TimeTakenSeconds);
+                    report.WeeklyAccuracyDelta = Math.Round(recentAcc - prevAcc, 1);
+                    report.SpeedImprovementSeconds = Math.Round(Math.Max(0, prevSpeed - recentSpeed), 1);
+                }
+                else
+                {
+                    prevAcc = recentAcc;
+                    prevSpeed = recentSpeed;
+                    report.WeeklyAccuracyDelta = 0.0;
+                    report.SpeedImprovementSeconds = 0.0;
+                }
+            }
+
+            // 真实攻坚已掌握考点数 (掌握度达到 70 分及以上的考点总数)
+            report.WeakCategoriesReducedCount = practiced.Count(m => m.MasteryScore >= 70);
 
             if (recentRecords.Count == 0 && prevRecords.Count == 0)
             {
-                report.WeeklyProgressSummary = "🌱 刚开启学习旅程，完成更多刷题后将展现更精细的周度增长跨越图谱！";
+                if (practiced.Count > 0 || (user?.TotalAnswered ?? 0) > 0)
+                {
+                    report.WeeklyProgressSummary = $"⏸️ **近期练习暂停提醒**：近 14 天尚未进行作答，历史综合正确率保持在 **{overallAccuracy:F1}%**。建议今日启动 10 题轻量热身，快速找回做题节奏！";
+                }
+                else
+                {
+                    report.WeeklyProgressSummary = "🌱 刚开启学习旅程，完成更多刷题后将展现更精细的周度增长跨越图谱！";
+                }
             }
-            else if (prevRecords.Count == 0)
+            else if (prevRecords.Count == 0 && report.WeeklyAccuracyDelta == 0.0)
             {
                 report.WeeklyProgressSummary = $"🌱 **首周练习基准已建立**：近 7 天共完成 {recentRecords.Count} 道练习，正确率达 **{recentAcc:F1}%**，平均解题用时 **{recentSpeed:F1} 秒**！下周将为您生成周度纵向跨越对比图谱。";
             }

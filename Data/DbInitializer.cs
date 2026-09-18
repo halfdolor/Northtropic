@@ -97,6 +97,66 @@ namespace Northtropic.Data
                     );
                 ");
 
+                // 确保 SQLite 中存在 StudyPlans 数据表
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS ""StudyPlans"" (
+                        ""Id"" TEXT NOT NULL CONSTRAINT ""PK_StudyPlans"" PRIMARY KEY,
+                        ""UserId"" TEXT NOT NULL,
+                        ""Title"" TEXT NOT NULL,
+                        ""Status"" INTEGER NOT NULL DEFAULT 0,
+                        ""StartDate"" TEXT NOT NULL,
+                        ""TargetEndDate"" TEXT NOT NULL,
+                        ""CompletedDate"" TEXT NULL,
+                        ""DailyTargetQuestions"" INTEGER NOT NULL DEFAULT 15,
+                        ""TargetAccuracyRate"" REAL NOT NULL DEFAULT 85.0,
+                        ""PlanGoalSummary"" TEXT NOT NULL DEFAULT '',
+                        ""SupervisionNudgeCount"" INTEGER NOT NULL DEFAULT 0,
+                        ""LastSupervisedAt"" TEXT NULL,
+                        ""LatestSupervisionMessage"" TEXT NOT NULL DEFAULT '',
+                        ""CreatedAt"" TEXT NOT NULL,
+                        ""UpdatedAt"" TEXT NOT NULL
+                    );
+                ");
+
+                // 确保 SQLite 中存在 StudyPlanTasks 数据表
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS ""StudyPlanTasks"" (
+                        ""Id"" TEXT NOT NULL CONSTRAINT ""PK_StudyPlanTasks"" PRIMARY KEY,
+                        ""StudyPlanId"" TEXT NOT NULL,
+                        ""Title"" TEXT NOT NULL,
+                        ""Subject"" TEXT NOT NULL,
+                        ""Category"" TEXT NOT NULL,
+                        ""TaskType"" INTEGER NOT NULL DEFAULT 0,
+                        ""TargetCount"" INTEGER NOT NULL DEFAULT 10,
+                        ""CompletedCount"" INTEGER NOT NULL DEFAULT 0,
+                        ""TargetAccuracy"" REAL NOT NULL DEFAULT 80.0,
+                        ""IsCompleted"" INTEGER NOT NULL DEFAULT 0,
+                        ""CompletedAt"" TEXT NULL,
+                        ""CreatedAt"" TEXT NOT NULL
+                    );
+                ");
+
+                // 确保 SQLite 中存在 EvolutionClosedLoopInsights 数据表
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS ""EvolutionClosedLoopInsights"" (
+                        ""Id"" TEXT NOT NULL CONSTRAINT ""PK_EvolutionClosedLoopInsights"" PRIMARY KEY,
+                        ""UserId"" TEXT NOT NULL,
+                        ""AnalyzedAt"" TEXT NOT NULL,
+                        ""EvaluationStatus"" INTEGER NOT NULL DEFAULT 1,
+                        ""AccuracyDelta"" REAL NOT NULL DEFAULT 0.0,
+                        ""SpeedDeltaSeconds"" REAL NOT NULL DEFAULT 0.0,
+                        ""WeaknessOvercomeCount"" INTEGER NOT NULL DEFAULT 0,
+                        ""PurifiedErrorsCount"" INTEGER NOT NULL DEFAULT 0,
+                        ""PotentialScore"" INTEGER NOT NULL DEFAULT 80,
+                        ""FailureReasonsCsv"" TEXT NOT NULL DEFAULT '',
+                        ""RootCauseDiagnosis"" TEXT NOT NULL DEFAULT '',
+                        ""CorrectivePrescription"" TEXT NOT NULL DEFAULT '',
+                        ""SuccessExperiencesCsv"" TEXT NOT NULL DEFAULT '',
+                        ""SuccessExperienceSummary"" TEXT NOT NULL DEFAULT '',
+                        ""NextEvolutionStrategy"" TEXT NOT NULL DEFAULT ''
+                    );
+                ");
+
                 // 安全补全 Users 表的所有列
                 SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""PhoneNumber"" TEXT NOT NULL DEFAULT '';");
                 SafeExecuteSql(context, @"ALTER TABLE ""Users"" ADD COLUMN ""Role"" INTEGER NOT NULL DEFAULT 3;");

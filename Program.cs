@@ -67,6 +67,7 @@ builder.Services.AddScoped<IAiQuestionGeneratorService, AiQuestionGeneratorServi
 builder.Services.AddScoped<IQuestionImportService, QuestionImportService>();
 builder.Services.AddScoped<IQuestionManagementService, QuestionManagementService>();
 builder.Services.AddScoped<IStudentEvolutionService, StudentEvolutionService>();
+builder.Services.AddScoped<IStudyPlanService, StudyPlanService>();
 builder.Services.AddScoped<ICurriculumConfigService, CurriculumConfigService>();
 builder.Services.AddScoped<ISystemHealthService, SystemHealthService>();
 builder.Services.AddScoped<ThemeService>();
