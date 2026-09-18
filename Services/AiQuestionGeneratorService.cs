@@ -185,17 +185,11 @@ namespace Northtropic.Services
                 response_format = new { type = "json_object" }
             };
 
-            var defaultGeminiBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/";
-            var rawBaseUrl = string.IsNullOrWhiteSpace(user.LlmBaseUrl) ? defaultGeminiBaseUrl : user.LlmBaseUrl.TrimEnd('/');
-            if (rawBaseUrl.EndsWith("/chat/completions"))
-            {
-                rawBaseUrl = rawBaseUrl.Substring(0, rawBaseUrl.Length - "/chat/completions".Length);
-            }
-            var targetUrl = $"{rawBaseUrl.TrimEnd('/')}/chat/completions";
+            var targetUrl = Northtropic.Helpers.LlmHttpHelper.NormalizeChatCompletionsUrl(user.LlmBaseUrl);
 
             var request = new HttpRequestMessage(HttpMethod.Post, targetUrl);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", user.LlmApiKey.Trim());
-            request.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+            request.Content = Northtropic.Helpers.LlmHttpHelper.CreateJsonContent(requestBody);
 
             HttpResponseMessage response;
             try

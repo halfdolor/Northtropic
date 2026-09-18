@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Northtropic.Data;
+using Northtropic.Helpers;
 using Northtropic.Models;
 
 namespace Northtropic.Services
@@ -411,7 +412,7 @@ namespace Northtropic.Services
             var targetUrl = GetTargetUrl(user.LlmBaseUrl);
             var request = new HttpRequestMessage(HttpMethod.Post, targetUrl);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", user.LlmApiKey.Trim());
-            request.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+            request.Content = LlmHttpHelper.CreateJsonContent(requestBody);
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
             var response = await _httpClient.SendAsync(request, cts.Token);
@@ -459,7 +460,7 @@ namespace Northtropic.Services
             var targetUrl = GetTargetUrl(user.LlmBaseUrl);
             var request = new HttpRequestMessage(HttpMethod.Post, targetUrl);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", user.LlmApiKey.Trim());
-            request.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+            request.Content = LlmHttpHelper.CreateJsonContent(requestBody);
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
             var response = await _httpClient.SendAsync(request, cts.Token);
@@ -526,23 +527,6 @@ namespace Northtropic.Services
             {
                 // 容错：Token 审计日志记录失败不阻断核心辅导回复流程
             }
-        }
-
-        private string GetTargetUrl(string baseUrl)
-        {
-            var defaultBase = "https://generativelanguage.googleapis.com/v1beta/openai/";
-            var raw = string.IsNullOrWhiteSpace(baseUrl) ? defaultBase : baseUrl.TrimEnd('/');
-            if (raw.EndsWith("/chat/completions"))
-            {
-                raw = raw.Substring(0, raw.Length - "/chat/completions".Length);
-            }
-            return $"{raw.TrimEnd('/')}/chat/completions";
-        }
-
-        private string ExtractJsonBlock(string input)
-        {
-            var extracted = Northtropic.Helpers.JsonExtractorHelper.ExtractJson(input);
-            return string.IsNullOrWhiteSpace(extracted) ? "{}" : extracted;
         }
 
         #endregion
@@ -745,12 +729,26 @@ namespace Northtropic.Services
             return result;
         }
 
+        private string GetTargetUrl(string baseUrl)
+        {
+            return LlmHttpHelper.NormalizeChatCompletionsUrl(baseUrl);
+        }
+
+        private string ExtractJsonBlock(string input)
+        {
+            var extracted = Northtropic.Helpers.JsonExtractorHelper.ExtractJson(input);
+            return string.IsNullOrWhiteSpace(extracted) ? "{}" : extracted;
+        }
+
+        #endregion
+
         public async Task<TestConnectionResult> TestConnectionAsync(string apiKey, string baseUrl, string modelName)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
+            var effectiveModel = string.IsNullOrWhiteSpace(modelName) ? "gemini-1.5-flash" : modelName.Trim();
             var result = new TestConnectionResult
             {
-                ModelName = modelName
+                ModelName = effectiveModel
             };
 
             if (string.IsNullOrWhiteSpace(apiKey))
@@ -762,22 +760,19 @@ namespace Northtropic.Services
 
             try
             {
-                var cleanBaseUrl = baseUrl.TrimEnd('/');
-                var url = $"{cleanBaseUrl}/chat/completions";
+                var url = GetTargetUrl(baseUrl);
 
                 var requestBody = new
                 {
-                    model = modelName,
+                    model = effectiveModel,
                     messages = new[]
                     {
-                        new { role = "system", content = "You are a test assistant. Answer with 'READY' in one word." },
-                        new { role = "user", content = "Ping test" }
+                        new { role = "user", content = "Ping test, please answer 'READY' in one word." }
                     },
-                    max_tokens = 20,
                     temperature = 0.2
                 };
 
-                var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+                var content = LlmHttpHelper.CreateJsonContent(requestBody);
                 using var request = new HttpRequestMessage(HttpMethod.Post, url);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
                 request.Content = content;
@@ -789,13 +784,11 @@ namespace Northtropic.Services
                 if (response.IsSuccessStatusCode)
                 {
                     var responseStr = await response.Content.ReadAsStringAsync();
-                    using var doc = JsonDocument.Parse(responseStr);
-                    var choices = doc.RootElement.GetProperty("choices");
-                    var text = choices[0].GetProperty("message").GetProperty("content").GetString()?.Trim() ?? "OK";
+                    var text = LlmHttpHelper.ExtractMessageContent(responseStr, "READY");
 
                     result.IsSuccess = true;
                     result.SampleResponse = text;
-                    result.Message = $"✅ 连通成功！模型 [{modelName}] 响应就绪，网络时延: {result.LatencyMs} ms";
+                    result.Message = $"✅ 连通成功！模型 [{effectiveModel}] 响应就绪，网络时延: {result.LatencyMs} ms";
                 }
                 else
                 {
@@ -814,7 +807,5 @@ namespace Northtropic.Services
 
             return result;
         }
-
-        #endregion
     }
 }

@@ -358,13 +358,10 @@ namespace Northtropic.Services
                 temperature = 0.5
             };
 
-            var raw = string.IsNullOrWhiteSpace(user.LlmBaseUrl) ? "https://generativelanguage.googleapis.com/v1beta/openai/" : user.LlmBaseUrl.TrimEnd('/');
-            if (raw.EndsWith("/chat/completions")) raw = raw.Substring(0, raw.Length - "/chat/completions".Length);
-            var targetUrl = $"{raw.TrimEnd('/')}/chat/completions";
-
+            var targetUrl = Northtropic.Helpers.LlmHttpHelper.NormalizeChatCompletionsUrl(user.LlmBaseUrl);
             var request = new HttpRequestMessage(HttpMethod.Post, targetUrl);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", user.LlmApiKey.Trim());
-            request.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+            request.Content = Northtropic.Helpers.LlmHttpHelper.CreateJsonContent(requestBody);
 
             var response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();

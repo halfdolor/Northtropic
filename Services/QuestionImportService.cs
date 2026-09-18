@@ -869,10 +869,10 @@ namespace Northtropic.Services
                     };
 
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                    var baseUrl = user.LlmBaseUrl.TrimEnd('/');
-                    var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/chat/completions");
+                    var targetUrl = Northtropic.Helpers.LlmHttpHelper.NormalizeChatCompletionsUrl(user.LlmBaseUrl);
+                    var request = new HttpRequestMessage(HttpMethod.Post, targetUrl);
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", user.LlmApiKey);
-                    request.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+                    request.Content = Northtropic.Helpers.LlmHttpHelper.CreateJsonContent(requestBody);
 
                     var response = await _httpClient.SendAsync(request, cts.Token);
                     if (response.IsSuccessStatusCode)
@@ -1503,10 +1503,10 @@ OCR 服务商: 百度智能云 (Baidu AI Cloud) - 通用文字识别(高精度�
                 temperature = 0.2
             };
 
-            var baseUrl = user.LlmBaseUrl.TrimEnd('/');
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/chat/completions");
+            var targetUrl = Northtropic.Helpers.LlmHttpHelper.NormalizeChatCompletionsUrl(user.LlmBaseUrl);
+            var request = new HttpRequestMessage(HttpMethod.Post, targetUrl);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", user.LlmApiKey);
-            request.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+            request.Content = Northtropic.Helpers.LlmHttpHelper.CreateJsonContent(requestBody);
 
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode) return null;
