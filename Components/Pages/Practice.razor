@@ -1022,13 +1022,15 @@
                             else
                             {
                                 <span>@(_evalMode.Contains("即时判定") ? "提交答案" : (_currentIndex < _questions.Count ? "保存并下一题 ➔" : "提交整卷"))</span>
+                                <span class="ml-2 opacity-75" style="font-size: 0.72rem; background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 4px;">Enter ↵</span>
                             }
                         </MudButton>
                     }
                     else
                     {
                         <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Large" OnClick="NextQuestionAsync" EndIcon="@Icons.Material.Filled.ArrowForward" Class="px-8 font-weight-bold" Style="border-radius: 12px;">
-                            @(_currentIndex < _questions.Count ? "下一题 ➔" : "重新组卷出题 ➔")
+                            <span>@(_currentIndex < _questions.Count ? "下一题 ➔" : "重新组卷出题 ➔")</span>
+                            <span class="ml-2 opacity-75" style="font-size: 0.72rem; background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 4px;">Space ␣</span>
                         </MudButton>
                     }
                 </div>

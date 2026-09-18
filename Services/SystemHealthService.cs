@@ -133,7 +133,9 @@ namespace Northtropic.Services
                 if (health.DatabaseLatencyMs > 25.0)
                 {
                     plan.RequiresOptimization = true;
-                    plan.ActionReasons.Add($"数据库往返时延升至 {health.DatabaseLatencyMs:F1}ms，建议执行 PRAGMA analyze / optimize 重建统计索引；");
+                    plan.ActionReasons.Add(health.DatabaseProvider == "PostgreSQL"
+                        ? $"数据库往返时延升至 {health.DatabaseLatencyMs:F1}ms，建议执行 ANALYZE 重建查询计划统计；"
+                        : $"数据库往返时延升至 {health.DatabaseLatencyMs:F1}ms，建议执行 PRAGMA analyze / optimize 重建统计索引；");
                 }
 
                 // 4. Determine Urgency
@@ -200,13 +202,20 @@ namespace Northtropic.Services
                 {
                     await using (var dbScope = await CreateDbScopeAsync())
                     {
-                        var conn = dbScope.Context.Database.GetDbConnection();
-                        if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
-                        using var cmd = conn.CreateCommand();
-                        cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
-                        await cmd.ExecuteScalarAsync();
+                        if (dbScope.Context.Database.IsSqlite())
+                        {
+                            var conn = dbScope.Context.Database.GetDbConnection();
+                            if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
+                            using var cmd = conn.CreateCommand();
+                            cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+                            await cmd.ExecuteScalarAsync();
+                            result.ExecutedActions.Add("WAL 日志截断归档 (PRAGMA wal_checkpoint(TRUNCATE))");
+                        }
+                        else
+                        {
+                            result.ExecutedActions.Add("PostgreSQL 引擎自动检查点归档 (Auto-Managed Checkpoint)");
+                        }
                     }
-                    result.ExecutedActions.Add("WAL 日志截断归档 (PRAGMA wal_checkpoint(TRUNCATE))");
                 }
 
                 // 动作 B: VACUUM 碎片重整
@@ -215,7 +224,15 @@ namespace Northtropic.Services
                     bool vacOk = await VacuumDatabaseAsync();
                     if (vacOk)
                     {
-                        result.ExecutedActions.Add("SQLite 物理存储碎片重整 (VACUUM)");
+                        await using var dbScope = await CreateDbScopeAsync();
+                        if (dbScope.Context.Database.IsSqlite())
+                        {
+                            result.ExecutedActions.Add("SQLite 物理存储碎片重整 (VACUUM)");
+                        }
+                        else
+                        {
+                            result.ExecutedActions.Add("PostgreSQL 存储空间重整 (VACUUM)");
+                        }
                     }
                 }
 
@@ -224,20 +241,39 @@ namespace Northtropic.Services
                 {
                     await using (var dbScope = await CreateDbScopeAsync())
                     {
-                        var conn = dbScope.Context.Database.GetDbConnection();
-                        if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
-                        using (var cmdAnalyze = conn.CreateCommand())
+                        if (dbScope.Context.Database.IsSqlite())
                         {
-                            cmdAnalyze.CommandText = "PRAGMA analyze;";
-                            await cmdAnalyze.ExecuteNonQueryAsync();
+                            var conn = dbScope.Context.Database.GetDbConnection();
+                            if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
+                            using (var cmdAnalyze = conn.CreateCommand())
+                            {
+                                cmdAnalyze.CommandText = "PRAGMA analyze;";
+                                await cmdAnalyze.ExecuteNonQueryAsync();
+                            }
+                            using (var cmdOptimize = conn.CreateCommand())
+                            {
+                                cmdOptimize.CommandText = "PRAGMA optimize;";
+                                await cmdOptimize.ExecuteNonQueryAsync();
+                            }
+                            result.ExecutedActions.Add("查询优化器与直方图统计重建 (PRAGMA analyze / optimize)");
                         }
-                        using (var cmdOptimize = conn.CreateCommand())
+                        else
                         {
-                            cmdOptimize.CommandText = "PRAGMA optimize;";
-                            await cmdOptimize.ExecuteNonQueryAsync();
+                            try
+                            {
+                                var conn = dbScope.Context.Database.GetDbConnection();
+                                if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
+                                using var cmdAnalyze = conn.CreateCommand();
+                                cmdAnalyze.CommandText = "ANALYZE;";
+                                await cmdAnalyze.ExecuteNonQueryAsync();
+                                result.ExecutedActions.Add("PostgreSQL 查询计划统计重建 (ANALYZE)");
+                            }
+                            catch (Exception ex)
+                            {
+                                result.ExecutedActions.Add($"PostgreSQL ANALYZE 评估跳过 ({ex.Message})");
+                            }
                         }
                     }
-                    result.ExecutedActions.Add("查询优化器与直方图统计重建 (PRAGMA analyze / optimize)");
                 }
 
                 // 5. 采样维护后指标并计算收益
@@ -303,6 +339,7 @@ namespace Northtropic.Services
             dto.TotalLlmLogs = await ctx.LlmGenerationLogs.AsNoTracking().CountAsync();
 
             // 2. 数据库物理存储与引擎检测
+            dto.DatabaseProvider = ctx.Database.IsSqlite() ? "SQLite" : (ctx.Database.ProviderName?.Split('.').LastOrDefault() ?? "PostgreSQL");
             var conn = ctx.Database.GetDbConnection();
             var dataSource = conn.DataSource;
             if (ctx.Database.IsSqlite())

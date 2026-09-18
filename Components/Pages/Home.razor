@@ -401,6 +401,9 @@
                     </div>
                 </MudItem>
                 <MudItem xs="12" md="5" Class="d-flex justify-md-end gap-2 flex-wrap align-center">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Dns" OnClick='() => NavigationManager.NavigateTo("/settings?section=architecture")'>
+                        架构健康与自愈
+                    </MudButton>
                     <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Settings" OnClick='() => NavigationManager.NavigateTo("/settings")'>
                         系统与大模型配置
                     </MudButton>
@@ -443,9 +446,9 @@
             </MudItem>
         </MudGrid>
 
-        <!-- 管理员三大核心运维通道 -->
+        <!-- 管理员四大核心运维通道 -->
         <MudGrid Spacing="3" Class="mb-6">
-            <MudItem xs="12" md="4">
+            <MudItem xs="12" sm="6" md="3">
                 <div class="glass-card pa-5 d-flex flex-column justify-space-between h-100" style="border: 1px solid rgba(239,68,68,0.3); border-radius: 12px;">
                     <div>
                         <div class="d-inline-flex pa-3 rounded-lg mb-3" style="background: rgba(239,68,68,0.15); color: #ef4444;">
@@ -463,7 +466,7 @@
                     </div>
                 </div>
             </MudItem>
-            <MudItem xs="12" md="4">
+            <MudItem xs="12" sm="6" md="3">
                 <div class="glass-card pa-5 d-flex flex-column justify-space-between h-100" style="border: 1px solid rgba(59,130,246,0.3); border-radius: 12px;">
                     <div>
                         <div class="d-inline-flex pa-3 rounded-lg mb-3" style="background: rgba(59,130,246,0.15); color: #3b82f6;">
@@ -481,7 +484,25 @@
                     </div>
                 </div>
             </MudItem>
-            <MudItem xs="12" md="4">
+            <MudItem xs="12" sm="6" md="3">
+                <div class="glass-card pa-5 d-flex flex-column justify-space-between h-100" style="border: 1px solid rgba(139,92,246,0.3); border-radius: 12px;">
+                    <div>
+                        <div class="d-inline-flex pa-3 rounded-lg mb-3" style="background: rgba(139,92,246,0.15); color: #8b5cf6;">
+                            <MudIcon Icon="@Icons.Material.Filled.Dns" Size="Size.Medium" />
+                        </div>
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">系统底层架构与自愈</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                            物理存储碎片整理、WAL 检查点、数据库往返延迟与环形缓冲区遥测流。
+                        </MudText>
+                    </div>
+                    <div class="mt-4">
+                        <MudButton Variant="Variant.Filled" Color="Color.Secondary" FullWidth="true" OnClick='() => NavigationManager.NavigateTo("/settings?section=architecture")'>
+                            架构自愈与遥测
+                        </MudButton>
+                    </div>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
                 <div class="glass-card pa-5 d-flex flex-column justify-space-between h-100" style="border: 1px solid rgba(16,185,129,0.3); border-radius: 12px;">
                     <div>
                         <div class="d-inline-flex pa-3 rounded-lg mb-3" style="background: rgba(16,185,129,0.15); color: #10b981;">

@@ -61,10 +61,14 @@ namespace Northtropic.Services
             _ => $"{DiskFreeSpaceBytes / 1024.0:F1} KB"
         };
 
+        // 数据库提供商与引擎模式
+        public string DatabaseProvider { get; set; } = "SQLite";
+
         // 系统架构综合健康评分模型 (0 - 100 分)
         public int HealthScore { get; set; } = 100;
         public string HealthRating { get; set; } = "卓越 (Excellent)";
         public List<string> HealthRecommendations { get; set; } = new();
+        public double ReliabilityScore => Math.Round(Math.Clamp((HealthScore * 0.7) + (DatabaseLatencyMs < 20 ? 30.0 : (DatabaseLatencyMs < 50 ? 20.0 : 10.0)), 0.0, 100.0), 1);
 
         // 运行时与内存指标
         public long GcMemoryBytes { get; set; }

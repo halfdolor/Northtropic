@@ -186,5 +186,91 @@ namespace Northtropic.Tests
             Assert.NotEmpty(mathCategories);
             Assert.Contains("全部", mathCategories);
         }
+
+        [Fact]
+        public async Task EvaluateAndExecuteAdaptiveMaintenancePlanAsync_ShouldSucceedAndRecordEvents()
+        {
+            // Arrange
+            var healthService = new SystemHealthService(_inMemoryContext);
+
+            // Act 1: Evaluate
+            var plan = await healthService.EvaluateAdaptiveMaintenancePlanAsync();
+
+            // Assert 1
+            Assert.NotNull(plan);
+            Assert.False(string.IsNullOrWhiteSpace(plan.UrgencyLevel));
+            Assert.NotEmpty(plan.ActionReasons);
+
+            // Act 2: Execute
+            var result = await healthService.ExecuteAdaptiveMaintenancePlanAsync(plan);
+
+            // Assert 2
+            Assert.NotNull(result);
+            Assert.True(result.Success);
+            Assert.True(result.ElapsedMilliseconds >= 0);
+            Assert.NotEmpty(result.ExecutedActions);
+            Assert.Contains("自适应自愈维护执行成功", result.Message);
+        }
+
+        [Fact]
+        public async Task GetTableStorageMetricsAsync_ReturnsCoreTablesAndCounts()
+        {
+            // Arrange
+            _inMemoryContext.Users.Add(new User { Username = "table_metric_user", Role = UserRole.Student });
+            _inMemoryContext.Questions.Add(new Question { Stem = "表指标测试题", Subject = "语文", GradeTarget = "初中一年级", Category = "现代文阅读", Type = QuestionType.SingleChoice, CorrectAnswer = "C" });
+            await _inMemoryContext.SaveChangesAsync();
+
+            var healthService = new SystemHealthService(_inMemoryContext);
+
+            // Act
+            var metrics = await healthService.GetTableStorageMetricsAsync();
+
+            // Assert
+            Assert.NotNull(metrics);
+            Assert.True(metrics.Count >= 6);
+
+            var userTable = metrics.Find(m => m.TableName == "Users");
+            Assert.NotNull(userTable);
+            Assert.True(userTable.RowCount >= 1);
+
+            var questionTable = metrics.Find(m => m.TableName == "Questions");
+            Assert.NotNull(questionTable);
+            Assert.True(questionTable.RowCount >= 1);
+        }
+
+        [Fact]
+        public void ArchitectureTelemetryRingBuffer_RecordsAndFiltersEvents()
+        {
+            // Arrange
+            var healthService = new SystemHealthService(_inMemoryContext);
+            var uniqueMessage = $"SelfHealing-Test-{Guid.NewGuid():N}";
+
+            // Act
+            healthService.RecordArchitectureEvent("SelfHealing", "Info", uniqueMessage, 12.3);
+            var events = healthService.GetRecentArchitectureEvents("SelfHealing", "Info", 100);
+
+            // Assert
+            Assert.NotNull(events);
+            var matched = events.FirstOrDefault(e => e.Message == uniqueMessage);
+            Assert.NotNull(matched);
+            Assert.Equal("Info", matched.Level);
+            Assert.Equal("SelfHealing", matched.Category);
+            Assert.Equal(12.3, matched.DurationMs);
+        }
+
+        [Fact]
+        public async Task ExportArchitectureDiagnosticReportMarkdownAsync_GeneratesStructuredMarkdown()
+        {
+            // Arrange
+            var healthService = new SystemHealthService(_inMemoryContext);
+
+            // Act
+            var markdown = await healthService.ExportArchitectureDiagnosticReportMarkdownAsync();
+
+            // Assert
+            Assert.NotNull(markdown);
+            Assert.Contains("Northtropic 系统架构全景诊断", markdown);
+            Assert.Contains("核心业务数据表分布与对齐", markdown);
+        }
     }
 }
