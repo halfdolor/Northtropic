@@ -622,11 +622,19 @@
             <div class="d-flex flex-column gap-3 mb-6">
                 @if (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
                 {
-                    <div class="d-flex align-center gap-2 mb-1 no-print" style="background: rgba(var(--mud-palette-primary-rgb), 0.06); padding: 5px 12px; border-radius: 8px; border: 1px dashed rgba(var(--mud-palette-primary-rgb), 0.3);">
-                        <MudIcon Icon="@Icons.Material.Filled.Bolt" Size="Size.Small" Color="Color.Primary" />
-                        <MudText Typo="Typo.caption" Color="Color.Primary" Style="font-weight: 600;">
-                            ⚡ 极速答题快捷键：直接按键盘 <kbd class="shortcut-badge">A</kbd> <kbd class="shortcut-badge">B</kbd> <kbd class="shortcut-badge">C</kbd> <kbd class="shortcut-badge">D</kbd> @(q.Options.Count == 2 ? "或 [T]/[F]" : "") 选答案，按 <kbd class="shortcut-badge">Enter</kbd> 提交/下一题
-                        </MudText>
+                    <div class="d-flex align-center justify-space-between gap-2 mb-1 no-print flex-wrap" style="background: rgba(var(--mud-palette-primary-rgb), 0.06); padding: 5px 12px; border-radius: 8px; border: 1px dashed rgba(var(--mud-palette-primary-rgb), 0.3);">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Bolt" Size="Size.Small" Color="Color.Primary" />
+                            <MudText Typo="Typo.caption" Color="Color.Primary" Style="font-weight: 600;">
+                                ⚡ 极速答题快捷键：直接按键盘 <kbd class="shortcut-badge">A</kbd> <kbd class="shortcut-badge">B</kbd> <kbd class="shortcut-badge">C</kbd> <kbd class="shortcut-badge">D</kbd> @(q.Options.Count == 2 ? "或 [T]/[F]" : "") 选答案，按 <kbd class="shortcut-badge">Enter</kbd> 提交/下一题
+                            </MudText>
+                        </div>
+                        <button type="button" class="mud-button-root mud-button mud-button-text mud-button-text-info mud-button-size-small" 
+                                style="font-size: 0.75rem; padding: 2px 8px; font-weight: 700; cursor: pointer;"
+                                @onclick="ToggleScratchpad" title="快捷键 S：展开/收起草稿演算纸">
+                            <MudIcon Icon="@Icons.Material.Filled.EditNote" Size="Size.Small" Class="mr-1" />
+                            📝 随题草稿演算纸 @(_scratchpadOpen ? "【收起】" : "【展开】") (S)
+                        </button>
                     </div>
                 }
                 @if (q.Type == QuestionType.SingleChoice)
@@ -744,12 +752,13 @@
                             <button type="button" class="mode-toggle-btn @(_subjectiveInputMode == "keyboard" ? "active" : "")"
                                     @onclick="@(() => SetSubjectiveInputModeAsync("keyboard"))">
                                 <MudIcon Icon="@Icons.Material.Filled.Keyboard" Size="Size.Small" Class="mr-1" />
-                                键盘输入
+                                键盘打字
                             </button>
                             <button type="button" class="mode-toggle-btn @(_subjectiveInputMode == "handwriting" ? "active-hw" : "")"
-                                    @onclick="@(() => SetSubjectiveInputModeAsync("handwriting"))">
+                                    @onclick="@(() => SetSubjectiveInputModeAsync("handwriting"))"
+                                    title="支持手写笔迹与公式 OCR 智能识别自动判卷">
                                 <MudIcon Icon="@Icons.Material.Filled.Draw" Size="Size.Small" Class="mr-1" />
-                                手写作答
+                                ✍️ 手写作答 / 公式识别
                             </button>
                             <button type="button" class="mode-toggle-btn @(_isRecordingSubjectiveVoice ? "active-voice" : "")"
                                     @onclick="ToggleSubjectiveVoiceRecordingAsync" disabled="@_submitted">
@@ -758,6 +767,23 @@
                             </button>
                         </div>
                     </div>
+
+                    @if (_subjectiveInputMode != "handwriting" && (q.Subject.Contains("数学") || q.Stem.Contains("$") || q.Stem.Contains("\\") || q.Subject.Contains("物理") || q.Subject.Contains("化学")))
+                    {
+                        <div class="d-flex align-center justify-space-between mb-2 px-3 py-1 rounded" style="background: rgba(168, 85, 247, 0.08); border: 1px dashed rgba(168, 85, 247, 0.35);">
+                            <div class="d-flex align-center gap-1">
+                                <MudIcon Icon="@Icons.Material.Filled.AutoFixHigh" Size="Size.Small" Style="color: #c084fc;" />
+                                <MudText Typo="Typo.caption" Style="color: #c084fc; font-weight: 600;">
+                                    📐 理科公式作答提示：推荐点击右上角【✍️ 手写作答 / 公式识别】，直接手写复杂公式并由 AI 自动识别填入判卷！
+                                </MudText>
+                            </div>
+                            <button type="button" class="mud-button-root mud-button mud-button-text mud-button-text-secondary mud-button-size-small" 
+                                    style="font-size: 0.72rem; padding: 1px 8px; font-weight: 700; cursor: pointer;"
+                                    @onclick="@(() => SetSubjectiveInputModeAsync("handwriting"))">
+                                切换手写作答 ➔
+                            </button>
+                        </div>
+                    }
 
                     @if (_subjectiveInputMode == "handwriting")
                     {
@@ -2232,6 +2258,18 @@
             _isFavorited = await PracticeService.IsFavoriteAsync(_currentUser.Id, CurrentQuestion.Id);
         }
 
+        // 智能理科手写模式：数学、物理、化学或包含 LaTeX 试题，若用户未显式锁死键盘输入，智能默认开启手写作答
+        if (CurrentQuestion != null && (CurrentQuestion.Type == QuestionType.ShortAnswer || CurrentQuestion.Type == QuestionType.EssayAnalysis || CurrentQuestion.Type == QuestionType.FillInBlank))
+        {
+            if (!_userExplicitlySetInputMode)
+            {
+                if (CurrentQuestion.Subject.Contains("数学") || CurrentQuestion.Subject.Contains("物理") || CurrentQuestion.Subject.Contains("化学") || CurrentQuestion.Stem.Contains("$") || CurrentQuestion.Stem.Contains("\\"))
+                {
+                    _subjectiveInputMode = "handwriting";
+                }
+            }
+        }
+
         await InvokeAsync(StateHasChanged);
         try
         {
@@ -2326,6 +2364,7 @@
     // ✍️ 简答/问答大题手写作答画板交互逻辑
     // ==========================================
     private string _subjectiveInputMode = "keyboard"; // "keyboard" | "handwriting"
+    private bool _userExplicitlySetInputMode = false;
     private string _hwColor = "#00e5ff";
     private int _hwLineWidth = 3;
     private bool _hwEraser = false;
@@ -2335,6 +2374,7 @@
     private async Task SetSubjectiveInputModeAsync(string mode)
     {
         _subjectiveInputMode = mode;
+        _userExplicitlySetInputMode = true;
         await InvokeAsync(StateHasChanged);
 
         if (mode == "handwriting")

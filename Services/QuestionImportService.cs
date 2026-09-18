@@ -878,14 +878,7 @@ namespace Northtropic.Services
                     if (response.IsSuccessStatusCode)
                     {
                         var responseJson = await response.Content.ReadAsStringAsync();
-                        using var doc = JsonDocument.Parse(responseJson);
-                        var content = doc.RootElement
-                            .GetProperty("choices")[0]
-                            .GetProperty("message")
-                            .GetProperty("content")
-                            .GetString() ?? "";
-
-                        content = content.Trim();
+                        var content = Northtropic.Helpers.LlmHttpHelper.ExtractMessageContent(responseJson, "").Trim();
                         if (!string.IsNullOrWhiteSpace(content))
                         {
                             return content;
