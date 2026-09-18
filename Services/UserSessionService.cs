@@ -1148,6 +1148,41 @@ namespace Northtropic.Services
                 var llmLogs = await context.LlmGenerationLogs.Where(l => l.UserId == userId).ToListAsync();
                 if (llmLogs.Count > 0) context.LlmGenerationLogs.RemoveRange(llmLogs);
 
+                // 架构鲁棒性强化：安全治理该用户创建的试题（避免孤儿数据与外键冲突）
+                var authoredQuestions = await context.Questions.Where(q => q.CreatedByUserId == userId).ToListAsync();
+                if (authoredQuestions.Count > 0)
+                {
+                    var publicQuestions = authoredQuestions.Where(q => q.IsPublic).ToList();
+                    var privateQuestions = authoredQuestions.Where(q => !q.IsPublic).ToList();
+
+                    // 公开试题保留为公共题库资产，解绑作者外键引用，防止外键约束违规与历史数据破坏
+                    foreach (var pq in publicQuestions)
+                    {
+                        pq.CreatedByUserId = null;
+                    }
+
+                    // 私有试题执行完整级联清理后安全删除
+                    if (privateQuestions.Count > 0)
+                    {
+                        var privateQIds = privateQuestions.Select(q => q.Id).ToList();
+
+                        var relLogs = await context.LlmGenerationLogs.Where(l => l.QuestionId != null && privateQIds.Contains(l.QuestionId.Value)).ToListAsync();
+                        foreach (var l in relLogs) l.QuestionId = null;
+
+                        var relFavs = await context.UserFavorites.Where(f => privateQIds.Contains(f.QuestionId)).ToListAsync();
+                        if (relFavs.Count > 0) context.UserFavorites.RemoveRange(relFavs);
+
+                        var relErrors = await context.ErrorItems.Where(e => privateQIds.Contains(e.QuestionId)).ToListAsync();
+                        if (relErrors.Count > 0) context.ErrorItems.RemoveRange(relErrors);
+
+                        var relRecords = await context.PracticeRecords.Where(r => privateQIds.Contains(r.QuestionId)).ToListAsync();
+                        if (relRecords.Count > 0) context.PracticeRecords.RemoveRange(relRecords);
+
+                        context.Questions.RemoveRange(privateQuestions);
+                        PracticeService.InvalidateCategoryCache();
+                    }
+                }
+
                 context.Users.Remove(user);
                 await context.SaveChangesAsync();
                 await SyncDemoAccountsLifecycleAsync();

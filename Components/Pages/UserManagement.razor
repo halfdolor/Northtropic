@@ -588,7 +588,12 @@
                 $"确定要永久删除用户 <strong>【{user.Username}】</strong> 吗？<br/><br/>" +
                 $"• 手机号码：<code>{(string.IsNullOrEmpty(user.PhoneNumber) ? "尚未绑定" : user.PhoneNumber)}</code><br/>" +
                 $"• 角色身份：<strong>{user.RoleDisplayName}</strong> ｜ 适用年级：<strong>{user.Grade}</strong><br/><br/>" +
-                $"<span style='color: #ef4444; font-weight: bold;'>⚠️ 警告：此操作将永久清理该用户的所有做题记录、错题本与绑定关系，数据不可恢复！</span>"
+                $"<div style='background: rgba(239, 68, 68, 0.1); border-left: 3px solid #ef4444; padding: 8px 12px; border-radius: 4px; font-size: 0.85rem; line-height: 1.5;'>" +
+                $"<span style='color: #ef4444; font-weight: bold;'>⚠️ 级联安全处置规则：</span><br/>" +
+                $"1. 该用户的做题记录、错题本、亲子绑定、成就与作业任务将被彻底清理；<br/>" +
+                $"2. 该用户创建的<strong>私有题目</strong>将被同步安全清理；<br/>" +
+                $"3. 该用户创建的<strong>公开公共题目</strong>将保留在公共题库中并自动解除作者归属，保障其他师生的做题与错题完整性。<br/>" +
+                $"</div>"
             ),
             yesText: "确认永久删除",
             cancelText: "取消"
@@ -601,7 +606,7 @@
         {
             _users.Remove(user);
             _approvalList.Remove(user);
-            Snackbar.Add($"已成功永久删除用户：{user.Username}", Severity.Success);
+            Snackbar.Add($"已成功安全永久删除用户：{user.Username}（关联数据与私有题目已完成级联清理）", Severity.Success);
             await LoadDataAsync();
         }
         else
