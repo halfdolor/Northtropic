@@ -1542,27 +1542,79 @@
         </div>
     </DialogContent>
     <DialogActions>
-        @if (GetSessionWrongCount() > 0)
-        {
-            <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Bolt" OnClick="RetryCurrentSessionErrorsAsync" Style="font-weight: 700; box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);">
-                ⚡ 立即重练本轮错题 (@GetSessionWrongCount() 题)
-            </MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick="GoToErrorBookFromVictory">
-                前往错题本净化
-            </MudButton>
-        }
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="RestartPracticeSession">
-            再来一组新题
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Analytics" OnClick='() => NavigationManager.NavigateTo("/practice-records")'>
-            查看学情战报
-        </MudButton>
-        <MudButton Variant="Variant.Text" Color="Color.Default" StartIcon="@Icons.Material.Filled.Home" OnClick='() => NavigationManager.NavigateTo("/")'>
-            返回主面板
-        </MudButton>
-        <MudButton OnClick="() => _victoryDialogVisible = false" Color="Color.Default">
-            关闭
-        </MudButton>
+        <div class="d-flex flex-column gap-3 px-4 py-3 w-100" style="background: rgba(var(--mud-palette-surface-rgb), 0.3); border-top: 1px solid rgba(255, 255, 255, 0.08);">
+            <!-- 第一行：核心进阶行动（大按钮、横向等高均匀分布、杜绝文本换行挤压） -->
+            <div class="d-flex align-center gap-3 w-100 flex-wrap">
+                @if (GetSessionWrongCount() > 0)
+                {
+                    <MudButton Variant="Variant.Filled" 
+                               Color="Color.Error" 
+                               StartIcon="@Icons.Material.Filled.Bolt" 
+                               OnClick="RetryCurrentSessionErrorsAsync" 
+                               Class="flex-grow-1 font-weight-bold"
+                               Style="min-height: 42px; border-radius: 10px; font-size: 0.92rem; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35); white-space: nowrap;">
+                        ⚡ 立即重练本轮错题 (@GetSessionWrongCount() 题)
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" 
+                               Color="Color.Primary" 
+                               StartIcon="@Icons.Material.Filled.Refresh" 
+                               OnClick="RestartPracticeSession"
+                               Class="flex-grow-1 font-weight-bold"
+                               Style="min-height: 42px; border-radius: 10px; font-size: 0.92rem; white-space: nowrap;">
+                        再来一组新题
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" 
+                               Color="Color.Warning" 
+                               StartIcon="@Icons.Material.Filled.AutoFixHigh" 
+                               OnClick="GoToErrorBookFromVictory"
+                               Class="font-weight-bold"
+                               Style="min-height: 42px; border-radius: 10px; font-size: 0.92rem; white-space: nowrap;">
+                        前往错题本净化
+                    </MudButton>
+                }
+                else
+                {
+                    <MudButton Variant="Variant.Filled" 
+                               Color="Color.Success" 
+                               StartIcon="@Icons.Material.Filled.Refresh" 
+                               OnClick="RestartPracticeSession"
+                               Class="flex-grow-1 font-weight-bold"
+                               Style="min-height: 44px; border-radius: 10px; font-size: 0.95rem; box-shadow: 0 4px 16px rgba(34, 197, 94, 0.35); white-space: nowrap;">
+                        🎉 完美通关 · 再来一组新题
+                    </MudButton>
+                }
+            </div>
+
+            <!-- 第二行：辅助导航与关闭（精致轻量对齐排版） -->
+            <div class="d-flex align-center justify-space-between w-100 pt-2" style="border-top: 1px dashed rgba(255, 255, 255, 0.08);">
+                <MudButton Variant="Variant.Text" 
+                           Color="Color.Info" 
+                           Size="Size.Small" 
+                           StartIcon="@Icons.Material.Filled.Analytics" 
+                           OnClick='() => NavigationManager.NavigateTo("/practice-records")'
+                           Style="font-size: 0.82rem; font-weight: 600; white-space: nowrap;">
+                    📊 查看历史学情与战报大屏
+                </MudButton>
+
+                <div class="d-flex align-center gap-2">
+                    <MudButton Variant="Variant.Text" 
+                               Color="Color.Default" 
+                               Size="Size.Small" 
+                               StartIcon="@Icons.Material.Filled.Home" 
+                               OnClick='() => NavigationManager.NavigateTo("/")'
+                               Style="font-size: 0.82rem; font-weight: 500; white-space: nowrap;">
+                        返回主面板
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" 
+                               Color="Color.Default" 
+                               Size="Size.Small" 
+                               OnClick="() => _victoryDialogVisible = false"
+                               Style="font-size: 0.82rem; font-weight: 500; white-space: nowrap;">
+                        关闭
+                    </MudButton>
+                </div>
+            </div>
+        </div>
     </DialogActions>
 </MudDialog>
 
@@ -1702,7 +1754,7 @@
 
     // 闯关结报单状态
     private bool _victoryDialogVisible = false;
-    private readonly DialogOptions _victoryDialogOptions = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+    private readonly DialogOptions _victoryDialogOptions = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
     private int _sessionCorrectCount = 0;
     private int _sessionEarnedExp = 0;
     private int _sessionEarnedCoins = 0;
