@@ -14,16 +14,52 @@
 
 <PageTitle>系统配置 - Northtropic</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="mt-2 mb-10">
-    <div class="glass-card pa-6 mb-6">
-        <div class="d-flex align-center gap-3">
-            <MudIcon Icon="@Icons.Material.Filled.Settings" Color="Color.Primary" Size="Size.Large" />
-            <div>
-                <MudText Typo="Typo.h5" Class="font-weight-bold gradient-text">系统配置</MudText>
-                <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                    内置支持 Google Gemini 与各大主流大模型。配置 API Key，AI 将实时为你定制专属练习题与智能启发式辅导。
-                </MudText>
+<style>
+    .settings-nav-item {
+        border-radius: 12px;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        user-select: none;
+    }
+    .settings-nav-inactive {
+        background: transparent;
+        border: 1px solid transparent;
+        opacity: 0.82;
+    }
+    .settings-nav-inactive:hover {
+        background: rgba(255, 255, 255, 0.05);
+        opacity: 1;
+        transform: translateX(4px);
+    }
+    .settings-nav-active {
+        background: rgba(59, 130, 246, 0.12) !important;
+        border: 1px solid var(--mud-palette-primary) !important;
+        opacity: 1;
+        box-shadow: 0 4px 16px rgba(59, 130, 246, 0.15);
+    }
+</style>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-2 mb-10">
+    <div class="glass-card pa-5 mb-5 rounded-xl">
+        <div class="d-flex align-center justify-space-between flex-wrap gap-3">
+            <div class="d-flex align-center gap-3">
+                <div class="d-inline-flex align-center justify-center pa-3 rounded-circle" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2)); border: 1px solid var(--glass-card-border);">
+                    <MudIcon Icon="@Icons.Material.Filled.Settings" Color="Color.Primary" Size="Size.Large" />
+                </div>
+                <div>
+                    <MudText Typo="Typo.h5" Class="font-weight-bold gradient-text">系统全局配置与治理</MudText>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                        集中管控全学段课程考点、大语言模型 API、OCR 图像试题识别、交互沉浸感及短信安全服务。
+                    </MudText>
+                </div>
             </div>
+            @if (_currentUser?.CanAccessSystemConfig == true)
+            {
+                <div class="d-flex align-center gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Medium" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveSettingsAsync" Class="font-weight-bold shadow-md" Style="border-radius: 10px;">
+                        保存所有配置
+                    </MudButton>
+                </div>
+            }
         </div>
     </div>
 
@@ -51,533 +87,696 @@
     }
     else
     {
-        <!-- 1. 年级与学段设置 -->
-        <div class="glass-card pa-6 mb-6">
-            <MudText Typo="Typo.h6" Class="font-weight-bold mb-4 d-flex align-center gap-2">
-                <MudIcon Icon="@Icons.Material.Filled.School" Color="Color.Primary" /> 1. 学生年级与学段设置
-            </MudText>
-
-            <MudGrid>
-                <MudItem xs="12" sm="6">
-                    <MudSelect T="string" Label="学生所在年级" @bind-Value="_currentUser.Grade" Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
-                        @foreach (var grade in GradeSubjectProvider.AvailableGrades)
-                        {
-                            <MudSelectItem Value="@grade">@grade</MudSelectItem>
-                        }
-                    </MudSelect>
-                </MudItem>
-                <MudItem xs="12" sm="6">
-                    <MudTextField T="string" Label="昵称 / 学霸代号" @bind-Value="_currentUser.Username" Variant="Variant.Outlined" />
-                </MudItem>
-            </MudGrid>
+        <!-- 移动端横向滑动项目选择条 (屏幕较窄时优雅折叠适配) -->
+        <div class="d-md-none mb-4 overflow-x-auto pb-1">
+            <div class="d-flex gap-2 flex-nowrap">
+                @foreach (var item in _settingNavItems)
+                {
+                    var isSelected = _activeSection == item.Id;
+                    <MudChip T="string"
+                             Color="@(isSelected ? Color.Primary : Color.Default)"
+                             Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
+                             Size="Size.Medium"
+                             OnClick="() => SetActiveSection(item.Id)"
+                             Class="font-weight-bold cursor-pointer text-nowrap">
+                        <MudIcon Icon="@item.Icon" Size="Size.Small" Class="mr-1" />
+                        @item.Title
+                    </MudChip>
+                }
+            </div>
         </div>
 
-        <!-- 2. 全学段科目与专题考点配置管理 -->
-        <div class="glass-card pa-6 mb-6">
-            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
-                <MudText Typo="Typo.h6" Class="font-weight-bold d-flex align-center gap-2">
-                    <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Color="Color.Primary" /> 2. 全学段科目与主要专题考点配置管理
-                </MudText>
-                <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetDefaultCurriculumAsync">
-                    恢复全学段官方标准科目与专题
-                </MudButton>
-            </div>
-
-            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-                系统已内置小学、初中、高中、大学全部学科与标准主要考点专题。您可自由切换年级增删科目、精细化调整各学科的专题知识点，修改后刷题、出题与学情图谱将实时生效。
-            </MudText>
-
-            <!-- 年级切换与添加科目栏 -->
-            <div class="d-flex align-center gap-4 mb-4 flex-wrap">
-                <div style="min-width: 260px;">
-                    <MudSelect T="string" Label="选择要配置的年级/学段" Value="_selectedConfigGrade" ValueChanged="OnConfigGradeChanged" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
-                        @foreach (var g in GradeSubjectProvider.AvailableGrades)
-                        {
-                            <MudSelectItem Value="@g">@g</MudSelectItem>
-                        }
-                    </MudSelect>
-                </div>
-
-                <div class="d-flex align-center gap-2 flex-grow-1" style="max-width: 480px;">
-                    <MudTextField T="string" @bind-Value="_newSubjectName" Placeholder="输入新科目名称 (如: 信息技术/编程)..." Variant="Variant.Outlined" Margin="Margin.Dense" />
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddNewSubjectAsync" Class="font-weight-bold text-nowrap">
-                        添加科目
-                    </MudButton>
-                </div>
-            </div>
-
-            <!-- 当前年级的学科列表 Chips -->
-            <div class="pa-4 rounded-lg mb-4 glass-card" style="background: var(--sub-card-bg);">
-                <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2 text-primary">
-                    📌 【@_selectedConfigGrade】包含的学科（点击切换选中以编辑右下侧考点专题）：
-                </MudText>
-                <div class="d-flex flex-wrap gap-2 align-center">
-                    @if (_gradeConfigs == null || !_gradeConfigs.Any())
-                    {
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">该年级暂无科目，请在上方添加或点击右上角重置</MudText>
-                    }
-                    else
-                    {
-                        @foreach (var cfg in _gradeConfigs)
-                        {
-                            var isSelected = _selectedConfig?.Id == cfg.Id;
-                            <MudChip T="string"
-                                     Color="@(isSelected ? Color.Primary : Color.Default)"
-                                     Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
-                                     Size="Size.Medium"
-                                     OnClick="() => SelectSubjectForEdit(cfg)"
-                                     Class="font-weight-bold cursor-pointer">
-                                @cfg.Subject
-                                <span class="ml-1 opacity-75" style="font-size: 0.75rem;">(@(GetTopicCount(cfg.TopicsJson))个专题)</span>
-                            </MudChip>
-                        }
-                    }
-                </div>
-            </div>
-
-            <!-- 选中学科的专题考点管理面板 -->
-            @if (_selectedConfig != null)
-            {
-                <div class="pa-4 rounded-lg border border-primary border-solid glass-card" style="background: var(--card-bg);">
-                    <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
-                        <div class="d-flex align-center gap-2">
-                            <MudIcon Icon="@Icons.Material.Filled.Category" Color="Color.Primary" />
-                            <MudText Typo="Typo.h6" Class="font-weight-bold">
-                                【@_selectedConfig.Grade - @_selectedConfig.Subject】专题与考点清单
+        <MudGrid Spacing="4">
+            <!-- 左侧：项目导航菜单 -->
+            <MudItem xs="12" md="4" lg="3">
+                <div class="d-flex flex-column gap-3" style="position: sticky; top: 80px;">
+                    <div class="glass-card pa-3 rounded-xl shadow-lg" style="border: 1px solid var(--glass-card-border);">
+                        <div class="d-flex align-center justify-space-between px-3 py-2 mb-2" style="border-bottom: 1px solid var(--glass-card-border);">
+                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold d-flex align-center gap-2" Style="letter-spacing: 0.5px;">
+                                <MudIcon Icon="@Icons.Material.Filled.Tune" Size="Size.Small" Color="Color.Primary" />
+                                <span>配置项目</span>
                             </MudText>
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Style="height: 20px; font-size: 0.7rem; font-weight: 700;">
+                                6 个大类
+                            </MudChip>
                         </div>
-                        <div class="d-flex align-center gap-2">
-                            <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveCurrentSubjectTopicsAsync" Disabled="@_isSavingCurriculum">
-                                @if (_isSavingCurriculum)
-                                {
-                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
-                                    <span>保存中...</span>
-                                }
-                                else
-                                {
-                                    <span>💾 保存专题修改</span>
-                                }
-                            </MudButton>
-                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.Delete" OnClick="() => DeleteSubjectAsync(_selectedConfig)">
-                                🗑️ 删除学科
-                            </MudButton>
-                        </div>
-                    </div>
 
-                    <!-- 添加新专题 -->
-                    <div class="d-flex align-center gap-2 mb-3">
-                        <MudTextField T="string" @bind-Value="_newTopicName" Placeholder="输入新专题/考点名称 (如: 欧姆定律综合计算)，按回车添加..."
-                                      Variant="Variant.Outlined" Margin="Margin.Dense" OnKeyDown="HandleTopicKeyDown" />
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Medium" StartIcon="@Icons.Material.Filled.AddCircle" OnClick="AddTopicToCurrentSubject" Class="text-nowrap">
-                            添加专题
-                        </MudButton>
-                    </div>
-
-                    <!-- 专题 Chips 列表 -->
-                    <div class="d-flex flex-wrap gap-2 pa-3 rounded-lg" style="background: var(--sub-card-bg); min-height: 80px; align-content: flex-start;">
-                        @if (_selectedTopicsList == null || !_selectedTopicsList.Any())
-                        {
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary pa-2">暂无专题考点，请在上方输入添加</MudText>
-                        }
-                        else
-                        {
-                            @foreach (var topic in _selectedTopicsList)
+                        <div class="d-flex flex-column gap-1">
+                            @foreach (var item in _settingNavItems)
                             {
-                                if (topic == "全部")
-                                {
-                                    <MudChip T="string" Color="Color.Info" Variant="Variant.Filled" Size="Size.Small" Class="font-weight-bold">
-                                        🌟 全部考点 (系统默认)
-                                    </MudChip>
-                                }
-                                else
-                                {
-                                    <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small"
-                                             OnClose="() => RemoveTopic(topic)" CloseIcon="@Icons.Material.Filled.Close">
-                                        @topic
-                                    </MudChip>
-                                }
+                                var isSelected = _activeSection == item.Id;
+                                <div class="@($"settings-nav-item pa-3 cursor-pointer transition-all d-flex align-center justify-space-between {(isSelected ? "settings-nav-active" : "settings-nav-inactive")}")"
+                                     style="@(isSelected ? "border-left: 4px solid var(--mud-palette-primary); padding-left: 10px !important;" : "border-left: 4px solid transparent;")"
+                                     @onclick="() => SetActiveSection(item.Id)">
+                                    <div class="d-flex align-center gap-3" style="min-width: 0;">
+                                        <MudIcon Icon="@item.Icon" Color="@(isSelected ? Color.Primary : Color.Default)" Size="Size.Medium" />
+                                        <div style="min-width: 0;">
+                                            <div class="font-weight-bold text-truncate" style="font-size: 0.92rem; color: @(isSelected ? "var(--mud-palette-primary)" : "var(--glass-text-primary)");">
+                                                @item.Title
+                                            </div>
+                                            <div class="text-muted text-truncate" style="font-size: 0.75rem;">
+                                                @GetNavSubtitle(item.Id)
+                                            </div>
+                                        </div>
+                                    </div>
+                                    @if (isSelected)
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.ArrowForwardIos" Color="Color.Primary" Style="font-size: 0.8rem;" />
+                                    }
+                                </div>
                             }
-                        }
-                    </div>
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
-                        💡 提示：点击专题右侧的 ❌ 即可删除该专题。编辑完成后请点击右上角 **“💾 保存专题修改”** 即时同步全站。
-                    </MudText>
-                </div>
-            }
-        </div>
-
-        <!-- 3. 交互体验与音效设置 -->
-        <div class="glass-card pa-6 mb-6">
-            <MudText Typo="Typo.h6" Class="font-weight-bold mb-4 d-flex align-center gap-2">
-                <MudIcon Icon="@Icons.Material.Filled.Tune" Color="Color.Primary" /> 3. 交互体验与沉浸感偏好
-            </MudText>
-
-            <div class="d-flex flex-column gap-3">
-                <div class="d-flex align-center justify-space-between pa-3 rounded glass-card" style="background: var(--sub-card-bg);">
-                    <div>
-                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold">🔊 做题答题音效与连击播报</MudText>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">答对、升级、高连击爆发时的正向声学反馈</MudText>
-                    </div>
-                    <MudSwitch T="bool" @bind-Value="_currentUser.SoundEffectsEnabled" Color="Color.Primary" />
-                </div>
-
-                <div class="d-flex align-center justify-space-between pa-3 rounded glass-card" style="background: var(--sub-card-bg);">
-                    <div>
-                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold">🎉 庆祝礼花与粒子特效 (Confetti)</MudText>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">答对题目与满分交卷时触发全屏礼花特效</MudText>
-                    </div>
-                    <MudSwitch T="bool" @bind-Value="_currentUser.ConfettiEnabled" Color="Color.Primary" />
-                </div>
-
-                <div class="d-flex align-center justify-space-between pa-3 rounded glass-card" style="background: var(--sub-card-bg);">
-                    <div>
-                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold">🗣️ AI 导师语音朗读支持 (Web Speech)</MudText>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">支持题目朗读与 AI 导师逐句语音启发</MudText>
-                    </div>
-                    <MudSwitch T="bool" @bind-Value="_currentUser.AutoVoiceGuidance" Color="Color.Primary" />
-                </div>
-            </div>
-        </div>
-
-        <!-- 4. LLM API 参数配置 -->
-        <div class="glass-card pa-6 mb-6">
-            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
-                <MudText Typo="Typo.h6" Class="font-weight-bold d-flex align-center gap-2">
-                    <MudIcon Icon="@Icons.Material.Filled.Psychology" Color="Color.Primary" /> 4. LLM 大语言模型配置 (已内置 Gemini)
-                </MudText>
-            </div>
-            
-            <div class="pa-3 mb-4 rounded-lg glass-card" style="background: var(--sub-card-bg);">
-                <MudText Typo="Typo.body2" Class="font-weight-bold" Color="Color.Primary">
-                    系统已内置 Google Gemini 地址与模型 (gemini-1.5-flash)，只需在下方填入 Gemini API Key 即可使用！
-                </MudText>
-            </div>
-
-            <!-- 快捷预设按钮组 -->
-            <div class="mb-4">
-                <MudText Typo="Typo.caption" Class="mb-2 d-block mud-text-secondary">一键套用常用供应商预设：</MudText>
-                <div class="d-flex flex-wrap gap-2">
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.FlashOn" OnClick="PresetGemini">
-                        Google Gemini (内置推荐)
-                    </MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.SmartToy" OnClick="PresetOpenAi">
-                        OpenAI (gpt-4o-mini)
-                    </MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="PresetZhipu">
-                        智谱 GLM (glm-4-flash)
-                    </MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Psychology" OnClick="PresetDeepSeek">
-                        DeepSeek (deepseek-chat)
-                    </MudButton>
-                </div>
-            </div>
-
-            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4 rounded-lg">
-                <strong>💡 全局继承机制已生效（方案 A · 教学团队/全校模式）：</strong> 此处配置的模型与密钥将自动共享继承给所有未配置独立 Key 的学生与教师。普通学员无需单独配 Key 即可直接享受真实大模型出题与智能苏格拉底辅导！
-            </MudAlert>
-
-            <div class="d-flex flex-column gap-4">
-                <MudTextField T="string" Label="LLM API Key (密钥)" @bind-Value="_currentUser.LlmApiKey" InputType="InputType.Password" Placeholder="AIzaSy... (仅需填写 Key)" Variant="Variant.Outlined" HelperText="密钥安全存储于 PostgreSQL 数据库中" Class="font-weight-bold" />
-
-                <MudGrid>
-                    <MudItem xs="12" sm="7">
-                        <MudTextField T="string" Label="API Base URL (接口基地址)" @bind-Value="_currentUser.LlmBaseUrl" Placeholder="https://generativelanguage.googleapis.com/v1beta/openai/" Variant="Variant.Outlined" HelperText="Gemini 默认: https://generativelanguage.googleapis.com/v1beta/openai/" />
-                    </MudItem>
-                    <MudItem xs="12" sm="5">
-                        <MudTextField T="string" Label="Model Name (模型名称)" @bind-Value="_currentUser.LlmModelName" Placeholder="gemini-1.5-flash" Variant="Variant.Outlined" HelperText="Gemini 默认: gemini-1.5-flash" />
-                    </MudItem>
-                </MudGrid>
-
-                <div class="d-flex align-center justify-space-between flex-wrap gap-2 pt-2">
-                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.WifiTethering" OnClick="TestApiConnectionAsync" Disabled="@_testingConnection">
-                        @if (_testingConnection)
-                        {
-                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                            <span>连通性测试中...</span>
-                        }
-                        else
-                        {
-                            <span>🧪 一键测试 API 连通性与模型响应</span>
-                        }
-                    </MudButton>
-
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveLlmSettingsAsync" Disabled="@_isSavingLlm" Class="font-weight-bold">
-                        @if (_isSavingLlm)
-                        {
-                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
-                            <span>保存中...</span>
-                        }
-                        else
-                        {
-                            <span>💾 立即保存大模型配置</span>
-                        }
-                    </MudButton>
-                </div>
-
-                @if (_testResult != null)
-                {
-                    <MudAlert Severity="@(_testResult.Success ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mt-2 rounded-lg">
-                        <div class="d-flex align-center gap-2">
-                            <MudIcon Icon="@(_testResult.Success ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
-                            <div>
-                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
-                                    @(_testResult.Success ? $"✅ 连通性测试成功！(耗时 {_testResult.LatencyMs}ms)" : "❌ 连通性测试未通过")
-                                </MudText>
-                                <MudText Typo="Typo.caption">
-                                    @_testResult.Message
-                                </MudText>
-                            </div>
                         </div>
-                    </MudAlert>
-                }
-            </div>
-        </div>
+                    </div>
 
-        <!-- 5. OCR 图像试题识别配置 (节省 Token 核心配置) -->
-        <div class="glass-card pa-6 mb-6">
-            <div class="d-flex align-center justify-space-between mb-2 flex-wrap gap-2">
-                <MudText Typo="Typo.h6" Class="font-weight-bold d-flex align-center gap-2">
-                    <MudIcon Icon="@Icons.Material.Filled.AddAPhoto" Color="Color.Primary" /> 5. OCR 试题识别设置 (省 Token 配置)
-                </MudText>
-                <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled" Style="font-weight: 700;">
-                    @(string.Equals(_currentUser.OcrProvider, "PaddleOcr", StringComparison.OrdinalIgnoreCase) ? "⚡ 本地 PaddleOCR (0 Token · 纯离线)" : (string.Equals(_currentUser.OcrProvider, "BaiduOcr", StringComparison.OrdinalIgnoreCase) ? "🎯 百度云 OCR (0 Token)" : (string.Equals(_currentUser.OcrProvider, "BuiltinHeuristic", StringComparison.OrdinalIgnoreCase) ? "🆓 内置规则引擎 (0 Token)" : "🤖 大模型视觉 (消耗 Token)")))
-                </MudChip>
-            </div>
+                    <!-- 左侧快捷保存卡片 (桌面端常驻可见) -->
+                    <div class="glass-card pa-4 rounded-xl shadow-lg d-none d-md-block" style="border: 1px solid var(--glass-card-border); background: var(--sub-card-bg);">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" FullWidth="true" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveSettingsAsync" Class="font-weight-bold py-3 mb-2" Style="border-radius: 12px;">
+                            保存所有配置
+                        </MudButton>
+                        <div class="text-center text-muted" style="font-size: 0.75rem;">
+                            修改任意配置后点击即可生效
+                        </div>
+                    </div>
+                </div>
+            </MudItem>
 
-            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4 rounded-lg">
-                <strong>💡 节省 Token 提示：</strong> 默认使用 <strong>【本地 PaddleOCR 引擎】</strong> 识别试卷，直接在服务器本地运算，<strong>大模型 Token 消耗为 0，零外部网络依赖，数据 100% 离线保密</strong>！
-            </MudAlert>
-
-            <div class="d-flex flex-column gap-4">
-                <!-- OCR 服务商选择 -->
-                <MudSelect T="string" Label="OCR 识别服务商" @bind-Value="_currentUser.OcrProvider" Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
-                    <MudSelectItem Value='@("PaddleOcr")'>⚡ 本地 PaddleOCR (推荐 · 离线 0 Token)</MudSelectItem>
-                    <MudSelectItem Value='@("BaiduOcr")'>🎯 百度智能云 OCR (0 Token)</MudSelectItem>
-                    <MudSelectItem Value='@("VisionLlm")'>🤖 多模态大模型视觉 (消耗 Token)</MudSelectItem>
-                </MudSelect>
-
-                @if (string.Equals(_currentUser.OcrProvider, "PaddleOcr", StringComparison.OrdinalIgnoreCase))
+            <!-- 右侧：配置内容详情 -->
+            <MudItem xs="12" md="8" lg="9">
+                @if (_activeSection == "grade")
                 {
-                    <div class="pa-4 rounded glass-card" style="background: var(--sub-card-bg); border-left: 4px solid #22c55e;">
-                        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
-                            <div>
-                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Success">
-                                    🚀 本地原生 PaddleOCR 引擎
-                                </MudText>
-                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                                    运行环境：Windows Server 本地离线引擎 | 硬件加速与纯本地内嵌推理
-                                </MudText>
-                            </div>
-
-                            <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Bolt" OnClick="TestLocalPaddleOcrAsync" Disabled="@_testingPaddleOcr">
-                                @if (_testingPaddleOcr)
-                                {
-                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
-                                    <span>测试中...</span>
-                                }
-                                else
-                                {
-                                    <span>🧪 测试本地引擎状态</span>
-                                }
+                    <!-- 1. 年级与学段设置 -->
+                    <div class="glass-card pa-6 mb-4">
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4">
+                            <MudText Typo="Typo.h6" Class="font-weight-bold d-flex align-center gap-2">
+                                <MudIcon Icon="@Icons.Material.Filled.School" Color="Color.Primary" /> 1. 学生年级与学段设置
+                            </MudText>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveSettingsAsync" Class="font-weight-bold">
+                                保存修改
                             </MudButton>
                         </div>
 
-                        @if (_paddleTestResult != null)
-                        {
-                            <MudAlert Severity="@(_paddleTestResult.Success ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mt-3 rounded-lg">
-                                <div class="d-flex align-center gap-2">
-                                    <MudIcon Icon="@(_paddleTestResult.Success ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
-                                    <div>
-                                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
-                                            @(_paddleTestResult.Success ? $"✅ 本地 PaddleOCR 引擎就绪 (响应 {_paddleTestResult.LatencyMs}ms)" : "❌ 本地引擎状态提示")
-                                        </MudText>
-                                        <MudText Typo="Typo.caption">
-                                            @_paddleTestResult.Message
-                                        </MudText>
-                                    </div>
-                                </div>
-                            </MudAlert>
-                        }
-                    </div>
-                }
-                else if (string.Equals(_currentUser.OcrProvider, "BaiduOcr", StringComparison.OrdinalIgnoreCase))
-                {
-                    <div class="pa-4 rounded glass-card" style="background: var(--sub-card-bg); border-left: 4px solid #38bdf8;">
-                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-3" Color="Color.Info">
-                            百度智能云 OCR 凭证配置
-                        </MudText>
-
-                        <MudGrid Class="mb-2">
+                        <MudGrid>
                             <MudItem xs="12" sm="6">
-                                <MudTextField T="string" Label="百度 API Key (Client ID)" @bind-Value="_currentUser.BaiduApiKey" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="例如：2GvB9... (留空则使用智能免配模式)" />
+                                <MudSelect T="string" Label="学生所在年级" @bind-Value="_currentUser.Grade" Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
+                                    @foreach (var grade in GradeSubjectProvider.AvailableGrades)
+                                    {
+                                        <MudSelectItem Value="@grade">@grade</MudSelectItem>
+                                    }
+                                </MudSelect>
                             </MudItem>
                             <MudItem xs="12" sm="6">
-                                <MudTextField T="string" Label="百度 Secret Key (Client Secret)" @bind-Value="_currentUser.BaiduSecretKey" Variant="Variant.Outlined" Margin="Margin.Dense" InputType="InputType.Password" Placeholder="例如：u7K... (留空则使用智能免配模式)" />
+                                <MudTextField T="string" Label="昵称 / 学霸代号" @bind-Value="_currentUser.Username" Variant="Variant.Outlined" />
+                            </MudItem>
+                        </MudGrid>
+                    </div>
+                }
+                else if (_activeSection == "curriculum")
+                {
+                    <!-- 2. 全学段科目与专题考点配置管理 -->
+                    <div class="glass-card pa-6 mb-4">
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                            <MudText Typo="Typo.h6" Class="font-weight-bold d-flex align-center gap-2">
+                                <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Color="Color.Primary" /> 2. 全学段科目与主要专题考点配置管理
+                            </MudText>
+                            <div class="d-flex align-center gap-2 flex-wrap">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetDefaultCurriculumAsync">
+                                    恢复全学段官方标准科目与专题
+                                </MudButton>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveSettingsAsync" Class="font-weight-bold">
+                                    保存修改
+                                </MudButton>
+                            </div>
+                        </div>
+
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                            系统已内置小学、初中、高中、大学全部学科与标准主要考点专题。您可自由切换年级增删科目、精细化调整各学科的专题知识点，修改后刷题、出题与学情图谱将实时生效。
+                        </MudText>
+
+                        <!-- 年级切换与添加科目栏 -->
+                        <div class="d-flex align-center gap-4 mb-4 flex-wrap">
+                            <div style="min-width: 260px;">
+                                <MudSelect T="string" Label="选择要配置的年级/学段" Value="_selectedConfigGrade" ValueChanged="OnConfigGradeChanged" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                                    @foreach (var g in GradeSubjectProvider.AvailableGrades)
+                                    {
+                                        <MudSelectItem Value="@g">@g</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </div>
+
+                            <div class="d-flex align-center gap-2 flex-grow-1" style="max-width: 480px;">
+                                <MudTextField T="string" @bind-Value="_newSubjectName" Placeholder="输入新科目名称 (如: 信息技术/编程)..." Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddNewSubjectAsync" Class="font-weight-bold text-nowrap">
+                                    添加科目
+                                </MudButton>
+                            </div>
+                        </div>
+
+                        <!-- 当前年级的学科列表 Chips -->
+                        <div class="pa-4 rounded-lg mb-4 glass-card" style="background: var(--sub-card-bg);">
+                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2 text-primary">
+                                📌 【@_selectedConfigGrade】包含的学科（点击切换选中以编辑右下侧考点专题）：
+                            </MudText>
+                            <div class="d-flex flex-wrap gap-2 align-center">
+                                @if (_gradeConfigs == null || !_gradeConfigs.Any())
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">该年级暂无科目，请在上方添加或点击右上角重置</MudText>
+                                }
+                                else
+                                {
+                                    @foreach (var cfg in _gradeConfigs)
+                                    {
+                                        var isSelected = _selectedConfig?.Id == cfg.Id;
+                                        <MudChip T="string"
+                                                 Color="@(isSelected ? Color.Primary : Color.Default)"
+                                                 Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
+                                                 Size="Size.Medium"
+                                                 OnClick="() => SelectSubjectForEdit(cfg)"
+                                                 Class="font-weight-bold cursor-pointer">
+                                            @cfg.Subject
+                                            <span class="ml-1 opacity-75" style="font-size: 0.75rem;">(@(GetTopicCount(cfg.TopicsJson))个专题)</span>
+                                        </MudChip>
+                                    }
+                                }
+                            </div>
+                        </div>
+
+                        <!-- 选中学科的专题考点管理面板 -->
+                        @if (_selectedConfig != null)
+                        {
+                            <div class="pa-4 rounded-lg border border-primary border-solid glass-card" style="background: var(--card-bg);">
+                                <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                                    <div class="d-flex align-center gap-2">
+                                        <MudIcon Icon="@Icons.Material.Filled.Category" Color="Color.Primary" />
+                                        <MudText Typo="Typo.h6" Class="font-weight-bold">
+                                            【@_selectedConfig.Grade - @_selectedConfig.Subject】专题与考点清单
+                                        </MudText>
+                                    </div>
+                                    <div class="d-flex align-center gap-2">
+                                        <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveCurrentSubjectTopicsAsync" Disabled="@_isSavingCurriculum">
+                                            @if (_isSavingCurriculum)
+                                            {
+                                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                                <span>保存中...</span>
+                                            }
+                                            else
+                                            {
+                                                <span>💾 保存专题修改</span>
+                                            }
+                                        </MudButton>
+                                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.Delete" OnClick="() => DeleteSubjectAsync(_selectedConfig)">
+                                            删除本科目
+                                        </MudButton>
+                                    </div>
+                                </div>
+
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                                    当前科目包含 <strong>@_selectedTopicsList.Count</strong> 个知识专题考点。在输入框中填入新考点后回车或点击“新增”即可添加。
+                                </MudText>
+
+                                <!-- 新增专题 -->
+                                <div class="d-flex align-center gap-2 mb-3" style="max-width: 500px;">
+                                    <MudTextField T="string" @bind-Value="_newTopicName" Placeholder="输入考点专题名称 (如: 函数与导数综合)..." Variant="Variant.Outlined" Margin="Margin.Dense" OnKeyDown="HandleTopicKeyDown" />
+                                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddTopicToCurrentSubject" Class="font-weight-bold text-nowrap">
+                                        新增专题
+                                    </MudButton>
+                                </div>
+
+                                <!-- 专题 Chips 列表 -->
+                                <div class="d-flex flex-wrap gap-2 pa-3 rounded glass-card" style="background: var(--sub-card-bg); max-height: 280px; overflow-y: auto;">
+                                    @if (!_selectedTopicsList.Any())
+                                    {
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">暂无专题考点，请在上方输入添加</MudText>
+                                    }
+                                    @foreach (var t in _selectedTopicsList)
+                                    {
+                                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small" OnClose="() => RemoveTopic(t)">
+                                            @t
+                                        </MudChip>
+                                    }
+                                </div>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
+                                    💡 提示：点击专题右侧的 ❌ 即可删除该专题。编辑完成后请点击右上角 **“💾 保存专题修改”** 即时同步全站。
+                                </MudText>
+                            </div>
+                        }
+                    </div>
+                }
+                else if (_activeSection == "interaction")
+                {
+                    <!-- 3. 交互体验与音效设置 -->
+                    <div class="glass-card pa-6 mb-4">
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4">
+                            <MudText Typo="Typo.h6" Class="font-weight-bold d-flex align-center gap-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Tune" Color="Color.Primary" /> 3. 交互体验与沉浸感偏好
+                            </MudText>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveSettingsAsync" Class="font-weight-bold">
+                                保存修改
+                            </MudButton>
+                        </div>
+
+                        <div class="d-flex flex-column gap-3">
+                            <div class="d-flex align-center justify-space-between pa-3 rounded glass-card" style="background: var(--sub-card-bg);">
+                                <div>
+                                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold">🔊 做题答题音效与连击播报</MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">答对、升级、高连击爆发时的正向声学反馈</MudText>
+                                </div>
+                                <MudSwitch T="bool" @bind-Value="_currentUser.SoundEffectsEnabled" Color="Color.Primary" />
+                            </div>
+
+                            <div class="d-flex align-center justify-space-between pa-3 rounded glass-card" style="background: var(--sub-card-bg);">
+                                <div>
+                                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold">🎉 庆祝礼花与粒子特效 (Confetti)</MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">答对题目与满分交卷时触发全屏礼花特效</MudText>
+                                </div>
+                                <MudSwitch T="bool" @bind-Value="_currentUser.ConfettiEnabled" Color="Color.Primary" />
+                            </div>
+
+                            <div class="d-flex align-center justify-space-between pa-3 rounded glass-card" style="background: var(--sub-card-bg);">
+                                <div>
+                                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold">🗣️ AI 导师语音朗读支持 (Web Speech)</MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">支持题目朗读与 AI 导师逐句语音启发</MudText>
+                                </div>
+                                <MudSwitch T="bool" @bind-Value="_currentUser.AutoVoiceGuidance" Color="Color.Primary" />
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (_activeSection == "llm")
+                {
+                    <!-- 4. LLM API 参数配置 -->
+                    <div class="glass-card pa-6 mb-4">
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
+                            <MudText Typo="Typo.h6" Class="font-weight-bold d-flex align-center gap-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Psychology" Color="Color.Primary" /> 4. LLM 大语言模型配置 (已内置 Gemini)
+                            </MudText>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveLlmSettingsAsync" Disabled="@_isSavingLlm" Class="font-weight-bold">
+                                立即保存大模型配置
+                            </MudButton>
+                        </div>
+                        
+                        <div class="pa-3 mb-4 rounded-lg glass-card" style="background: var(--sub-card-bg);">
+                            <MudText Typo="Typo.body2" Class="font-weight-bold" Color="Color.Primary">
+                                系统已内置 Google Gemini 地址与模型 (gemini-1.5-flash)，只需在下方填入 Gemini API Key 即可使用！
+                            </MudText>
+                        </div>
+
+                        <!-- 快捷预设按钮组 -->
+                        <div class="mb-4">
+                            <MudText Typo="Typo.caption" Class="mb-2 d-block mud-text-secondary">一键套用常用供应商预设：</MudText>
+                            <div class="d-flex flex-wrap gap-2">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.FlashOn" OnClick="PresetGemini">
+                                    Google Gemini (内置推荐)
+                                </MudButton>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.SmartToy" OnClick="PresetOpenAi">
+                                    OpenAI (gpt-4o-mini)
+                                </MudButton>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="PresetZhipu">
+                                    智谱 GLM (glm-4-flash)
+                                </MudButton>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Psychology" OnClick="PresetDeepSeek">
+                                    DeepSeek (deepseek-chat)
+                                </MudButton>
+                            </div>
+                        </div>
+
+                        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4 rounded-lg">
+                            <strong>💡 全局继承机制已生效（方案 A · 教学团队/全校模式）：</strong> 此处配置的模型与密钥将自动共享继承给所有未配置独立 Key 的学生与教师。普通学员无需单独配 Key 即可直接享受真实大模型出题与智能苏格拉底辅导！
+                        </MudAlert>
+
+                        <div class="d-flex flex-column gap-4">
+                            <MudTextField T="string" Label="LLM API Key (密钥)" @bind-Value="_currentUser.LlmApiKey" InputType="InputType.Password" Placeholder="AIzaSy... (仅需填写 Key)" Variant="Variant.Outlined" HelperText="密钥安全存储于 PostgreSQL 数据库中" Class="font-weight-bold" />
+
+                            <MudGrid>
+                                <MudItem xs="12" sm="7">
+                                    <MudTextField T="string" Label="API Base URL (接口基地址)" @bind-Value="_currentUser.LlmBaseUrl" Placeholder="https://generativelanguage.googleapis.com/v1beta/openai/" Variant="Variant.Outlined" HelperText="Gemini 默认: https://generativelanguage.googleapis.com/v1beta/openai/" />
+                                </MudItem>
+                                <MudItem xs="12" sm="5">
+                                    <MudTextField T="string" Label="Model Name (模型名称)" @bind-Value="_currentUser.LlmModelName" Placeholder="gemini-1.5-flash" Variant="Variant.Outlined" HelperText="Gemini 默认: gemini-1.5-flash" />
+                                </MudItem>
+                            </MudGrid>
+
+                            <div class="d-flex align-center justify-space-between flex-wrap gap-2 pt-2">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.WifiTethering" OnClick="TestApiConnectionAsync" Disabled="@_testingConnection">
+                                    @if (_testingConnection)
+                                    {
+                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                        <span>连通性测试中...</span>
+                                    }
+                                    else
+                                    {
+                                        <span>🧪 一键测试 API 连通性与模型响应</span>
+                                    }
+                                </MudButton>
+
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveLlmSettingsAsync" Disabled="@_isSavingLlm" Class="font-weight-bold">
+                                    @if (_isSavingLlm)
+                                    {
+                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                        <span>保存中...</span>
+                                    }
+                                    else
+                                    {
+                                        <span>💾 立即保存大模型配置</span>
+                                    }
+                                </MudButton>
+                            </div>
+
+                            @if (_testResult != null)
+                            {
+                                <MudAlert Severity="@(_testResult.Success ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mt-2 rounded-lg">
+                                    <div class="d-flex align-center gap-2">
+                                        <MudIcon Icon="@(_testResult.Success ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
+                                        <div>
+                                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                                                @(_testResult.Success ? $"✅ 连通性测试成功！(耗时 {_testResult.LatencyMs}ms)" : "❌ 连通性测试未通过")
+                                            </MudText>
+                                            <MudText Typo="Typo.caption">
+                                                @_testResult.Message
+                                            </MudText>
+                                        </div>
+                                    </div>
+                                </MudAlert>
+                            }
+                        </div>
+                    </div>
+                }
+                else if (_activeSection == "ocr")
+                {
+                    <!-- 5. OCR 图像试题识别配置 (节省 Token 核心配置) -->
+                    <div class="glass-card pa-6 mb-4">
+                        <div class="d-flex align-center justify-space-between mb-2 flex-wrap gap-2">
+                            <MudText Typo="Typo.h6" Class="font-weight-bold d-flex align-center gap-2">
+                                <MudIcon Icon="@Icons.Material.Filled.AddAPhoto" Color="Color.Primary" /> 5. OCR 试题识别设置 (省 Token 配置)
+                            </MudText>
+                            <div class="d-flex align-center gap-2">
+                                <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled" Style="font-weight: 700;">
+                                    @(string.Equals(_currentUser.OcrProvider, "PaddleOcr", StringComparison.OrdinalIgnoreCase) ? "⚡ 本地 PaddleOCR (0 Token · 纯离线)" : (string.Equals(_currentUser.OcrProvider, "BaiduOcr", StringComparison.OrdinalIgnoreCase) ? "🎯 百度云 OCR (0 Token)" : (string.Equals(_currentUser.OcrProvider, "BuiltinHeuristic", StringComparison.OrdinalIgnoreCase) ? "🆓 内置规则引擎 (0 Token)" : "🤖 大模型视觉 (消耗 Token)")))
+                                </MudChip>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveSettingsAsync" Class="font-weight-bold">
+                                    保存修改
+                                </MudButton>
+                            </div>
+                        </div>
+
+                        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4 rounded-lg">
+                            <strong>💡 节省 Token 提示：</strong> 默认使用 <strong>【本地 PaddleOCR 引擎】</strong> 识别试卷，直接在服务器本地运算，<strong>大模型 Token 消耗为 0，零外部网络依赖，数据 100% 离线保密</strong>！
+                        </MudAlert>
+
+                        <div class="d-flex flex-column gap-4">
+                            <!-- OCR 服务商选择 -->
+                            <MudSelect T="string" Label="OCR 识别服务商" @bind-Value="_currentUser.OcrProvider" Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
+                                <MudSelectItem Value='@("PaddleOcr")'>⚡ 本地 PaddleOCR (推荐 · 离线 0 Token)</MudSelectItem>
+                                <MudSelectItem Value='@("BaiduOcr")'>🎯 百度智能云 OCR (0 Token)</MudSelectItem>
+                                <MudSelectItem Value='@("VisionLlm")'>🤖 多模态大模型视觉 (消耗 Token)</MudSelectItem>
+                            </MudSelect>
+
+                            @if (string.Equals(_currentUser.OcrProvider, "PaddleOcr", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <div class="pa-4 rounded glass-card" style="background: var(--sub-card-bg); border-left: 4px solid #22c55e;">
+                                    <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
+                                        <div>
+                                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Success">
+                                                🚀 本地原生 PaddleOCR 引擎
+                                            </MudText>
+                                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                                运行环境：Windows Server 本地离线引擎 | 硬件加速与纯本地内嵌推理
+                                            </MudText>
+                                        </div>
+
+                                        <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Bolt" OnClick="TestLocalPaddleOcrAsync" Disabled="@_testingPaddleOcr">
+                                            @if (_testingPaddleOcr)
+                                            {
+                                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                                <span>测试中...</span>
+                                            }
+                                            else
+                                            {
+                                                <span>🧪 测试本地引擎状态</span>
+                                            }
+                                        </MudButton>
+                                    </div>
+
+                                    @if (_paddleTestResult != null)
+                                    {
+                                        <MudAlert Severity="@(_paddleTestResult.Success ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mt-3 rounded-lg">
+                                            <div class="d-flex align-center gap-2">
+                                                <MudIcon Icon="@(_paddleTestResult.Success ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
+                                                <div>
+                                                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                                                        @(_paddleTestResult.Success ? $"✅ 本地 PaddleOCR 引擎就绪 (响应 {_paddleTestResult.LatencyMs}ms)" : "❌ 本地引擎状态提示")
+                                                    </MudText>
+                                                    <MudText Typo="Typo.caption">
+                                                        @_paddleTestResult.Message
+                                                    </MudText>
+                                                </div>
+                                            </div>
+                                        </MudAlert>
+                                    }
+                                </div>
+                            }
+                            else if (string.Equals(_currentUser.OcrProvider, "BaiduOcr", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <div class="pa-4 rounded glass-card" style="background: var(--sub-card-bg); border-left: 4px solid #38bdf8;">
+                                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-3" Color="Color.Info">
+                                        百度智能云 OCR 凭证配置
+                                    </MudText>
+
+                                    <MudGrid Class="mb-2">
+                                        <MudItem xs="12" sm="6">
+                                            <MudTextField T="string" Label="百度 API Key (Client ID)" @bind-Value="_currentUser.BaiduApiKey" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="例如：2GvB9... (留空则使用智能免配模式)" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="6">
+                                            <MudTextField T="string" Label="百度 Secret Key (Client Secret)" @bind-Value="_currentUser.BaiduSecretKey" Variant="Variant.Outlined" Margin="Margin.Dense" InputType="InputType.Password" Placeholder="例如：u7K... (留空则使用智能免配模式)" />
+                                        </MudItem>
+                                    </MudGrid>
+
+                                    <MudTextField T="string" Label="百度 OCR 识别接口 Endpoint" @bind-Value="_currentUser.BaiduOcrEndpoint" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" />
+
+                                    <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                                        <div class="d-flex align-center gap-2 flex-wrap">
+                                            <MudText Typo="Typo.caption" Class="mud-text-secondary font-weight-bold">一键接口预设：</MudText>
+                                            <MudChip T="string" Color="Color.Primary" Size="Size.Small" OnClick="PresetBaiduAccurate" Style="cursor: pointer;">
+                                                通用文字识别 (高精度版)
+                                            </MudChip>
+                                            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClick="PresetBaiduEdu" Style="cursor: pointer;">
+                                                试题与试卷作业识别 (教育版)
+                                            </MudChip>
+                                        </div>
+
+                                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.WifiTethering" OnClick="TestBaiduOcrAsync" Disabled="@_testingBaiduOcr">
+                                            @if (_testingBaiduOcr)
+                                            {
+                                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                                <span>测试中...</span>
+                                            }
+                                            else
+                                            {
+                                                <span>🧪 测试百度 OCR 凭证有效性</span>
+                                            }
+                                        </MudButton>
+                                    </div>
+
+                                    @if (_baiduTestResult != null)
+                                    {
+                                        <MudAlert Severity="@(_baiduTestResult.Success ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mt-3 rounded-lg">
+                                            <div class="d-flex align-center gap-2">
+                                                <MudIcon Icon="@(_baiduTestResult.Success ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
+                                                <div>
+                                                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                                                        @(_baiduTestResult.Success ? $"✅ 百度 OCR 凭证鉴权成功！(耗时 {_baiduTestResult.LatencyMs}ms)" : "❌ 百度 OCR 鉴权失败")
+                                                    </MudText>
+                                                    <MudText Typo="Typo.caption">
+                                                        @_baiduTestResult.Message
+                                                    </MudText>
+                                                </div>
+                                            </div>
+                                        </MudAlert>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                else if (_activeSection == "sms")
+                {
+                    <!-- 6. 阿里云短信服务 (Aliyun Dysmsapi) 与会话安全配置 -->
+                    <div class="glass-card pa-6 mb-4">
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4">
+                            <div class="d-flex align-center gap-3">
+                                <MudIcon Icon="@Icons.Material.Filled.Sms" Color="Color.Primary" Size="Size.Large" />
+                                <div>
+                                    <MudText Typo="Typo.h6" Class="font-weight-bold">6. 阿里云短信服务 (Aliyun SMS) 与安全配置</MudText>
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                        配置阿里云短信服务 (Dysmsapi) 的 AccessKey、短信签名与模板代码，实现高可靠验证码下发。
+                                    </MudText>
+                                </div>
+                            </div>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveSettingsAsync" Class="font-weight-bold">
+                                保存修改
+                            </MudButton>
+                        </div>
+
+                        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4 rounded-lg">
+                            <strong>🔒 阿里云短信服务配置说明：</strong>
+                            请登录 <a href="https://dysms.console.aliyun.com/" target="_blank" style="color: #3b82f6; text-decoration: underline;">阿里云短信控制台</a> 获取 RAM 用户的 AccessKey，并填入已报备审核通过的<strong>短信签名</strong>（如：<code>智学系统</code>）和<strong>模板 CODE</strong>（如：<code>SMS_154950909</code>）。
+                        </MudAlert>
+
+                        <MudGrid Class="mb-4">
+                            <MudItem xs="12" md="6">
+                                <MudTextField T="string" Label="阿里云 AccessKey ID *" @bind-Value="_currentUser.AliyunAccessKeyId" Variant="Variant.Outlined"
+                                              Placeholder="例如：LTAI5t7xxxxxxxxxxxxxxxx" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Key" />
+                            </MudItem>
+
+                            <MudItem xs="12" md="6">
+                                <MudTextField T="string" Label="阿里云 AccessKey Secret *" @bind-Value="_currentUser.AliyunAccessKeySecret" Variant="Variant.Outlined"
+                                              InputType="@(_showAliyunSecret ? InputType.Text : InputType.Password)"
+                                              Placeholder="例如：wxxxxxxxxxxxxxxxxxxxxxx" Adornment="Adornment.End"
+                                              AdornmentIcon="@(_showAliyunSecret ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff)"
+                                              OnAdornmentClick="() => _showAliyunSecret = !_showAliyunSecret" />
+                            </MudItem>
+
+                            <MudItem xs="12" md="6">
+                                <MudTextField T="string" Label="短信签名 (SignName) *" @bind-Value="_currentUser.AliyunSmsSignName" Variant="Variant.Outlined"
+                                              Placeholder="例如：智学系统 或 阿里云短信测试" HelperText="须与阿里云控制台申请的签名完全一致" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Draw" />
+                            </MudItem>
+
+                            <MudItem xs="12" md="6">
+                                <MudTextField T="string" Label="短信模板代码 (TemplateCode) *" @bind-Value="_currentUser.AliyunSmsTemplateCode" Variant="Variant.Outlined"
+                                              Placeholder="例如：SMS_154950909" HelperText="须与阿里云控制台报备的模板 CODE 一致" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.ConfirmationNumber" />
+                            </MudItem>
+
+                            <MudItem xs="12" md="4">
+                                <MudTextField T="string" Label="模板变量名 (TemplateParam)" @bind-Value="_currentUser.AliyunSmsTemplateParam" Variant="Variant.Outlined"
+                                              Placeholder="code" HelperText="对应模板中的 ${code} 变量，默认填 code" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Code" />
+                            </MudItem>
+
+                            <MudItem xs="12" md="4">
+                                <MudTextField T="string" Label="API 接入域名 (Endpoint)" @bind-Value="_currentUser.AliyunSmsEndpoint" Variant="Variant.Outlined"
+                                              Placeholder="dysmsapi.aliyuncs.com" HelperText="默认: dysmsapi.aliyuncs.com" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Http" />
+                            </MudItem>
+
+                            <MudItem xs="12" md="4">
+                                <MudNumericField T="int" Label="系统无操作超时自动退出 (分钟)" @bind-Value="_currentUser.SessionTimeoutMinutes" Min="5" Max="1440" Variant="Variant.Outlined"
+                                                 HelperText="默认 30 分钟无响应自动注销登录" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Timer" />
                             </MudItem>
                         </MudGrid>
 
-                        <MudTextField T="string" Label="百度 OCR 识别接口 Endpoint" @bind-Value="_currentUser.BaiduOcrEndpoint" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" />
+                        <!-- 阿里云短信连通性即时测试面板 -->
+                        <div class="pa-4 rounded glass-card" style="background: var(--sub-card-bg); border-left: 4px solid #3b82f6;">
+                            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
+                                <div>
+                                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Primary">
+                                        🧪 阿里云短信 API 发送即时测试
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                        填入接收手机号，直接向阿里云 Dysmsapi 发起真实验证码发送测试并返回耗时与回执
+                                    </MudText>
+                                </div>
 
-                        <div class="d-flex align-center justify-space-between flex-wrap gap-2">
-                            <div class="d-flex align-center gap-2 flex-wrap">
-                                <MudText Typo="Typo.caption" Class="mud-text-secondary font-weight-bold">一键接口预设：</MudText>
-                                <MudChip T="string" Color="Color.Primary" Size="Size.Small" OnClick="PresetBaiduAccurate" Style="cursor: pointer;">
-                                    通用文字识别 (高精度版)
-                                </MudChip>
-                                <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClick="PresetBaiduEdu" Style="cursor: pointer;">
-                                    试题与试卷作业识别 (教育版)
-                                </MudChip>
+                                <div class="d-flex align-center gap-2">
+                                    <MudTextField T="string" @bind-Value="_testSmsPhone" Placeholder="输入接收手机号..." Variant="Variant.Outlined" Margin="Margin.Dense" Style="width: 170px;" />
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Send" OnClick="TestAliyunSmsAsync" Disabled="@_testingSms">
+                                        @if (_testingSms)
+                                        {
+                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                            <span>请求阿里云中...</span>
+                                        }
+                                        else
+                                        {
+                                            <span>🚀 发送测试短信</span>
+                                        }
+                                    </MudButton>
+                                </div>
                             </div>
 
-                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.WifiTethering" OnClick="TestBaiduOcrAsync" Disabled="@_testingBaiduOcr">
-                                @if (_testingBaiduOcr)
-                                {
-                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
-                                    <span>测试中...</span>
-                                }
-                                else
-                                {
-                                    <span>🧪 测试百度 OCR 凭证有效性</span>
-                                }
-                            </MudButton>
-                        </div>
-
-                        @if (_baiduTestResult != null)
-                        {
-                            <MudAlert Severity="@(_baiduTestResult.Success ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mt-3 rounded-lg">
-                                <div class="d-flex align-center gap-2">
-                                    <MudIcon Icon="@(_baiduTestResult.Success ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
-                                    <div>
-                                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
-                                            @(_baiduTestResult.Success ? $"✅ 百度 OCR 凭证鉴权成功！(耗时 {_baiduTestResult.LatencyMs}ms)" : "❌ 百度 OCR 鉴权失败")
-                                        </MudText>
-                                        <MudText Typo="Typo.caption">
-                                            @_baiduTestResult.Message
-                                        </MudText>
+                            @if (_smsTestResult != null)
+                            {
+                                <MudAlert Severity="@(_smsTestResult.IsSuccess ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mt-3 rounded-lg">
+                                    <div class="d-flex align-center gap-2">
+                                        <MudIcon Icon="@(_smsTestResult.IsSuccess ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
+                                        <div>
+                                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                                                @(_smsTestResult.IsSuccess ? $"✅ 阿里云短信通信正常 (响应耗时: {_smsTestResult.LatencyMs}ms)" : "❌ 阿里云短信发送失败")
+                                            </MudText>
+                                            <MudText Typo="Typo.caption">
+                                                @_smsTestResult.Message @(_smsTestResult.SampleResponse != null ? $" | 网关原样回执: {_smsTestResult.SampleResponse}" : "")
+                                            </MudText>
+                                        </div>
                                     </div>
-                                </div>
-                            </MudAlert>
-                        }
+                                </MudAlert>
+                            }
+                        </div>
                     </div>
                 }
-            </div>
-        </div>
 
-        <!-- 6. 阿里云短信服务 (Aliyun Dysmsapi) 与会话安全配置 -->
-        <div class="glass-card pa-6 mb-6">
-            <div class="d-flex align-center gap-3 mb-4">
-                <MudIcon Icon="@Icons.Material.Filled.Sms" Color="Color.Primary" Size="Size.Large" />
-                <div>
-                    <MudText Typo="Typo.h5" Class="font-weight-bold">6. 阿里云短信服务 (Aliyun SMS) 与安全配置</MudText>
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                        配置阿里云短信服务 (Dysmsapi) 的 AccessKey、短信签名与模板代码，实现高可靠验证码下发。
-                    </MudText>
-                </div>
-            </div>
-
-            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4 rounded-lg">
-                <strong>🔒 阿里云短信服务配置说明：</strong>
-                请登录 <a href="https://dysms.console.aliyun.com/" target="_blank" style="color: #3b82f6; text-decoration: underline;">阿里云短信控制台</a> 获取 RAM 用户的 AccessKey，并填入已报备审核通过的<strong>短信签名</strong>（如：<code>智学系统</code>）和<strong>模板 CODE</strong>（如：<code>SMS_154950909</code>）。
-            </MudAlert>
-
-            <MudGrid Class="mb-4">
-                <MudItem xs="12" md="6">
-                    <MudTextField T="string" Label="阿里云 AccessKey ID *" @bind-Value="_currentUser.AliyunAccessKeyId" Variant="Variant.Outlined"
-                                  Placeholder="例如：LTAI5t7xxxxxxxxxxxxxxxx" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Key" />
-                </MudItem>
-
-                <MudItem xs="12" md="6">
-                    <MudTextField T="string" Label="阿里云 AccessKey Secret *" @bind-Value="_currentUser.AliyunAccessKeySecret" Variant="Variant.Outlined"
-                                  InputType="@(_showAliyunSecret ? InputType.Text : InputType.Password)"
-                                  Placeholder="例如：wxxxxxxxxxxxxxxxxxxxxxx" Adornment="Adornment.End"
-                                  AdornmentIcon="@(_showAliyunSecret ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff)"
-                                  OnAdornmentClick="() => _showAliyunSecret = !_showAliyunSecret" />
-                </MudItem>
-
-                <MudItem xs="12" md="6">
-                    <MudTextField T="string" Label="短信签名 (SignName) *" @bind-Value="_currentUser.AliyunSmsSignName" Variant="Variant.Outlined"
-                                  Placeholder="例如：智学系统 或 阿里云短信测试" HelperText="须与阿里云控制台申请的签名完全一致" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Draw" />
-                </MudItem>
-
-                <MudItem xs="12" md="6">
-                    <MudTextField T="string" Label="短信模板代码 (TemplateCode) *" @bind-Value="_currentUser.AliyunSmsTemplateCode" Variant="Variant.Outlined"
-                                  Placeholder="例如：SMS_154950909" HelperText="须与阿里云控制台报备的模板 CODE 一致" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.ConfirmationNumber" />
-                </MudItem>
-
-                <MudItem xs="12" md="4">
-                    <MudTextField T="string" Label="模板变量名 (TemplateParam)" @bind-Value="_currentUser.AliyunSmsTemplateParam" Variant="Variant.Outlined"
-                                  Placeholder="code" HelperText="对应模板中的 ${code} 变量，默认填 code" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Code" />
-                </MudItem>
-
-                <MudItem xs="12" md="4">
-                    <MudTextField T="string" Label="API 接入域名 (Endpoint)" @bind-Value="_currentUser.AliyunSmsEndpoint" Variant="Variant.Outlined"
-                                  Placeholder="dysmsapi.aliyuncs.com" HelperText="默认: dysmsapi.aliyuncs.com" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Http" />
-                </MudItem>
-
-                <MudItem xs="12" md="4">
-                    <MudNumericField T="int" Label="系统无操作超时自动退出 (分钟)" @bind-Value="_currentUser.SessionTimeoutMinutes" Min="5" Max="1440" Variant="Variant.Outlined"
-                                     HelperText="默认 30 分钟无响应自动注销登录" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Timer" />
-                </MudItem>
-            </MudGrid>
-
-            <!-- 阿里云短信连通性即时测试面板 -->
-            <div class="pa-4 rounded glass-card" style="background: var(--sub-card-bg); border-left: 4px solid #3b82f6;">
-                <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
-                    <div>
-                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Primary">
-                            🧪 阿里云短信 API 发送即时测试
-                        </MudText>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                            填入接收手机号，直接向阿里云 Dysmsapi 发起真实验证码发送测试并返回耗时与回执
-                        </MudText>
+                <!-- 右侧底部保存栏 -->
+                <div class="glass-card pa-4 rounded-xl d-flex align-center justify-space-between flex-wrap gap-3 mt-4" style="border: 1px solid var(--glass-card-border);">
+                    <div class="d-flex align-center gap-2 text-muted" style="font-size: 0.85rem;">
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircleOutline" Size="Size.Small" Color="Color.Success" />
+                        <span>当前处于【@GetCurrentSectionTitle()】配置面板，修改后将即时同步至全局。</span>
                     </div>
-
                     <div class="d-flex align-center gap-2">
-                        <MudTextField T="string" @bind-Value="_testSmsPhone" Placeholder="输入接收手机号..." Variant="Variant.Outlined" Margin="Margin.Dense" Style="width: 170px;" />
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Send" OnClick="TestAliyunSmsAsync" Disabled="@_testingSms">
-                            @if (_testingSms)
-                            {
-                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
-                                <span>请求阿里云中...</span>
-                            }
-                            else
-                            {
-                                <span>🚀 发送测试短信</span>
-                            }
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Medium" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveSettingsAsync" Class="px-6 font-weight-bold" Style="border-radius: 10px;">
+                            保存所有配置
                         </MudButton>
                     </div>
                 </div>
-
-                @if (_smsTestResult != null)
-                {
-                    <MudAlert Severity="@(_smsTestResult.IsSuccess ? Severity.Success : Severity.Error)" Variant="Variant.Filled" Class="mt-3 rounded-lg">
-                        <div class="d-flex align-center gap-2">
-                            <MudIcon Icon="@(_smsTestResult.IsSuccess ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" />
-                            <div>
-                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
-                                    @(_smsTestResult.IsSuccess ? $"✅ 阿里云短信通信正常 (响应耗时: {_smsTestResult.LatencyMs}ms)" : "❌ 阿里云短信发送失败")
-                                </MudText>
-                                <MudText Typo="Typo.caption">
-                                    @_smsTestResult.Message @(_smsTestResult.SampleResponse != null ? $" | 网关原样回执: {_smsTestResult.SampleResponse}" : "")
-                                </MudText>
-                            </div>
-                        </div>
-                    </MudAlert>
-                }
-            </div>
-        </div>
-
-        <!-- 保存按钮 -->
-        <div class="d-flex justify-end gap-3">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveSettingsAsync" Class="px-8 font-weight-bold" Style="border-radius: 12px;">
-                保存所有配置
-            </MudButton>
-        </div>
+            </MudItem>
+        </MudGrid>
     }
 </MudContainer>
 
 @code {
 #pragma warning disable CS0414, CS0169
+    [SupplyParameterFromQuery(Name = "section")]
+    public string? QuerySection { get; set; }
+
+    private string _activeSection = "grade";
+
+    private record SettingNavItem(string Id, string Title, string Icon);
+
+    private readonly List<SettingNavItem> _settingNavItems = new()
+    {
+        new("grade", "学生学段与年级", Icons.Material.Filled.School),
+        new("curriculum", "学科与考点管理", Icons.Material.Filled.LibraryBooks),
+        new("interaction", "交互体验与音效", Icons.Material.Filled.Tune),
+        new("llm", "LLM 大语言模型", Icons.Material.Filled.Psychology),
+        new("ocr", "OCR 试题识别设置", Icons.Material.Filled.AddAPhoto),
+        new("sms", "短信服务与安全", Icons.Material.Filled.Sms)
+    };
+
+    private void SetActiveSection(string sectionId)
+    {
+        _activeSection = sectionId;
+    }
+
+    private string GetCurrentSectionTitle()
+    {
+        return _settingNavItems.FirstOrDefault(x => x.Id == _activeSection)?.Title ?? "系统配置";
+    }
+
+    private string GetNavSubtitle(string id)
+    {
+        return id switch
+        {
+            "grade" => !string.IsNullOrEmpty(_currentUser?.Grade) ? _currentUser.Grade : "年级与代号",
+            "curriculum" => "全学段科目与考点专题",
+            "interaction" => _currentUser?.SoundEffectsEnabled == true ? "音效已开启" : "音效已关闭",
+            "llm" => !string.IsNullOrEmpty(_currentUser?.LlmModelName) ? _currentUser.LlmModelName : "gemini-1.5-flash",
+            "ocr" => string.Equals(_currentUser?.OcrProvider, "PaddleOcr", StringComparison.OrdinalIgnoreCase) ? "本地 PaddleOCR (0 Token)" : (string.Equals(_currentUser?.OcrProvider, "BaiduOcr", StringComparison.OrdinalIgnoreCase) ? "百度云 OCR" : "多模态视觉"),
+            "sms" => !string.IsNullOrEmpty(_currentUser?.AliyunSmsSignName) ? _currentUser.AliyunSmsSignName : "短信验证码与超时",
+            _ => ""
+        };
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(QuerySection) && _settingNavItems.Any(x => x.Id.Equals(QuerySection, StringComparison.OrdinalIgnoreCase)))
+        {
+            _activeSection = QuerySection.ToLowerInvariant();
+        }
+    }
+
     private User? _currentUser;
     private bool _testingConnection = false;
     private TestConnectionResult? _testResult;
