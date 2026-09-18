@@ -133,4 +133,14 @@ namespace Northtropic.Tests
         public Task<SubjectiveGradingResult> GradeSubjectiveAnswerAsync(Question question, string userAnswer) => Task.FromResult(new SubjectiveGradingResult { IsPassed = true, Score = 90 });
         public Task<TestConnectionResult> TestConnectionAsync(string apiKey, string baseUrl, string modelName) => Task.FromResult(new TestConnectionResult { IsSuccess = true });
     }
+
+    public class FakeAppVersionService : IAppVersionService
+    {
+        public string Version { get; set; } = "1.0.12";
+        public string DisplayVersion => $"v{Version}";
+        public string ShortCommitHash { get; set; } = "e8dcc36";
+        public string BuildTimestamp { get; set; } = "2026-09-18 08:20";
+        public string FullVersionInfo => $"Northtropic {DisplayVersion} (构建: {BuildTimestamp}, Commit: {ShortCommitHash})";
+    }
 }
+

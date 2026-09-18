@@ -70,6 +70,7 @@ builder.Services.AddScoped<IStudentEvolutionService, StudentEvolutionService>();
 builder.Services.AddScoped<ICurriculumConfigService, CurriculumConfigService>();
 builder.Services.AddScoped<ISystemHealthService, SystemHealthService>();
 builder.Services.AddScoped<ThemeService>();
+builder.Services.AddSingleton<IAppVersionService, AppVersionService>();
 
 // 4. 添加 Razor Components 与 Server 交互模式
 builder.Services.AddRazorComponents()

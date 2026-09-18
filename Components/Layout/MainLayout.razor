@@ -8,6 +8,7 @@
 @inject ThemeService ThemeService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
+@inject IAppVersionService AppVersionService
 @implements IDisposable
 
 <MudThemeProvider IsDarkMode="@ThemeService.CurrentTheme.IsDarkMode" Theme="@ThemeService.GetMudTheme()" />
@@ -42,7 +43,12 @@
                     <div class="d-inline-flex align-center justify-center pa-3 rounded-circle mb-3" style="background: linear-gradient(135deg, #3b82f6, #8b5cf6);">
                         <MudIcon Icon="@Icons.Material.Filled.SportsEsports" Size="Size.Large" Style="color: #ffffff;" />
                     </div>
-                    <MudText Typo="Typo.h4" Class="font-weight-bold gradient-text">Northtropic</MudText>
+                    <div class="d-flex align-baseline justify-center">
+                        <MudText Typo="Typo.h4" Class="font-weight-bold gradient-text">Northtropic</MudText>
+                        <span class="ml-2 text-muted" style="font-size: 0.82rem; color: var(--mud-palette-text-secondary, #94a3b8); font-weight: 500; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; opacity: 0.85;">
+                            @AppVersionService.DisplayVersion
+                        </span>
+                    </div>
                     <MudText Typo="Typo.subtitle1" Class="mud-text-secondary mt-1">AI 智适应精准助学与错题净化提分系统</MudText>
                     <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined" Class="mt-2 font-weight-bold">
                         🔒 系统安全鉴权登录网关
@@ -347,9 +353,16 @@
         <MudAppBar Elevation="1" Style="@ThemeService.CurrentTheme.AppbarStyle">
             <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
             
-            <MudText Typo="Typo.h6" Class="gradient-text font-weight-bold ml-2">
-                Northtropic
-            </MudText>
+            <MudTooltip Text="@AppVersionService.FullVersionInfo" Arrow="true" Placement="Placement.Bottom">
+                <div class="d-flex align-baseline ml-2" style="cursor: default; user-select: none;">
+                    <MudText Typo="Typo.h6" Class="gradient-text font-weight-bold">
+                        Northtropic
+                    </MudText>
+                    <span class="ml-1 text-muted" style="font-size: 0.72rem; color: var(--mud-palette-text-secondary, #94a3b8); font-weight: 500; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; letter-spacing: 0.3px; opacity: 0.85;">
+                        @AppVersionService.DisplayVersion
+                    </span>
+                </div>
+            </MudTooltip>
 
             <MudSpacer />
 

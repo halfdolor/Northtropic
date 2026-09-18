@@ -4,7 +4,27 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">1.0</VersionPrefix>
   </PropertyGroup>
+
+  <!-- 自动发布版本号计算：优先基于 Git 提交累积次数保证每次发布版本号必定递增，若无 Git 环境则回退至构建时间 -->
+  <Target Name="CalculateDynamicVersion" BeforeTargets="BeforeBuild;GetAssemblyVersion;GenerateAssemblyInfo">
+    <Exec Command="git rev-list --count HEAD" ConsoleToMSBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitCount" />
+    </Exec>
+    <Exec Command="git rev-parse --short HEAD" ConsoleToMSBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitSha" />
+    </Exec>
+    <PropertyGroup>
+      <RawCommitCount>$([System.String]::Copy('$(GitCommitCount)').Trim())</RawCommitCount>
+      <PatchNum Condition="'$(RawCommitCount)' != '' and '$(RawCommitCount)' != '0'">$(RawCommitCount)</PatchNum>
+      <PatchNum Condition="'$(PatchNum)' == ''">$([System.DateTime]::Now.ToString("yyMMdd"))</PatchNum>
+      <Version>$(VersionPrefix).$(PatchNum)</Version>
+      <ShortSha Condition="'$(GitCommitSha)' != ''">$([System.String]::Copy('$(GitCommitSha)').Trim())</ShortSha>
+      <InformationalVersion Condition="'$(ShortSha)' != ''">$(Version)+$(ShortSha)</InformationalVersion>
+      <InformationalVersion Condition="'$(ShortSha)' == ''">$(Version)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.*">
