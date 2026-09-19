@@ -1040,6 +1040,12 @@
                                     <MudButton Variant="Variant.Filled" Color="Color.Tertiary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Psychology" OnClick="HealLlmLogsAsync" Disabled="@_isHealingLlmLogs" Class="font-weight-bold">
                                         @(_isHealingLlmLogs ? "自愈中..." : "🧠 自愈推理日志不变量")
                                     </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.MenuBook" OnClick="HealCurriculumSubjectConfigsAsync" Disabled="@_isHealingCurriculumConfigs" Class="font-weight-bold">
+                                        @(_isHealingCurriculumConfigs ? "自愈中..." : "📚 自愈课程考点配置")
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Insights" OnClick="HealClosedLoopInsightsAsync" Disabled="@_isHealingInsights" Class="font-weight-bold">
+                                        @(_isHealingInsights ? "自愈中..." : "🧬 自愈学情闭环洞察")
+                                    </MudButton>
                                 </div>
                             </div>
 
@@ -1203,6 +1209,22 @@
                                             <div class="mud-text-secondary" style="font-size: 0.72rem;">推理日志异常</div>
                                             <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalInvalidLlmLogs > 0 ? "#ef4444" : "#10b981");">
                                                 @_dataIntegrityAudit.TotalInvalidLlmLogs
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">考点配置异常</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalInvalidCurriculumConfigs > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.TotalInvalidCurriculumConfigs
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">闭环洞察异常</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalInvalidInsights > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.TotalInvalidInsights
                                             </div>
                                         </div>
                                     </MudItem>
@@ -1474,6 +1496,8 @@
     private bool _isHealingCorruptedQuestions = false;
     private bool _isHealingUserAchievements = false;
     private bool _isHealingLlmLogs = false;
+    private bool _isHealingCurriculumConfigs = false;
+    private bool _isHealingInsights = false;
     private bool _isHealingAllInvariants = false;
     private DataIntegrityHealAllResultDto? _healAllInvariantsResult;
 
@@ -2240,6 +2264,52 @@
         }
     }
 
+    private async Task HealCurriculumSubjectConfigsAsync()
+    {
+        _isHealingCurriculumConfigs = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealCurriculumSubjectConfigInvariantsAsync();
+            Snackbar.Add($"📚 课程考点配置自愈完成：成功收敛修复 {healedCount} 项课程学科配置！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+            FilterTelemetryEvents();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"课程考点自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingCurriculumConfigs = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HealClosedLoopInsightsAsync()
+    {
+        _isHealingInsights = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealClosedLoopInsightInvariantsAsync();
+            Snackbar.Add($"🧬 学情闭环演进洞察自愈完成：成功纠偏去重 {healedCount} 项洞察不变量！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+            FilterTelemetryEvents();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"学情洞察自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingInsights = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task HealAllInvariantsAsync()
     {
         _isHealingAllInvariants = true;
@@ -2348,26 +2418,13 @@
             var integrityStatus = await SystemHealthService.RunDatabaseIntegrityCheckAsync();
             _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
             int purgedCount = 0;
+            int healedInvariantsCount = 0;
             if (!_dataIntegrityAudit.IsHealthy)
             {
                 var purgeRes = await SystemHealthService.PurgeOrphanedRecordsAsync();
                 purgedCount = purgeRes.TotalPurgedCount;
-                if (_dataIntegrityAudit.TotalInvalidStudyPlans > 0)
-                {
-                    await SystemHealthService.HealStudyPlanInvariantsAsync();
-                }
-                if (_dataIntegrityAudit.TotalInvalidBindings > 0)
-                {
-                    await SystemHealthService.HealStudentParentBindingInvariantsAsync();
-                }
-                if (_dataIntegrityAudit.UsersWithInvalidBalancesCount > 0)
-                {
-                    await SystemHealthService.HealGamificationInvariantsAsync();
-                }
-                await SystemHealthService.HealHomeworkAssignmentInvariantsAsync();
-                await SystemHealthService.HealErrorBookInvariantsAsync();
-                await SystemHealthService.HealUserFavoriteInvariantsAsync();
-                await SystemHealthService.HealPracticeRecordInvariantsAsync();
+                var healRes = await SystemHealthService.HealAllInvariantsAsync();
+                healedInvariantsCount = healRes.TotalHealedCount;
                 _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
             }
             _healthDto = await SystemHealthService.GetSystemHealthAsync();
@@ -2378,7 +2435,7 @@
             string reportHtml = $"<b>🚀 全维体检与自愈优化执行报告：</b><br/><br/>" +
                                 $"• <b>物理 B-Tree 完整性：</b><span style='color: {(isIntegrityHealthy ? "#10b981" : "#ef4444")}; font-weight: bold;'>{integrityStatus}</span><br/>" +
                                 $"• <b>外键关系完整性：</b><span style='color: {(isFkHealthy ? "#10b981" : "#ef4444")}; font-weight: bold;'>{fkStatus}</span><br/>" +
-                                $"• <b>数据拓扑自愈清理：</b><span style='color: #10b981; font-weight: bold;'>清理 {purgedCount} 条孤儿记录 (当前 {_dataIntegrityAudit.TotalIssuesCount} 异常)</span><br/>" +
+                                $"• <b>数据拓扑与领域自愈：</b><span style='color: #10b981; font-weight: bold;'>清理 {purgedCount} 条孤儿记录 | 自愈 {healedInvariantsCount} 项领域不变量 (当前 {_dataIntegrityAudit.TotalIssuesCount} 异常)</span><br/>" +
                                 $"• <b>查询计划统计分析 (ANALYZE)：</b><span style='color: #10b981; font-weight: bold;'>{optRes.AnalyzeStatus}</span><br/>" +
                                 $"• <b>查询计划自愈 (OPTIMIZE)：</b><span style='color: #10b981; font-weight: bold;'>{optRes.OptimizeStatus}</span><br/>" +
                                 $"• <b>WAL 日志截断归档：</b><span style='color: #10b981; font-weight: bold;'>{optRes.CheckpointStatus}</span><br/>" +

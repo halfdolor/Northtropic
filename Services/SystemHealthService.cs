@@ -1978,6 +1978,47 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalInvalidLlmLogs} 条大模型推理日志领域不变量异常 (包含负数Token、Token总和不守恒或空模型标识)");
                 }
 
+                // 23. CurriculumSubjectConfig Domain Invariants (重复配置、空年级/学科或格式损坏的 TopicsJson)
+                var curriculumConfigs = await db.CurriculumSubjectConfigs
+                    .Select(c => new { c.Id, c.Grade, c.Subject, c.TopicsJson })
+                    .ToListAsync();
+                int corruptedCurriculumConfigs = curriculumConfigs.Count(c =>
+                    string.IsNullOrWhiteSpace(c.Grade) ||
+                    string.IsNullOrWhiteSpace(c.Subject) ||
+                    string.IsNullOrWhiteSpace(c.TopicsJson) ||
+                    !c.TopicsJson.Trim().StartsWith("[") ||
+                    !c.TopicsJson.Trim().EndsWith("]")
+                );
+                int duplicateCurriculumConfigs = curriculumConfigs
+                    .Where(c => !string.IsNullOrWhiteSpace(c.Grade) && !string.IsNullOrWhiteSpace(c.Subject))
+                    .GroupBy(c => new { Grade = c.Grade.Trim(), Subject = c.Subject.Trim() })
+                    .Where(g => g.Count() > 1)
+                    .Sum(g => g.Count() - 1);
+                audit.TotalInvalidCurriculumConfigs = corruptedCurriculumConfigs + duplicateCurriculumConfigs;
+                if (audit.TotalInvalidCurriculumConfigs > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidCurriculumConfigs} 项课程学科考点配置异常 (包含空年级学科、破损JSON或重复学科配置副本)");
+                }
+
+                // 24. EvolutionClosedLoopInsight Domain Invariants (潜力分越界、负数净化数/攻克数或同秒重复副本)
+                var insightsToCheck = await db.EvolutionClosedLoopInsights
+                    .Select(i => new { i.Id, i.UserId, i.PotentialScore, i.WeaknessOvercomeCount, i.PurifiedErrorsCount, i.AnalyzedAt })
+                    .ToListAsync();
+                int anomalousInsightsCount = insightsToCheck.Count(i =>
+                    i.PotentialScore < 0 || i.PotentialScore > 100 ||
+                    i.WeaknessOvercomeCount < 0 ||
+                    i.PurifiedErrorsCount < 0
+                );
+                int duplicateInsightsCount = insightsToCheck
+                    .GroupBy(i => new { i.UserId, TimeKey = new DateTime(i.AnalyzedAt.Year, i.AnalyzedAt.Month, i.AnalyzedAt.Day, i.AnalyzedAt.Hour, i.AnalyzedAt.Minute, i.AnalyzedAt.Second) })
+                    .Where(g => g.Count() > 1)
+                    .Sum(g => g.Count() - 1);
+                audit.TotalInvalidInsights = anomalousInsightsCount + duplicateInsightsCount;
+                if (audit.TotalInvalidInsights > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidInsights} 条学情闭环洞察领域不变量异常 (包含潜力分越界、负数计数或同秒重复副本)");
+                }
+
                 if (audit.IsHealthy)
                 {
                     audit.AuditDetails.Add("✅ 数据库全库拓扑与业务外键完整性审计通过，未发现任何孤儿或格式损坏记录。");
@@ -3031,6 +3072,16 @@ namespace Northtropic.Services
                 if (result.HealedLlmLogsCount > 0)
                     result.OperationsExecuted.Add($"大模型推理日志自愈: 修正 {result.HealedLlmLogsCount} 条日志指标");
 
+                // 13. 课程学科考点配置自愈
+                result.HealedCurriculumConfigsCount = await HealCurriculumSubjectConfigInvariantsAsync();
+                if (result.HealedCurriculumConfigsCount > 0)
+                    result.OperationsExecuted.Add($"课程考点配置自愈: 合并修复 {result.HealedCurriculumConfigsCount} 项课程学科配置");
+
+                // 14. 学情闭环演进洞察领域不变量自愈
+                result.HealedInsightsCount = await HealClosedLoopInsightInvariantsAsync();
+                if (result.HealedInsightsCount > 0)
+                    result.OperationsExecuted.Add($"学情闭环洞察自愈: 纠偏去重 {result.HealedInsightsCount} 项洞察不变量");
+
                 sw.Stop();
                 result.ElapsedMilliseconds = sw.Elapsed.TotalMilliseconds;
                 result.Success = true;
@@ -3128,6 +3179,180 @@ namespace Northtropic.Services
             {
                 await db.SaveChangesAsync();
                 RecordArchitectureEvent("HealLlmLogs", "Success", $"自愈纠偏 {healedCount} 条大模型推理日志指标与模型标识");
+            }
+
+            return healedCount;
+        }
+
+        public async Task<int> HealCurriculumSubjectConfigInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            var configs = await db.CurriculumSubjectConfigs.ToListAsync();
+            int healedCount = 0;
+
+            // 1. 修复空年级或学科的脏数据（如果有）
+            var invalidEmpty = configs.Where(c => string.IsNullOrWhiteSpace(c.Grade) || string.IsNullOrWhiteSpace(c.Subject)).ToList();
+            if (invalidEmpty.Count > 0)
+            {
+                db.CurriculumSubjectConfigs.RemoveRange(invalidEmpty);
+                healedCount += invalidEmpty.Count;
+                foreach (var item in invalidEmpty)
+                {
+                    configs.Remove(item);
+                }
+            }
+
+            // 2. 修复破损的 TopicsJson
+            foreach (var cfg in configs)
+            {
+                bool jsonValid = false;
+                List<string>? topics = null;
+                if (!string.IsNullOrWhiteSpace(cfg.TopicsJson) && cfg.TopicsJson.Trim().StartsWith("[") && cfg.TopicsJson.Trim().EndsWith("]"))
+                {
+                    try
+                    {
+                        topics = System.Text.Json.JsonSerializer.Deserialize<List<string>>(cfg.TopicsJson);
+                        if (topics != null) jsonValid = true;
+                    }
+                    catch
+                    {
+                        jsonValid = false;
+                    }
+                }
+
+                if (!jsonValid || topics == null)
+                {
+                    var defaultTopics = new List<string> { "全部", "基础概念", "核心考点", "综合提升" };
+                    cfg.TopicsJson = System.Text.Json.JsonSerializer.Serialize(defaultTopics);
+                    cfg.UpdatedAt = DateTime.Now;
+                    healedCount++;
+                }
+            }
+
+            // 3. 针对相同 (Grade, Subject) 的重复配置进行智能合并与清理
+            var duplicateGroups = configs
+                .Where(c => !string.IsNullOrWhiteSpace(c.Grade) && !string.IsNullOrWhiteSpace(c.Subject))
+                .GroupBy(c => new { Grade = c.Grade.Trim(), Subject = c.Subject.Trim() })
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            foreach (var group in duplicateGroups)
+            {
+                var canonical = group.OrderBy(c => c.SortOrder).ThenBy(c => c.UpdatedAt).First();
+                var redundantList = group.Where(c => c.Id != canonical.Id).ToList();
+
+                // 合并考点列表 (保持 "全部" 在首位并去重)
+                var mergedTopics = new List<string>();
+                foreach (var item in group)
+                {
+                    try
+                    {
+                        var list = System.Text.Json.JsonSerializer.Deserialize<List<string>>(item.TopicsJson);
+                        if (list != null)
+                        {
+                            foreach (var t in list)
+                            {
+                                var clean = t.Trim();
+                                if (!string.IsNullOrEmpty(clean) && !mergedTopics.Contains(clean, StringComparer.OrdinalIgnoreCase))
+                                {
+                                    mergedTopics.Add(clean);
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                if (!mergedTopics.Contains("全部", StringComparer.OrdinalIgnoreCase))
+                {
+                    mergedTopics.Insert(0, "全部");
+                }
+                else
+                {
+                    mergedTopics.RemoveAll(t => t.Equals("全部", StringComparison.OrdinalIgnoreCase));
+                    mergedTopics.Insert(0, "全部");
+                }
+
+                canonical.Grade = group.Key.Grade;
+                canonical.Subject = group.Key.Subject;
+                canonical.TopicsJson = System.Text.Json.JsonSerializer.Serialize(mergedTopics);
+                canonical.UpdatedAt = DateTime.Now;
+
+                db.CurriculumSubjectConfigs.RemoveRange(redundantList);
+                healedCount += redundantList.Count;
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("HealCurriculumConfigs", "Success", $"自愈收敛 {healedCount} 项课程考点配置（合并去重或修复破损JSON）");
+            }
+
+            return healedCount;
+        }
+
+        public async Task<int> HealClosedLoopInsightInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            var insights = await db.EvolutionClosedLoopInsights.ToListAsync();
+            int healedCount = 0;
+
+            // 1. 字段数值不变量纠偏 (潜力分在 0-100，攻克数与净化数非负)
+            foreach (var ins in insights)
+            {
+                bool changed = false;
+
+                if (ins.PotentialScore < 0)
+                {
+                    ins.PotentialScore = 0;
+                    changed = true;
+                }
+                else if (ins.PotentialScore > 100)
+                {
+                    ins.PotentialScore = 100;
+                    changed = true;
+                }
+
+                if (ins.WeaknessOvercomeCount < 0)
+                {
+                    ins.WeaknessOvercomeCount = 0;
+                    changed = true;
+                }
+
+                if (ins.PurifiedErrorsCount < 0)
+                {
+                    ins.PurifiedErrorsCount = 0;
+                    changed = true;
+                }
+
+                if (changed) healedCount++;
+            }
+
+            // 2. 同一学员在同一秒内的重复洞察去重
+            var duplicateGroups = insights
+                .GroupBy(i => new { i.UserId, TimeKey = new DateTime(i.AnalyzedAt.Year, i.AnalyzedAt.Month, i.AnalyzedAt.Day, i.AnalyzedAt.Hour, i.AnalyzedAt.Minute, i.AnalyzedAt.Second) })
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            foreach (var group in duplicateGroups)
+            {
+                var canonical = group.OrderByDescending(i => (i.RootCauseDiagnosis?.Length ?? 0) + (i.SuccessExperienceSummary?.Length ?? 0)).First();
+                var redundantList = group.Where(i => i.Id != canonical.Id).ToList();
+                if (redundantList.Count > 0)
+                {
+                    db.EvolutionClosedLoopInsights.RemoveRange(redundantList);
+                    healedCount += redundantList.Count;
+                }
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("HealClosedLoopInsights", "Success", $"自愈纠偏 {healedCount} 项学情闭环演进洞察领域不变量与重复副本");
             }
 
             return healedCount;
