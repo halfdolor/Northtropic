@@ -1931,6 +1931,53 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalInvalidPracticeRecords} 条学生答题流水存在领域不变量异常 (包含负数用时/连击/资产或越界时间跨度)");
                 }
 
+                // 20. ErrorItem Domain Invariants & Duplicate Copies (负复习次数、未标记复习时间、空分类与重复错题副本)
+                var errorItemsToCheck = await db.ErrorItems
+                    .Select(e => new { e.Id, e.UserId, e.QuestionId, e.RevisionCount, e.IsMastered, e.LastRevisedAt, e.ErrorReasonCategory })
+                    .ToListAsync();
+                int singleInvalidErrors = errorItemsToCheck.Count(e =>
+                    e.RevisionCount < 0 ||
+                    (e.IsMastered && !e.LastRevisedAt.HasValue) ||
+                    string.IsNullOrWhiteSpace(e.ErrorReasonCategory)
+                );
+                int duplicateErrorItemsCount = errorItemsToCheck
+                    .GroupBy(e => new { e.UserId, e.QuestionId })
+                    .Where(g => g.Count() > 1)
+                    .Sum(g => g.Count() - 1);
+                audit.TotalInvalidErrorItems = singleInvalidErrors + duplicateErrorItemsCount;
+                if (audit.TotalInvalidErrorItems > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidErrorItems} 条错题本领域不变量异常 (包含负数复习次数、未标记复习时间、空分类或重复错题副本)");
+                }
+
+                // 21. UserAchievement Duplicate Invariants (同一用户相同成就重复解锁冗余副本)
+                int duplicateAchievementsCount = uAchievements
+                    .GroupBy(a => new { a.UserId, a.AchievementId })
+                    .Where(g => g.Count() > 1)
+                    .Sum(g => g.Count() - 1);
+                audit.TotalDuplicateUserAchievements = duplicateAchievementsCount;
+                if (audit.TotalDuplicateUserAchievements > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalDuplicateUserAchievements} 条用户成就重复解锁冗余副本 (同一成就被相同用户重复挂载)");
+                }
+
+                // 22. LlmGenerationLog Domain Invariants (Token 负数/不守恒与模型标识异常)
+                var llmLogsToCheck = await db.LlmGenerationLogs
+                    .Select(l => new { l.Id, l.PromptTokens, l.CompletionTokens, l.TotalTokens, l.ModelName })
+                    .ToListAsync();
+                int invalidLlmLogsCount = llmLogsToCheck.Count(l =>
+                    l.PromptTokens < 0 ||
+                    l.CompletionTokens < 0 ||
+                    l.TotalTokens < 0 ||
+                    (l.PromptTokens >= 0 && l.CompletionTokens >= 0 && l.TotalTokens != (l.PromptTokens + l.CompletionTokens)) ||
+                    string.IsNullOrWhiteSpace(l.ModelName)
+                );
+                audit.TotalInvalidLlmLogs = invalidLlmLogsCount;
+                if (audit.TotalInvalidLlmLogs > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidLlmLogs} 条大模型推理日志领域不变量异常 (包含负数Token、Token总和不守恒或空模型标识)");
+                }
+
                 if (audit.IsHealthy)
                 {
                     audit.AuditDetails.Add("✅ 数据库全库拓扑与业务外键完整性审计通过，未发现任何孤儿或格式损坏记录。");
@@ -2974,6 +3021,16 @@ namespace Northtropic.Services
                 if (result.HealedPracticeRecordsCount > 0)
                     result.OperationsExecuted.Add($"答题流水领域不变量自愈: 修正 {result.HealedPracticeRecordsCount} 条记录");
 
+                // 11. 用户成就重复副本自愈
+                result.HealedUserAchievementsCount = await HealUserAchievementInvariantsAsync();
+                if (result.HealedUserAchievementsCount > 0)
+                    result.OperationsExecuted.Add($"用户成就重复副本自愈: 清理 {result.HealedUserAchievementsCount} 条冗余记录");
+
+                // 12. 大模型推理日志领域不变量自愈
+                result.HealedLlmLogsCount = await HealLlmLogInvariantsAsync();
+                if (result.HealedLlmLogsCount > 0)
+                    result.OperationsExecuted.Add($"大模型推理日志自愈: 修正 {result.HealedLlmLogsCount} 条日志指标");
+
                 sw.Stop();
                 result.ElapsedMilliseconds = sw.Elapsed.TotalMilliseconds;
                 result.Success = true;
@@ -2993,6 +3050,87 @@ namespace Northtropic.Services
             }
 
             return result;
+        }
+
+        public async Task<int> HealUserAchievementInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            var userAchievements = await db.UserAchievements.ToListAsync();
+            var duplicateGroups = userAchievements
+                .GroupBy(a => new { a.UserId, a.AchievementId })
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            int healedCount = 0;
+            foreach (var group in duplicateGroups)
+            {
+                var canonical = group.OrderBy(a => a.UnlockedAt).First();
+                var duplicatesToRemove = group.Where(a => a.Id != canonical.Id).ToList();
+                if (duplicatesToRemove.Count > 0)
+                {
+                    db.UserAchievements.RemoveRange(duplicatesToRemove);
+                    healedCount += duplicatesToRemove.Count;
+                }
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("HealUserAchievements", "Success", $"自愈清理 {healedCount} 条用户成就重复解锁冗余副本");
+            }
+
+            return healedCount;
+        }
+
+        public async Task<int> HealLlmLogInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            var llmLogs = await db.LlmGenerationLogs.ToListAsync();
+            int healedCount = 0;
+
+            foreach (var log in llmLogs)
+            {
+                bool changed = false;
+
+                if (log.PromptTokens < 0)
+                {
+                    log.PromptTokens = 0;
+                    changed = true;
+                }
+
+                if (log.CompletionTokens < 0)
+                {
+                    log.CompletionTokens = 0;
+                    changed = true;
+                }
+
+                int expectedTotal = log.PromptTokens + log.CompletionTokens;
+                if (log.TotalTokens != expectedTotal)
+                {
+                    log.TotalTokens = expectedTotal;
+                    changed = true;
+                }
+
+                if (string.IsNullOrWhiteSpace(log.ModelName))
+                {
+                    log.ModelName = "unknown-model";
+                    changed = true;
+                }
+
+                if (changed) healedCount++;
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("HealLlmLogs", "Success", $"自愈纠偏 {healedCount} 条大模型推理日志指标与模型标识");
+            }
+
+            return healedCount;
         }
     }
 }

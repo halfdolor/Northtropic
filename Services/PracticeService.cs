@@ -3398,9 +3398,11 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<![a-zA-Z])i\^1\b", "i");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<![a-zA-Z])i\^0\b", "1");
 
-                // 向量与线段标记解构: \vec{a} -> a, \overrightarrow{AB} -> AB, \overline{AB} -> AB, \vec a -> a
+                // 向量与线段标记解构: \vec{a} -> a, \overrightarrow{AB} -> AB, \overline{AB} -> AB, \vec a -> a, 向量AB -> AB, AB^\rightarrow -> AB
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:vec|overrightarrow|overline)\s*\{([^}]+)\}", "$1");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:vec|overrightarrow|overline)\s+([a-zA-Z])\b", "$1");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=^|[^a-zA-Z0-9\u4e00-\u9fa5])向量\s*([a-zA-Z]+)", "$1");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"([a-zA-Z]+)\^\\rightarrow|([a-zA-Z]+)\^\{\\rightarrow\}", "$1$2");
                 // 粗体/黑板粗体数学符号解构: \mathbb{R} -> R, \mathbf{a} -> a, \boldsymbol{a} -> a, \bm{a} -> a
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:mathbb|mathbf|boldsymbol|bm|mathrm|mathit)\s*\{([^}]+)\}", "$1");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:mathbb|mathbf|boldsymbol|bm|mathrm|mathit)\s+([a-zA-Z])\b", "$1");
@@ -3464,7 +3466,7 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?:\\angle|∠)\s*", "∠");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=^|[^a-zA-Z0-9\u4e00-\u9fa5])角\s*([A-Za-z0-9]+)", "∠$1");
                 // 几何平行与垂直符号归一
-                s = s.Replace("\\parallel", "//").Replace("平行于", "//").Replace("平行", "//");
+                s = s.Replace("\\parallel", "//").Replace("平行于", "//").Replace("平行", "//").Replace("∥", "//");
                 s = s.Replace("\\perp", "⊥").Replace("\\bot", "⊥").Replace("垂直于", "⊥").Replace("垂直", "⊥");
                 // 几何全等与相似符号归一
                 s = s.Replace("\\triangle", "△").Replace("三角形", "△");
@@ -3488,6 +3490,7 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=\d)\s*比\s*(?=\d)", ":");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=\d)\s*[:：]\s*(?=\d)", ":");
                 // 数学集合与区间常用无穷、空集等价规范 (容错符号与无穷符号之间的间距，如 - \infty -> -inf)
+                s = s.Replace("正无穷", "+inf").Replace("负无穷", "-inf").Replace("无穷", "inf");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"([+\-])\s*\\infty", "$1inf");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"([+\-])\s*∞", "$1inf");
                 s = s.Replace("+\\infty", "+inf").Replace("-\\infty", "-inf").Replace("\\infty", "inf");
@@ -3743,6 +3746,25 @@ namespace Northtropic.Services
 
                 // 物质的量浓度单位等价: mol/L <=> mol/dm^3 <=> mol·L^-1 <=> 摩尔每升
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bmol\s*(?:/\s*(?:l|dm\^?3)|[\*·]?\s*(?:l|dm\^3)\^?-1)\b|摩尔[每/]?升|摩[每/]?升", "mol/l");
+
+                // 磁感应强度单位等价: T <=> N/(A*m) <=> Wb/m^2 <=> 特斯拉 <=> 牛每安米
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bn\s*[每/]\s*\(?\s*a\s*[\*·]?\s*m\s*\)?|\bn\s*[\*·]?\s*a\^?-1\s*[\*·]?\s*m\^?-1|牛[顿]?[每/]?\(?安[培]?[·\*]?米\)?", "t");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\b(?:wb|韦伯)\s*(?:[每/]\s*m\^?2|[\*·]?\s*m\^?-2)\b|\b(?:wb|韦伯)\s+m\^-2\b|(?:wb|韦伯)[每/]?m\^2|(?:wb|韦伯)[每/]?平方米", "t");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*(?:tesla|特斯拉|t)\b", "t");
+
+                // 电阻率单位等价: Ω·m <=> \Omega*m <=> 欧姆米 <=> 欧·米 <=> 欧米
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?:\\?omega|ohm|欧[姆]?)\s*[\*·]?\s*(?:m|米)\b|(?:\\?omega|ohm|欧[姆]?)[·\*]?(?:m|米)", "omega*m");
+
+                // 电导单位等价: S <=> 西门子 <=> 1/Ω <=> A/V <=> 安每伏
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\ba\s*[每/]\s*v\b|\ba\s*[\*·]?\s*v\^?-1\b|安[培]?[每/]?伏[特]?", "siemens");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"1\s*/\s*(?:\\?omega|ohm|欧[姆]?)|(?:\\?omega|ohm|欧[姆]?)\^?-1", "siemens");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*(?:西门子|siemens|s)\b", "siemens");
+
+                // 导热系数/热导率单位等价: W/(m·K) <=> W/(m*K) <=> W/(m·℃) <=> 瓦每米开尔文
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bw\s*[每/]\s*\(?\s*m\s*[\*·]?\s*(?:k|℃|c)\s*\)?|\bw\s*[\*·]?\s*m\^?-1\s*[\*·]?\s*(?:k|℃|c)\^?-1|瓦[特]?[每/]?\(?米[·\*]?(?:开尔文|摄氏度|k|℃)\)?", "w/(m*k)");
+
+                // 摩尔气体常数/摩尔熵单位等价: J/(mol·K) <=> J/(mol*K) <=> 焦每摩尔开尔文
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bj\s*[每/]\s*\(?\s*mol\s*[\*·]?\s*k\s*\)?|\bj\s*[\*·]?\s*mol\^?-1\s*[\*·]?\s*k\^?-1|焦[耳]?[每/]?\(?摩[尔]?[·\*]?(?:开尔文|开|k)\)?", "j/(mol*k)");
 
                 // 化学同位素规范化: 如 ^{14}c, ^{14}_{6}c, c-14, 碳-14, 碳14 -> c-14
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\^\{?(\d+)\}?(?:_\{?\d+\}?)?([a-z]+)", "$2-$1");

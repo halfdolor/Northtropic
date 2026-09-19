@@ -604,7 +604,8 @@ namespace Northtropic.Services
             var achievement = await ctx.Achievements.FirstOrDefaultAsync(a => a.Code == code);
             if (achievement == null) return false;
 
-            bool alreadyUnlocked = await ctx.UserAchievements.AnyAsync(ua => ua.UserId == userId && ua.AchievementId == achievement.Id);
+            bool alreadyUnlocked = ctx.UserAchievements.Local.Any(ua => ua.UserId == userId && ua.AchievementId == achievement.Id)
+                || await ctx.UserAchievements.AnyAsync(ua => ua.UserId == userId && ua.AchievementId == achievement.Id);
             if (!alreadyUnlocked)
             {
                 ctx.UserAchievements.Add(new UserAchievement

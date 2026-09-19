@@ -1034,6 +1034,12 @@
                                     <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.HistoryEdu" OnClick="HealPracticeRecordsAsync" Disabled="@_isHealingPracticeRecords" Class="font-weight-bold">
                                         @(_isHealingPracticeRecords ? "自愈中..." : "🩺 自愈答题流水不变量")
                                     </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.MilitaryTech" OnClick="HealUserAchievementsAsync" Disabled="@_isHealingUserAchievements" Class="font-weight-bold">
+                                        @(_isHealingUserAchievements ? "自愈中..." : "🏆 自愈成就重复副本")
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Tertiary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Psychology" OnClick="HealLlmLogsAsync" Disabled="@_isHealingLlmLogs" Class="font-weight-bold">
+                                        @(_isHealingLlmLogs ? "自愈中..." : "🧠 自愈推理日志不变量")
+                                    </MudButton>
                                 </div>
                             </div>
 
@@ -1173,6 +1179,30 @@
                                             <div class="mud-text-secondary" style="font-size: 0.72rem;">流水领域异常</div>
                                             <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalInvalidPracticeRecords > 0 ? "#ef4444" : "#10b981");">
                                                 @_dataIntegrityAudit.TotalInvalidPracticeRecords
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">错题领域异常</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalInvalidErrorItems > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.TotalInvalidErrorItems
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">成就重复副本</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalDuplicateUserAchievements > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.TotalDuplicateUserAchievements
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">推理日志异常</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalInvalidLlmLogs > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.TotalInvalidLlmLogs
                                             </div>
                                         </div>
                                     </MudItem>
@@ -1442,6 +1472,8 @@
     private bool _isHealingFavorites = false;
     private bool _isHealingPracticeRecords = false;
     private bool _isHealingCorruptedQuestions = false;
+    private bool _isHealingUserAchievements = false;
+    private bool _isHealingLlmLogs = false;
     private bool _isHealingAllInvariants = false;
     private DataIntegrityHealAllResultDto? _healAllInvariantsResult;
 
@@ -2158,6 +2190,52 @@
         finally
         {
             _isHealingCorruptedQuestions = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HealUserAchievementsAsync()
+    {
+        _isHealingUserAchievements = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealUserAchievementInvariantsAsync();
+            Snackbar.Add($"🏆 用户成就自愈完成：成功清理 {healedCount} 条重复解锁副本！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+            FilterTelemetryEvents();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"成就自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingUserAchievements = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HealLlmLogsAsync()
+    {
+        _isHealingLlmLogs = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealLlmLogInvariantsAsync();
+            Snackbar.Add($"🧠 大模型推理日志自愈完成：成功纠偏 {healedCount} 条日志指标与耗时！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+            FilterTelemetryEvents();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"推理日志自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingLlmLogs = false;
             StateHasChanged();
         }
     }
