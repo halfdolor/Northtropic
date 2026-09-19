@@ -929,6 +929,41 @@ namespace Northtropic.Services
                     return $"物理/科学单位智能对齐等价：已自动识别数值并对齐复合单位，对应标准答案 [{correct}]";
                 }
 
+                // 三角函数幂次记号等价 (如 \sin^2 x vs (\sin x)^2)
+                if ((normU.Contains("sin(") || normU.Contains("cos(") || normU.Contains("tan(") || normU.Contains("cot(") || normC.Contains("sin(") || normC.Contains("cos(") || normC.Contains("tan(")) &&
+                    (normU.Contains("^") || normC.Contains("^") || user.Contains("^") || correct.Contains("^")))
+                {
+                    return $"三角函数幂次记号等价：已自动识别 sin^2(x) 与 (sin x)^2 的代数等价性，对应标准答案 [{correct}]";
+                }
+
+                // 命题逻辑充分必要条件等价
+                if (normC == "充要条件" || normC == "充分不必要条件" || normC == "必要不充分条件" || normC == "既不充分也不必要条件" ||
+                    normU == "充要条件" || normU == "充分不必要条件" || normU == "必要不充分条件" || normU == "既不充分也不必要条件")
+                {
+                    return $"命题充分必要条件等价：已自动识别逻辑命题充分必要条件的规范等价性，对应标准答案 [{correct}]";
+                }
+
+                // 函数单调性与奇偶性表述等价
+                if (normC == "单调递增" || normC == "单调递减" || normC == "偶函数" || normC == "奇函数" ||
+                    normU == "单调递增" || normU == "单调递减" || normU == "偶函数" || normU == "奇函数")
+                {
+                    return $"函数单调性/奇偶性表述等价：已自动识别函数增减性或奇偶性质的数学等价性，对应标准答案 [{correct}]";
+                }
+
+                // 方程正负号 ± 复合解等价
+                if ((normU.Contains("+-") || normC.Contains("+-") || user.Contains("±") || correct.Contains("±")) &&
+                    (normU.Contains("x_") || normC.Contains("x_") || normU.Contains("x=") || normC.Contains("x=") || normU.Contains("{") || normC.Contains("{") || normU.Contains("或") || normC.Contains("或") || normU.Contains(",") || normC.Contains(",")))
+                {
+                    return $"方程正负解/共轭根等价：已自动识别 ± 正负号复合表达式与两实根列表的数学等价性，对应标准解 [{correct}]";
+                }
+
+                // 化学式、可逆符号与离子电荷等价
+                if ((user.Contains("3+") || user.Contains("2+") || user.Contains("3-") || user.Contains("2-") || user.Contains("³⁺") || user.Contains("²⁺") || user.Contains("⁻") || user.Contains("⁺") || user.Contains("⇌") || correct.Contains("⇌")) &&
+                    (correct.Contains("3+") || correct.Contains("2+") || correct.Contains("3-") || correct.Contains("2-") || correct.Contains("³⁺") || correct.Contains("²⁺") || correct.Contains("⁻") || correct.Contains("⁺") || correct.Contains("<=>") || user.Contains("<=>")))
+                {
+                    return $"化学式与离子电荷等价：已自动识别化学式角标、可逆符号与离子化合价符号等价性，对应标准答案 [{correct}]";
+                }
+
                 if (normU.StartsWith("{") && normU.EndsWith("}") && normC.StartsWith("{") && normC.EndsWith("}"))
                 {
                     return $"有限集合元素等价：已识别集合元素的无序等价性，标准表达建议按元素升序书写 [{correct}]";
@@ -3061,6 +3096,54 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\s+", " ").Trim();
                 var sLower = s.ToLowerInvariant();
 
+                // 物理速度、频率与阻抗复合单位归一
+                sLower = sLower.Replace("千米/小时", "km/h").Replace("千米每小时", "km/h").Replace("千米/时", "km/h");
+                sLower = sLower.Replace("赫兹", "hz").Replace("千赫", "khz").Replace("兆赫", "mhz").Replace("吉赫", "ghz");
+                sLower = sLower.Replace("千欧姆", "komega").Replace("千欧", "komega").Replace("兆欧", "momega").Replace("欧姆", "omega");
+                sLower = sLower.Replace("\\text{k}\\omega", "komega").Replace("\\mathrm{k}\\omega", "komega").Replace("k\\omega", "komega").Replace("m\\omega", "momega");
+                sLower = sLower.Replace("kω", "komega").Replace("mω", "momega").Replace("ω", "omega").Replace("\\omega", "omega");
+
+                // 三角函数幂次规范化: 如 \sin^2(x) / sin^2 x / sin^2(x) -> (sin(x))^2, (\sin x)^2 -> (sin(x))^2
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?:\\)?\b(sin|cos|tan|cot|sec|csc)\^(\d+)\s*(?:\(\s*([a-zA-Z0-9]+)\s*\)|([a-zA-Z0-9]+))", "($1($3$4))^$2");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\((?:\\)?(sin|cos|tan|cot|sec|csc)\s+([a-zA-Z0-9]+)\)\^(\d+)", "($1($2))^$3");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\((?:\\)?(sin|cos|tan|cot|sec|csc)\(([a-zA-Z0-9]+)\)\)\^(\d+)", "($1($2))^$3");
+
+                // 命题逻辑充分必要条件规范化
+                if (sLower == "充分必要条件" || sLower == "充要条件" || sLower == "充分且必要条件" || sLower == "充要")
+                {
+                    return "充要条件";
+                }
+                if (sLower == "充分不必要条件" || sLower == "充分非必要条件" || sLower == "充分不必要")
+                {
+                    return "充分不必要条件";
+                }
+                if (sLower == "必要不充分条件" || sLower == "必要非充分条件" || sLower == "必要不充分")
+                {
+                    return "必要不充分条件";
+                }
+                if (sLower == "既不充分也不必要条件" || sLower == "既非充分又非必要条件" || sLower == "既不充分又非必要条件" || sLower == "既非充分也不必要条件" || sLower == "既不充分也不必要")
+                {
+                    return "既不充分也不必要条件";
+                }
+
+                // 函数单调性与奇偶性规范化
+                if (sLower == "单调递增" || sLower == "单调增加" || sLower == "单调增" || sLower == "递增")
+                {
+                    return "单调递增";
+                }
+                if (sLower == "单调递减" || sLower == "单调减少" || sLower == "单调减" || sLower == "递减")
+                {
+                    return "单调递减";
+                }
+                if (sLower == "偶函数" || sLower == "是偶函数" || sLower == "为偶函数")
+                {
+                    return "偶函数";
+                }
+                if (sLower == "奇函数" || sLower == "是奇函数" || sLower == "为奇函数")
+                {
+                    return "奇函数";
+                }
+
                 // 全体实数 / 实数集与实数域双向等价归一为 "r"
                 if (sLower == "全体实数" || sLower == "实数集" || sLower == "全体实数集" || 
                     sLower == "(-inf,+inf)" || sLower == "(-inf,inf)" || sLower == "(-inf, +inf)" || 
@@ -3087,6 +3170,13 @@ namespace Northtropic.Services
                 {
                     s = mappedFormula;
                 }
+                // 统一 Unicode 离子电荷与角标
+                s = s.Replace("³⁺", "3+").Replace("²⁺", "2+").Replace("⁴⁺", "4+").Replace("⁺", "+")
+                     .Replace("³⁻", "3-").Replace("²⁻", "2-").Replace("⁴⁻", "4-").Replace("⁻", "-");
+                s = s.Replace('₀', '0').Replace('₁', '1').Replace('₂', '2').Replace('₃', '3').Replace('₄', '4')
+                     .Replace('₅', '5').Replace('₆', '6').Replace('₇', '7').Replace('₈', '8').Replace('₉', '9');
+                // 统一可逆反应符号
+                s = s.Replace("⇌", "<=>").Replace("⇄", "<=>").Replace("\\rightleftharpoons", "<=>").Replace("<==>", "<=>").Replace("<-->", "<=>");
                 // 剥离气体与沉淀箭头：↑, ↓, \uparrow, \downarrow, ^
                 s = s.Replace("↑", "").Replace("↓", "").Replace("\\uparrow", "").Replace("\\downarrow", "");
                 // 剥离化学物态标注: (s), (l), (g), (aq), (固), (液), (气), (水)
@@ -3473,6 +3563,33 @@ namespace Northtropic.Services
                         if (allValid && tempRoots.Count >= 2)
                         {
                             roots = tempRoots;
+                            return true;
+                        }
+                    }
+                }
+
+                // 5. 正负号综合表达式展开: 如 "x = 1 +- \sqrt{3}", "1 +- sqrt(3)", "x = +-2", "+-3"
+                if (s.Contains("+-") || s.Contains("±"))
+                {
+                    var sClean = s.Replace("±", "+-");
+                    sClean = System.Text.RegularExpressions.Regex.Replace(sClean, @"^[a-zA-Z]+(?:_[a-zA-Z0-9,]+)?\s*=\s*", "");
+                    var splitIdx = sClean.IndexOf("+-", StringComparison.Ordinal);
+                    if (splitIdx > 0)
+                    {
+                        var prefix = sClean.Substring(0, splitIdx).Trim();
+                        var suffix = sClean.Substring(splitIdx + 2).Trim();
+                        if (!string.IsNullOrEmpty(suffix))
+                        {
+                            roots = new List<string> { $"{prefix}+{suffix}", $"{prefix}-{suffix}" };
+                            return true;
+                        }
+                    }
+                    else if (splitIdx == 0)
+                    {
+                        var suffix = sClean.Substring(2).Trim();
+                        if (!string.IsNullOrEmpty(suffix))
+                        {
+                            roots = new List<string> { suffix, $"-{suffix}" };
                             return true;
                         }
                     }
@@ -4811,6 +4928,21 @@ namespace Northtropic.Services
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
+            var callerId = _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (callerId.HasValue && callerId.Value != userId)
+            {
+                var caller = await ctx.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == callerId.Value);
+                if (caller == null || (caller.Role != UserRole.SuperAdmin && caller.Role != UserRole.Teacher))
+                {
+                    bool isBoundParent = await ctx.StudentParentBindings.AsNoTracking()
+                        .AnyAsync(b => b.ParentUserId == callerId.Value && b.StudentUserId == userId);
+                    if (!isBoundParent)
+                    {
+                        return false;
+                    }
+                }
+            }
+
             var existing = await ctx.UserFavorites.FirstOrDefaultAsync(f => f.UserId == userId && f.QuestionId == questionId);
             if (existing != null)
             {
@@ -4846,6 +4978,22 @@ namespace Northtropic.Services
 
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
+
+            var callerId = _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (callerId.HasValue && callerId.Value != userId)
+            {
+                var caller = await ctx.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == callerId.Value);
+                if (caller == null || (caller.Role != UserRole.SuperAdmin && caller.Role != UserRole.Teacher))
+                {
+                    bool isBoundParent = await ctx.StudentParentBindings.AsNoTracking()
+                        .AnyAsync(b => b.ParentUserId == callerId.Value && b.StudentUserId == userId);
+                    if (!isBoundParent)
+                    {
+                        return false;
+                    }
+                }
+            }
+
             return await ctx.UserFavorites.AnyAsync(f => f.UserId == userId && f.QuestionId == questionId);
         }
 
@@ -4855,6 +5003,21 @@ namespace Northtropic.Services
 
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
+
+            var callerId = _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (callerId.HasValue && callerId.Value != userId)
+            {
+                var caller = await ctx.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == callerId.Value);
+                if (caller == null || (caller.Role != UserRole.SuperAdmin && caller.Role != UserRole.Teacher))
+                {
+                    bool isBoundParent = await ctx.StudentParentBindings.AsNoTracking()
+                        .AnyAsync(b => b.ParentUserId == callerId.Value && b.StudentUserId == userId);
+                    if (!isBoundParent)
+                    {
+                        return new List<Question>();
+                    }
+                }
+            }
 
             var favs = await ctx.UserFavorites
                 .Include(f => f.Question)

@@ -261,7 +261,8 @@ namespace Northtropic.Services
 
         public async Task<int> ClearMasteredErrorsAsync(Guid? userId = null)
         {
-            var targetUserId = userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            var callerId = _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            var targetUserId = userId ?? callerId;
             if (!targetUserId.HasValue || targetUserId.Value == Guid.Empty)
             {
                 return 0;
@@ -269,6 +270,15 @@ namespace Northtropic.Services
 
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
+
+            if (callerId.HasValue && callerId.Value != targetUserId.Value)
+            {
+                var isAuthorized = await IsAuthorizedToAccessErrorsAsync(callerId.Value, targetUserId.Value, ctx);
+                if (!isAuthorized)
+                {
+                    return 0;
+                }
+            }
 
             var masteredItems = await ctx.ErrorItems
                 .Where(e => e.UserId == targetUserId.Value && e.IsMastered)
@@ -360,8 +370,20 @@ namespace Northtropic.Services
 
         public async Task<List<ErrorItem>> GetEbbinghausReviewQueueAsync(Guid userId, string? subject = null, int count = 10)
         {
+            if (userId == Guid.Empty) return new List<ErrorItem>();
+
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
+
+            var callerId = _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (callerId.HasValue && callerId.Value != userId)
+            {
+                var isAuthorized = await IsAuthorizedToAccessErrorsAsync(callerId.Value, userId, ctx);
+                if (!isAuthorized)
+                {
+                    return new List<ErrorItem>();
+                }
+            }
 
             var query = ctx.ErrorItems
                 .Include(e => e.Question)
@@ -490,6 +512,16 @@ namespace Northtropic.Services
 
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
+
+            var callerId = _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (callerId.HasValue && callerId.Value != userId)
+            {
+                var isAuthorized = await IsAuthorizedToAccessErrorsAsync(callerId.Value, userId, ctx);
+                if (!isAuthorized)
+                {
+                    return null;
+                }
+            }
 
             return await ctx.ErrorItems
                 .Include(e => e.Question)

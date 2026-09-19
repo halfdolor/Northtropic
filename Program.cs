@@ -276,8 +276,11 @@ app.MapGet("/api/health", async (
             gcMemory = metrics.GcMemoryFormatted,
             databaseSizeBytes = metrics.DatabaseSizeBytes,
             walSizeBytes = metrics.WalSizeBytes,
+            fragmentationRatio = metrics.FragmentationRatio,
             healthScore = metrics.HealthScore,
             healthRating = metrics.HealthRating,
+            reliabilityScore = metrics.ReliabilityScore,
+            latencyRating = metrics.LatencyRating,
             totalPracticeRecords = metrics.TotalPracticeRecords,
             totalErrorItems = metrics.TotalErrorItems,
             threadPoolSaturation = metrics.ThreadPoolSaturationRatio
@@ -361,6 +364,102 @@ app.MapGet("/api/system/diagnostics/export", async (
     catch (Exception ex)
     {
         return Results.Problem(detail: $"导出架构诊断报告异常: {ex.Message}", statusCode: 500);
+    }
+});
+
+// 系统自适应维护计划评估 API (支持运维脚本与自动化监控查询健康与建议)
+app.MapGet("/api/system/maintenance/plan", async (
+    ISystemHealthService healthService,
+    IUserSessionService userSession,
+    Northtropic.Data.AppDbContext dbContext,
+    string? ticket) =>
+{
+    try
+    {
+        bool authorized = false;
+        if (!string.IsNullOrWhiteSpace(ticket))
+        {
+            var (valid, userId, purpose, _) = await userSession.ValidateAndConsumeDownloadTicketAsync(ticket);
+            if (valid && (purpose == "maintenance" || purpose == "diagnostics_export" || purpose == "backup_download"))
+            {
+                var user = await dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+                if (user != null && user.CanAccessSystemConfig)
+                {
+                    authorized = true;
+                }
+            }
+        }
+
+        if (!authorized)
+        {
+            var activeUser = await userSession.GetActiveUserAsync();
+            if (activeUser != null && activeUser.CanAccessSystemConfig)
+            {
+                authorized = true;
+            }
+        }
+
+        if (!authorized)
+        {
+            return Results.StatusCode(403);
+        }
+
+        var plan = await healthService.EvaluateAdaptiveMaintenancePlanAsync();
+        return Results.Ok(plan);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(detail: $"评估自适应维护计划异常: {ex.Message}", statusCode: 500);
+    }
+});
+
+// 系统自适应维护计划执行 API (一键触发自愈、WAL 截断与存储规整，带并发锁)
+app.MapPost("/api/system/maintenance/execute", async (
+    ISystemHealthService healthService,
+    IUserSessionService userSession,
+    Northtropic.Data.AppDbContext dbContext,
+    string? ticket) =>
+{
+    try
+    {
+        bool authorized = false;
+        string authorizedUsername = "Admin";
+        if (!string.IsNullOrWhiteSpace(ticket))
+        {
+            var (valid, userId, purpose, _) = await userSession.ValidateAndConsumeDownloadTicketAsync(ticket);
+            if (valid && (purpose == "maintenance" || purpose == "diagnostics_export" || purpose == "backup_download"))
+            {
+                var user = await dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+                if (user != null && user.CanAccessSystemConfig)
+                {
+                    authorized = true;
+                    authorizedUsername = user.Username;
+                }
+            }
+        }
+
+        if (!authorized)
+        {
+            var activeUser = await userSession.GetActiveUserAsync();
+            if (activeUser != null && activeUser.CanAccessSystemConfig)
+            {
+                authorized = true;
+                authorizedUsername = activeUser.Username;
+            }
+        }
+
+        if (!authorized)
+        {
+            return Results.StatusCode(403);
+        }
+
+        healthService.RecordArchitectureEvent("Maintenance", "Info", $"管理员 {authorizedUsername} 通过 REST 接口触发自适应存储维护任务");
+        var result = await healthService.ExecuteAdaptiveMaintenancePlanAsync();
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(detail: $"执行自适应维护任务异常: {ex.Message}", statusCode: 500);
     }
 });
 
