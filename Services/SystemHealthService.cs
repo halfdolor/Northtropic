@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Northtropic.Data;
+using Northtropic.Models;
 
 namespace Northtropic.Services
 {
@@ -138,8 +139,17 @@ namespace Northtropic.Services
                         : $"数据库往返时延升至 {health.DatabaseLatencyMs:F1}ms，建议执行 PRAGMA analyze / optimize 重建统计索引；");
                 }
 
+                // 3.5 Check Data Integrity & Orphans
+                var integrityAudit = await AuditDataIntegrityAsync();
+                if (integrityAudit.TotalIssuesCount > 0)
+                {
+                    plan.RequiresOrphanCleanup = true;
+                    plan.ActionReasons.Add($"检测到 {integrityAudit.TotalIssuesCount} 项孤儿/异常关联数据，建议执行事务级自愈清理；");
+                    if (plan.UrgencyLevel == "Low") plan.UrgencyLevel = "Medium";
+                }
+
                 // 4. Determine Urgency
-                if (health.WalSizeBytes >= 10 * 1024 * 1024 || (health.FragmentationRatio >= 40.0 && health.FragmentationBytes >= 5 * 1024 * 1024) || !health.IsDatabaseHealthy || !health.IsForeignKeyHealthy)
+                if (health.WalSizeBytes >= 10 * 1024 * 1024 || (health.FragmentationRatio >= 40.0 && health.FragmentationBytes >= 5 * 1024 * 1024) || !health.IsDatabaseHealthy || !health.IsForeignKeyHealthy || integrityAudit.TotalIssuesCount > 50)
                 {
                     plan.UrgencyLevel = "Critical";
                 }
@@ -147,14 +157,14 @@ namespace Northtropic.Services
                 {
                     plan.UrgencyLevel = "High";
                 }
-                else if (plan.RequiresOptimization)
+                else if (plan.RequiresOptimization || plan.RequiresOrphanCleanup)
                 {
                     plan.UrgencyLevel = "Medium";
                 }
                 else
                 {
                     plan.UrgencyLevel = "Low";
-                    plan.ActionReasons.Add("系统各项物理存储指标、WAL 队列与查询延迟均处于最优或健康水平，暂无需执行重整操作。");
+                    plan.ActionReasons.Add("系统各项物理存储指标、WAL 队列、查询延迟与业务数据拓扑均处于最优或健康水平，暂无需执行重整操作。");
                 }
             }
             catch (Exception ex)
@@ -273,6 +283,17 @@ namespace Northtropic.Services
                                 result.ExecutedActions.Add($"PostgreSQL ANALYZE 评估跳过 ({ex.Message})");
                             }
                         }
+                    }
+                }
+
+                // 动作 D: 业务孤儿数据自愈清理
+                if (plan.RequiresOrphanCleanup || plan.UrgencyLevel == "Critical")
+                {
+                    var purgeRes = await PurgeOrphanedRecordsAsync();
+                    if (purgeRes.Success && purgeRes.TotalPurgedCount > 0)
+                    {
+                        result.PurgedOrphanCount = purgeRes.TotalPurgedCount;
+                        result.ExecutedActions.Add($"业务孤儿数据自愈清理 ({purgeRes.TotalPurgedCount} 条)");
                     }
                 }
 
@@ -1462,6 +1483,9 @@ namespace Northtropic.Services
                 sb.AppendLine($"- **服务连续运行时间**: {health.ProcessUptimeFormatted}");
                 sb.AppendLine($"- **数据库往返延迟**: {health.DatabaseLatencyMs:F2} ms ({health.LatencyRating})");
                 sb.AppendLine($"- **SQLite 物理完整性**: `{health.SqliteIntegrityStatus}` | **外键约束**: `{health.ForeignKeyIntegrityStatus}`");
+
+                var dataIntegrity = await AuditDataIntegrityAsync();
+                sb.AppendLine($"- **数据拓扑完整性状态**: `{(dataIntegrity.IsHealthy ? "ok" : "Warning")}` (孤儿异常数: {dataIntegrity.TotalIssuesCount})");
                 sb.AppendLine();
                 sb.AppendLine("## 二、存储引擎与物理文件指标");
                 sb.AppendLine($"- **主数据库文件大小**: {health.DatabaseSizeFormatted} (共 {health.PageCount} 页，分页大小 {health.PageSize} 字节)");
@@ -1558,6 +1582,12 @@ namespace Northtropic.Services
                 bool fkOk = result.ForeignKeyIntegrity.Equals("ok", StringComparison.OrdinalIgnoreCase);
                 result.DiagnosticCheckpoints.Add($"[Checkpoint 2] SQLite PRAGMA quick_check: {result.SqliteIntegrity}, foreign_key_check: {result.ForeignKeyIntegrity}");
 
+                // 2.5 业务数据拓扑完整性与孤儿记录主动巡检
+                var integrityAudit = await AuditDataIntegrityAsync();
+                result.DataIntegrityIssuesCount = integrityAudit.TotalIssuesCount;
+                result.DataIntegrityStatus = integrityAudit.IsHealthy ? "ok" : $"Warning ({integrityAudit.TotalIssuesCount} issues)";
+                result.DiagnosticCheckpoints.Add($"[Checkpoint 2.5] 业务数据拓扑完整性巡检: {(integrityAudit.IsHealthy ? "零孤儿/完整 (ok)" : $"检测到 {integrityAudit.TotalIssuesCount} 项孤儿/异常记录")}");
+
                 // 3. 核心业务表存储探针
                 var tableMetrics = await GetTableStorageMetricsAsync();
                 result.CoreTablesFound = tableMetrics.Count;
@@ -1608,12 +1638,12 @@ namespace Northtropic.Services
                 string factoryMode = _dbContextFactory != null ? "高并发独立连接池" : "单例回退安全通道";
                 result.DiagnosticCheckpoints.Add($"[Checkpoint 5] 异步并发连接池与 WAL 锁争用压力探针 ({factoryMode}): {probeCount}/{probeCount} 探测通过, 吞吐 {result.ConcurrencyThroughputQps} QPS (耗时 {stressSw.ElapsedMilliseconds}ms)");
 
-                result.IsPassed = dbOk && fkOk && result.CoreTablesFound >= 6 && result.ConcurrencyStressPassed;
+                result.IsPassed = dbOk && fkOk && integrityAudit.IsHealthy && result.CoreTablesFound >= 6 && result.ConcurrencyStressPassed;
                 result.OverallStatus = result.IsPassed ? "Pass" : "Warning";
 
                 sw.Stop();
                 RecordArchitectureEvent("SelfDiagnostic", result.IsPassed ? "Success" : "Warning",
-                    $"全量架构自检完成: 状态={result.OverallStatus}, 延迟={result.LatencyMs:F2}ms, 题量={result.TotalQuestionsScanned}, 吞吐={result.ConcurrencyThroughputQps} QPS", sw.Elapsed.TotalMilliseconds);
+                    $"全量架构自检完成: 状态={result.OverallStatus}, 延迟={result.LatencyMs:F2}ms, 题量={result.TotalQuestionsScanned}, 拓扑={result.DataIntegrityStatus}, 吞吐={result.ConcurrencyThroughputQps} QPS", sw.Elapsed.TotalMilliseconds);
             }
             catch (Exception ex)
             {
@@ -1622,6 +1652,203 @@ namespace Northtropic.Services
                 result.OverallStatus = "Fail";
                 result.DiagnosticCheckpoints.Add($"[Exception] 架构自检异常中断: {ex.Message}");
                 RecordArchitectureEvent("SelfDiagnostic", "Error", $"架构自检发生异常: {ex.Message}", sw.Elapsed.TotalMilliseconds);
+            }
+
+            return result;
+        }
+
+        public async Task<DataIntegrityAuditDto> AuditDataIntegrityAsync()
+        {
+            var audit = new DataIntegrityAuditDto();
+            try
+            {
+                await using var dbScope = await CreateDbScopeAsync();
+                var db = dbScope.Context;
+
+                var userIds = await db.Users.Select(u => u.Id).ToListAsync();
+                var questionIds = await db.Questions.Select(q => q.Id).ToListAsync();
+                var userIdSet = new HashSet<Guid>(userIds);
+                var questionIdSet = new HashSet<Guid>(questionIds);
+
+                // 1. ErrorItems
+                var errors = await db.ErrorItems.Select(e => new { e.Id, e.QuestionId, e.UserId }).ToListAsync();
+                audit.TotalOrphanErrorItems = errors.Count(e => !questionIdSet.Contains(e.QuestionId) || !userIdSet.Contains(e.UserId));
+                if (audit.TotalOrphanErrorItems > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalOrphanErrorItems} 条无主错题记录 (关联题目或用户不存在)");
+                }
+
+                // 2. PracticeRecords
+                var practiceRecords = await db.PracticeRecords.Select(r => new { r.Id, r.QuestionId, r.UserId }).ToListAsync();
+                audit.TotalOrphanPracticeRecords = practiceRecords.Count(r => !questionIdSet.Contains(r.QuestionId) || !userIdSet.Contains(r.UserId));
+                if (audit.TotalOrphanPracticeRecords > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalOrphanPracticeRecords} 条无主练习流水 (关联题目或用户不存在)");
+                }
+
+                // 3. UserFavorites
+                var favorites = await db.UserFavorites.Select(f => new { f.Id, f.QuestionId, f.UserId }).ToListAsync();
+                audit.TotalOrphanUserFavorites = favorites.Count(f => !questionIdSet.Contains(f.QuestionId) || !userIdSet.Contains(f.UserId));
+                if (audit.TotalOrphanUserFavorites > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalOrphanUserFavorites} 条无主收藏记录 (关联题目或用户不存在)");
+                }
+
+                // 4. HomeworkAssignments
+                var homeworks = await db.HomeworkAssignments.Select(h => new { h.Id, h.StudentUserId, h.CreatorUserId }).ToListAsync();
+                audit.TotalOrphanHomeworkAssignments = homeworks.Count(h => !userIdSet.Contains(h.StudentUserId) || !userIdSet.Contains(h.CreatorUserId));
+                if (audit.TotalOrphanHomeworkAssignments > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalOrphanHomeworkAssignments} 条无主作业指派记录 (学生或创建者账号不存在)");
+                }
+
+                // 5. StudentParentBindings
+                var bindings = await db.StudentParentBindings.Select(b => new { b.Id, b.ParentUserId, b.StudentUserId }).ToListAsync();
+                audit.TotalOrphanBindings = bindings.Count(b => !userIdSet.Contains(b.ParentUserId) || !userIdSet.Contains(b.StudentUserId));
+                if (audit.TotalOrphanBindings > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalOrphanBindings} 条无主家校绑定关联 (家长或学生账号不存在)");
+                }
+
+                // 6. StudyPlans
+                var plans = await db.StudyPlans.Select(s => new { s.Id, s.UserId }).ToListAsync();
+                audit.TotalOrphanStudyPlans = plans.Count(s => !userIdSet.Contains(s.UserId));
+                if (audit.TotalOrphanStudyPlans > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalOrphanStudyPlans} 条无主学习计划 (所属学员账号不存在)");
+                }
+
+                // 7. Corrupted Questions (单选/多选且 OptionsJson 格式无效)
+                var choiceQuestions = await db.Questions
+                    .Where(q => q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
+                    .Select(q => new { q.Id, q.OptionsJson })
+                    .ToListAsync();
+                audit.TotalCorruptedQuestions = choiceQuestions.Count(q => string.IsNullOrWhiteSpace(q.OptionsJson) || !q.OptionsJson.Trim().StartsWith("["));
+                if (audit.TotalCorruptedQuestions > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalCorruptedQuestions} 道选择题选项格式异常 (未包含合法选项列表)");
+                }
+
+                if (audit.IsHealthy)
+                {
+                    audit.AuditDetails.Add("✅ 数据库全库拓扑与业务外键完整性审计通过，未发现任何孤儿或格式损坏记录。");
+                }
+            }
+            catch (Exception ex)
+            {
+                audit.AuditDetails.Add($"数据完整性审计异常: {ex.Message}");
+            }
+            return audit;
+        }
+
+        public async Task<DataIntegrityPurgeResultDto> PurgeOrphanedRecordsAsync()
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var result = new DataIntegrityPurgeResultDto();
+
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? tx = null;
+            if (db.Database.IsRelational() && db.Database.CurrentTransaction == null)
+            {
+                tx = await db.Database.BeginTransactionAsync();
+            }
+
+            try
+            {
+                var userIds = await db.Users.Select(u => u.Id).ToListAsync();
+                var questionIds = await db.Questions.Select(q => q.Id).ToListAsync();
+                var userIdSet = new HashSet<Guid>(userIds);
+                var questionIdSet = new HashSet<Guid>(questionIds);
+
+                // 1. ErrorItems
+                var orphanErrors = (await db.ErrorItems.ToListAsync())
+                    .Where(e => !questionIdSet.Contains(e.QuestionId) || !userIdSet.Contains(e.UserId))
+                    .ToList();
+                if (orphanErrors.Count > 0)
+                {
+                    db.ErrorItems.RemoveRange(orphanErrors);
+                    result.PurgedErrorItemsCount = orphanErrors.Count;
+                }
+
+                // 2. PracticeRecords
+                var orphanRecords = (await db.PracticeRecords.ToListAsync())
+                    .Where(r => !questionIdSet.Contains(r.QuestionId) || !userIdSet.Contains(r.UserId))
+                    .ToList();
+                if (orphanRecords.Count > 0)
+                {
+                    db.PracticeRecords.RemoveRange(orphanRecords);
+                    result.PurgedPracticeRecordsCount = orphanRecords.Count;
+                }
+
+                // 3. UserFavorites
+                var orphanFavorites = (await db.UserFavorites.ToListAsync())
+                    .Where(f => !questionIdSet.Contains(f.QuestionId) || !userIdSet.Contains(f.UserId))
+                    .ToList();
+                if (orphanFavorites.Count > 0)
+                {
+                    db.UserFavorites.RemoveRange(orphanFavorites);
+                    result.PurgedUserFavoritesCount = orphanFavorites.Count;
+                }
+
+                // 4. HomeworkAssignments
+                var orphanHomeworks = (await db.HomeworkAssignments.ToListAsync())
+                    .Where(h => !userIdSet.Contains(h.StudentUserId) || !userIdSet.Contains(h.CreatorUserId))
+                    .ToList();
+                if (orphanHomeworks.Count > 0)
+                {
+                    db.HomeworkAssignments.RemoveRange(orphanHomeworks);
+                    result.PurgedHomeworkAssignmentsCount = orphanHomeworks.Count;
+                }
+
+                // 5. StudentParentBindings
+                var orphanBindings = (await db.StudentParentBindings.ToListAsync())
+                    .Where(b => !userIdSet.Contains(b.ParentUserId) || !userIdSet.Contains(b.StudentUserId))
+                    .ToList();
+                if (orphanBindings.Count > 0)
+                {
+                    db.StudentParentBindings.RemoveRange(orphanBindings);
+                    result.PurgedBindingsCount = orphanBindings.Count;
+                }
+
+                // 6. StudyPlans
+                var orphanPlans = (await db.StudyPlans.ToListAsync())
+                    .Where(s => !userIdSet.Contains(s.UserId))
+                    .ToList();
+                if (orphanPlans.Count > 0)
+                {
+                    db.StudyPlans.RemoveRange(orphanPlans);
+                    result.PurgedStudyPlansCount = orphanPlans.Count;
+                }
+
+                if (result.TotalPurgedCount > 0)
+                {
+                    await db.SaveChangesAsync();
+                }
+
+                if (tx != null)
+                {
+                    await tx.CommitAsync();
+                }
+
+                sw.Stop();
+                result.ElapsedMilliseconds = Math.Round(sw.Elapsed.TotalMilliseconds, 2);
+                result.Success = true;
+                result.Message = result.TotalPurgedCount > 0
+                    ? $"成功清理 {result.TotalPurgedCount} 条孤儿数据记录 (用时 {result.ElapsedMilliseconds}ms)"
+                    : "数据库数据拓扑完整，无需清理任何孤儿记录。";
+
+                RecordArchitectureEvent("SelfHealing", "Success", result.Message, result.ElapsedMilliseconds);
+            }
+            catch (Exception ex)
+            {
+                if (tx != null) await tx.RollbackAsync();
+                sw.Stop();
+                result.Success = false;
+                result.ElapsedMilliseconds = Math.Round(sw.Elapsed.TotalMilliseconds, 2);
+                result.Message = $"孤儿数据自愈清理失败: {ex.Message}";
+                RecordArchitectureEvent("SelfHealing", "Error", result.Message, result.ElapsedMilliseconds);
             }
 
             return result;

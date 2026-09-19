@@ -758,6 +758,35 @@ namespace Northtropic.Services
                     return $"物理/科学单位智能对齐等价（理科复合单位）：已自动识别物理量数值并对齐复合单位（如速度、加速度、密度、压强或功率等），对应标准答案 [{correct}]";
                 }
 
+                // 三角函数幂次记号等价 (如 \sin^2 x vs (\sin x)^2)
+                if ((normU.Contains("sin") || normU.Contains("cos") || normU.Contains("tan") || normU.Contains("cot") || normU.Contains("sec") || normU.Contains("csc") ||
+                     normC.Contains("sin") || normC.Contains("cos") || normC.Contains("tan") || normC.Contains("cot") || normC.Contains("sec") || normC.Contains("csc")) &&
+                    (user.Contains("^") || correct.Contains("^") || normU.Contains("^") || normC.Contains("^")))
+                {
+                    return $"三角函数幂次记号等价：已自动识别 sin^2(x) 与 (sin x)^2 的代数等价性，对应标准答案 [{correct}]";
+                }
+
+                // 三角函数与倒数记法等价 (如 tg x vs tan x, ctg x vs cot x, 1/tan x vs cot x)
+                if ((normU.Contains("tg") || normU.Contains("tan") || normU.Contains("cot") || normU.Contains("sec") || normU.Contains("csc")) &&
+                    (normC.Contains("tg") || normC.Contains("tan") || normC.Contains("cot") || normC.Contains("sec") || normC.Contains("csc")))
+                {
+                    return $"三角函数与倒数函数等价：已自动识别正切/余切/正割/余割（如 tg 与 tan、ctg 与 cot、1/tan 与 cot、1/cos 与 sec 等）的等价恒等变换，对应标准答案 [{correct}]";
+                }
+
+                // 指数幂与根式等价表达 (如 x^-1 vs 1/x, x^(1/2) vs sqrt(x), e^x vs exp(x))
+                if ((normU.Contains("exp") || normU.Contains("e^") || normU.Contains("^-") || user.Contains("^(1/") || correct.Contains("^(1/") || user.Contains("cbrt") || correct.Contains("cbrt")) &&
+                    (normC.Contains("exp") || normC.Contains("e^") || normC.Contains("^-") || normC.Contains("sqrt") || normC.Contains("/") || user.Contains("^-") || correct.Contains("^-")))
+                {
+                    return $"指数幂与根式等价表达：已自动识别负幂、分数指数幂或自然底数指数函数（如 x^-1 与 1/x、x^(1/2) 与 \\sqrt{{x}}、e^x 与 exp(x)）数学等价性，对应标准答案 [{correct}]";
+                }
+
+                // 中文区间范围等价 (如 2到5, 2至5, x大于等于2且小于等于5)
+                if (normU.Contains("到") || normC.Contains("到") || normU.Contains("至") || normC.Contains("至") ||
+                    normU.Contains("大于") || normC.Contains("大于") || normU.Contains("小于") || normC.Contains("小于"))
+                {
+                    return $"数学解集与区间范围等价：已自动识别中文区间/不等式范围（如闭区间、半开半闭区间）表达，对应标准答案 [{correct}]";
+                }
+
                 bool isDisjU = user.Contains("或") || user.Contains("或者");
                 bool isDisjC = correct.Contains("或") || correct.Contains("或者");
                 if (isDisjU || isDisjC)
@@ -875,10 +904,10 @@ namespace Northtropic.Services
                     return $"三角角度与弧度制等价：已自动识别角度制 (如 30°、45°、90°) 与弧度制 (如 \\pi/6、\\pi/4、\\pi/2) 的精确数理等价对应，对应标准答案 [{correct}]";
                 }
 
-                // 国际单位制科学词头换算等价 (如 A与mA、kWh与度与J、h与min与s、kHz与Hz、kJ与J、kΩ与Ω等)
+                // 国际单位制科学词头换算等价 (如 A与mA、kWh与度与J、h与min与s、kHz与Hz、kJ与J、kΩ与Ω等) 与物理工程量纲
                 if (CheckScientificUnitMultiplierEquivalence(user, correct) || CheckScientificUnitMultiplierEquivalence(normU, normC))
                 {
-                    return $"国际单位制科学词头换算等价：已自动对齐电流（A/mA/μA）、电能度数（kWh/度/J）、时间（h/min/s）、频率、电压、阻抗或力学等国际制单位词头倍数换算，对应标准答案 [{correct}]";
+                    return $"国际单位制科学词头换算等价（物理与工程量纲智能换算）：已自动对齐电流（A/mA/μA）、电能度数（kWh/度/J）、时间（h/min/s）、频率（Hz/kHz/MHz）、电容（F/uF/nF/pF）、速度（km/h与m/s）、功率（W/kW/MW）、压强（Pa/kPa/MPa）、电压、阻抗或力学等物理与工程量纲智能换算，对应标准答案 [{correct}]";
                 }
 
                 // 复数代数形式等价 (z = a + bi, bi + a, 0 + bi 等，需包含虚数单位 i)
@@ -3168,6 +3197,8 @@ namespace Northtropic.Services
                 s = s.Replace("％", "%").Replace("＋", "+").Replace("－", "-").Replace("＊", "*").Replace("／", "/").Replace("＝", "=");
                 // LaTeX 百分比转义符解构
                 s = s.Replace("\\%", "%");
+                // 范围连接符 ~ (如 2~5, -3~7) 在消除 LaTeX 空格 ~ 前先行保护归一为 "到"
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=[+-]?\d+(?:\.\d+)?)\s*~\s*(?=[+-]?\d)", "到");
                 // LaTeX 空白与间距符消除
                 s = s.Replace("\\,", " ").Replace("\\;", " ").Replace("\\:", " ").Replace("\\quad", " ").Replace("\\qquad", " ").Replace("\\enspace", " ").Replace("~", " ");
                 // LaTeX 常用定界符与范数/模长解构 (\left[, \right], \left|, \right|, \left\{, \right\}, \|, \Vert, \lVert, \rVert, ‖)
@@ -3217,9 +3248,10 @@ namespace Northtropic.Services
                     }
                     return $"{num}/{den}";
                 });
-                // LaTeX 根号解构 (支持 \sqrt{x} 与无大括号 \sqrt2 映射为 sqrt(x))
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\sqrt\{\s*([^}]+?)\s*\}", "sqrt($1)");
+                // LaTeX 根号解构 (支持 \sqrt{x} 与无大括号 \sqrt2 映射为 sqrt(x), 三次方根与任意次方根 \sqrt[n]{x} 映射为 root(n,x))
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\cbrt\{\s*([^}]+?)\s*\}", "root(3,$1)");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\sqrt\[(\d+)\]\{\s*([^}]+?)\s*\}", "root($1,$2)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\sqrt\{\s*([^}]+?)\s*\}", "sqrt($1)");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\sqrt\s*(\d)", "sqrt($1)");
                 // 隐式乘法补全：系数紧跟根号或 pi (如 2sqrt(3) -> 2*sqrt(3), 2\pi -> 2*pi)
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=\d)\s*sqrt\(", "*sqrt(");
@@ -3245,9 +3277,31 @@ namespace Northtropic.Services
                 // 向量与线段标记解构: \vec{a} -> a, \overrightarrow{AB} -> AB, \overline{AB} -> AB, \vec a -> a
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:vec|overrightarrow|overline)\s*\{([^}]+)\}", "$1");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:vec|overrightarrow|overline)\s+([a-zA-Z])\b", "$1");
+
+                // LaTeX 指数花括号规范化: x^{2} -> x^2, 10^{-3} -> 10^-3
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\^\{([^}]+)\}", "^$1");
+                // 负幂与分数指数幂规范化: x^-1 / x^(-1) -> 1/x, x^-2 / x^(-2) -> 1/x^2, x^(1/2) -> sqrt(x), x^(1/3) -> root(3,x)
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b([a-zA-Z0-9]+)\^(?:\(-1\)|-1(?!\d))", "1/$1");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b([a-zA-Z0-9]+)\^(?:\(-2\)|-2(?!\d))", "1/$1^2");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b([a-zA-Z0-9]+)\^(?:\(1/2\)|1/2(?!\d))", "sqrt($1)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b([a-zA-Z0-9]+)\^(?:\(1/3\)|1/3(?!\d))", "root(3,$1)");
+                // 乘号接倒数归一为除号 (如理化复合单位与代数表达式: m * 1/s -> m/s, kJ * 1/mol -> kJ/mol, 2mol·1/L -> 2mol/L, 9.8 m*1/s^2 -> 9.8 m/s^2)
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\s*[\*·]\s*1\s*/\s*", "/");
+                // 自然底数指数函数: e^x -> exp(x), e^(2x) -> exp(2x) (仅当指数含字母变量时转换，保留 e^2, e^3 常数幂给对数求值)
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\be\^([a-zA-Z][a-zA-Z0-9]*)\b", "exp($1)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\be\^\(([a-zA-Z0-9]*[a-zA-Z][a-zA-Z0-9]*)\)", "exp($1)");
+
+                // 中苏传统三角记法归一: \tg -> tan, tg -> tan, \ctg -> cot, ctg -> cot (需先替换 ctg 防止 tg 误伤 ctg)
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<![a-zA-Z])\\?ctg\b", "cot");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<![a-zA-Z])\\?tg\b", "tan");
                 // 三角函数与对数函数前缀反斜杠剥离与自适应空白 (如 \cos\theta -> cos theta, \sin x -> sin x, \ln 2 -> ln 2, \log_2 8 -> log_2 8)
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|lg|log|exp)(?=[a-zA-Z\\(])", "$1 ");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|lg|log|exp)(?=[^a-zA-Z]|$)", "$1");
+                // 倒数三角等价记法解构: 1/tan x -> cot x, 1/cot x -> tan x, 1/cos x -> sec x, 1/sin x -> csc x
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"1\s*/\s*tan\s*(?:\(\s*([a-zA-Z0-9]+)\s*\)|([a-zA-Z0-9]+))", "cot($1$2)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"1\s*/\s*cot\s*(?:\(\s*([a-zA-Z0-9]+)\s*\)|([a-zA-Z0-9]+))", "tan($1$2)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"1\s*/\s*cos\s*(?:\(\s*([a-zA-Z0-9]+)\s*\)|([a-zA-Z0-9]+))", "sec($1$2)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"1\s*/\s*sin\s*(?:\(\s*([a-zA-Z0-9]+)\s*\)|([a-zA-Z0-9]+))", "csc($1$2)");
                 // 对数底数与真数 LaTeX 格式规范化:
                 // 1. 特殊对数底数映射: \log_e -> ln, \log_{10} -> lg
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?e\}?\s*", "ln ");
@@ -3271,8 +3325,6 @@ namespace Northtropic.Services
                      .Replace("ε", "epsilon").Replace("Ω", "omega").Replace("Φ", "phi");
                 // 希腊字母与理科物理量变量名间的冗余空白消除 (如 \Delta E -> deltaE 等价于 ΔE; \omega t -> omegat 等价于 ωt)
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\b(theta|alpha|beta|gamma|lambda|mu|rho|omega|phi|sigma|delta|tau|eta|nu|epsilon)\s+(?=[a-zA-Z0-9])", "$1", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                // LaTeX 指数花括号规范化: x^{2} -> x^2, 10^{-3} -> 10^-3
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\^\{([^}]+)\}", "^$1");
                 // 摄氏度与热力学温度规范化 (在剥离角度"度"前先行保护归一)
                 s = s.Replace("摄氏度", "℃").Replace("摄氏", "℃");
                 // 角度与度数符号等价规范: ^\circ, °, 度, \circ, \text{°}
@@ -3523,7 +3575,8 @@ namespace Northtropic.Services
                 // 全体实数 / 实数集与实数域双向等价归一为 "r"
                 if (sLower == "全体实数" || sLower == "实数集" || sLower == "全体实数集" || 
                     sLower == "(-inf,+inf)" || sLower == "(-inf,inf)" || sLower == "(-inf, +inf)" || 
-                    sLower == "\\mathbb{r}" || sLower == "\\mathbf{r}" || sLower == "r")
+                    sLower == "\\mathbb{r}" || sLower == "\\mathbf{r}" || sLower == "r" ||
+                    sLower == "x属于r" || sLower == "x∈r" || sLower == "x\\in\\mathbb{r}" || sLower == "x\\in r")
                 {
                     return "r";
                 }
@@ -3698,6 +3751,31 @@ namespace Northtropic.Services
                     s = setBuilderMatch.Groups[1].Value.Trim();
                 }
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"^[a-zA-Z]\s*(?:\\in|∈)\s*", "");
+
+                // 中文闭区间规范化: "2到5" / "2至5" / "2~5" -> "[2,5]"
+                var rangeMatch = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?\d+(?:\.\d+)?)\s*(?:到|至|~)\s*([+-]?\d+(?:\.\d+)?)$");
+                if (rangeMatch.Success)
+                {
+                    return $"[{rangeMatch.Groups[1].Value},{rangeMatch.Groups[2].Value}]";
+                }
+
+                // 中文双侧不等式解构: "x大于等于2且小于等于5" -> "2<=x<=5"
+                var cnDoubleIneq = System.Text.RegularExpressions.Regex.Match(s, @"^([a-zA-Z])\s*(大于等于|大于)\s*([^且，,;]+)\s*(?:且|，|,)\s*(小于等于|小于)\s*([^且，,;]+)$");
+                if (cnDoubleIneq.Success)
+                {
+                    string varName = cnDoubleIneq.Groups[1].Value;
+                    string leftOp = cnDoubleIneq.Groups[2].Value == "大于等于" ? "<=" : "<";
+                    string leftVal = cnDoubleIneq.Groups[3].Value.Trim();
+                    string rightOp = cnDoubleIneq.Groups[4].Value == "小于等于" ? "<=" : "<";
+                    string rightVal = cnDoubleIneq.Groups[5].Value.Trim();
+                    s = $"{leftVal}{leftOp}{varName}{rightOp}{rightVal}";
+                }
+
+                // 中文单侧不等式解构: "x大于等于2", "x小于5"
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"^([a-zA-Z])\s*大于等于\s*(.+)$", "$1>=$2");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"^([a-zA-Z])\s*小于等于\s*(.+)$", "$1<=$2");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"^([a-zA-Z])\s*大于\s*(.+)$", "$1>$2");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"^([a-zA-Z])\s*小于\s*(.+)$", "$1<$2");
 
                 // 如果包含复合 "或者" / "或" / "并" / "u" / "∪" 连接的多段不等式或区间 (如 x < -1 或 x > 1, (-inf, -1) u (1, +inf))
                 if (System.Text.RegularExpressions.Regex.IsMatch(s, @"\b(?:或者|或|并)\b|(?<=\d|\))\s*(?:或者|或|并)\s*(?=[a-zA-Z\(])") || s.Contains('u') || s.Contains('∪') || s.Contains("\\cup"))
@@ -4241,6 +4319,144 @@ namespace Northtropic.Services
             }
 
             if (CheckEnergyWorkEquivalence(user, correct) || CheckEnergyWorkEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
+            // 物理与工程单位多量纲换算智能匹配:
+            // 1. 频率: 1 kHz = 1000 Hz, 1 MHz = 10^6 Hz, 1 GHz = 10^9 Hz
+            // 2. 电容: 1 uF = 10^-6 F, 1 nF = 10^-9 F, 1 pF = 10^-12 F
+            // 3. 速度: 36 km/h = 10 m/s (v_ms = v_kmh / 3.6)
+            // 4. 功率: 1 kW = 1000 W, 1 MW = 10^6 W
+            // 5. 压强: 100 kPa = 100000 Pa = 10^5 Pa, 1 MPa = 10^6 Pa
+            static bool CheckScientificPhysicalQuantityEquivalence(string s1, string s2)
+            {
+                if (string.IsNullOrWhiteSpace(s1) || string.IsNullOrWhiteSpace(s2)) return false;
+                s1 = s1.Trim().ToLowerInvariant().Replace(" ", "");
+                s2 = s2.Trim().ToLowerInvariant().Replace(" ", "");
+
+                // A. 频率 (以 Hz 为基底)
+                static bool TryExtractHz(string s, out double hz)
+                {
+                    hz = 0;
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?\d+(?:\.\d+)?(?:e[+-]?\d+|\*10\^[+-]?\d+)?)\s*(hz|khz|mhz|ghz|赫兹|千赫|兆赫|吉赫)$");
+                    if (m.Success && TryParseScientificOrNumber(m.Groups[1].Value, out double val))
+                    {
+                        string unit = m.Groups[2].Value;
+                        hz = unit switch
+                        {
+                            "ghz" or "吉赫" => val * 1e9,
+                            "mhz" or "兆赫" => val * 1e6,
+                            "khz" or "千赫" => val * 1e3,
+                            _ => val
+                        };
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (TryExtractHz(s1, out double hz1) && TryExtractHz(s2, out double hz2))
+                {
+                    return Math.Abs(hz1 - hz2) < 1e-4 || Math.Abs(hz1 - hz2) / Math.Max(Math.Abs(hz1), Math.Abs(hz2)) < 1e-4;
+                }
+
+                // B. 电容 (以 F 为基底)
+                static bool TryExtractFarad(string s, out double farad)
+                {
+                    farad = 0;
+                    s = s.Replace("μ", "u").Replace("\\mu", "u");
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?\d+(?:\.\d+)?(?:e[+-]?\d+|\*10\^[+-]?\d+)?)\s*(f|uf|nf|pf|法拉|微法|纳法|皮法)$");
+                    if (m.Success && TryParseScientificOrNumber(m.Groups[1].Value, out double val))
+                    {
+                        string unit = m.Groups[2].Value;
+                        farad = unit switch
+                        {
+                            "pf" or "皮法" => val * 1e-12,
+                            "nf" or "纳法" => val * 1e-9,
+                            "uf" or "微法" => val * 1e-6,
+                            _ => val
+                        };
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (TryExtractFarad(s1, out double f1) && TryExtractFarad(s2, out double f2))
+                {
+                    return Math.Abs(f1 - f2) < 1e-15 || Math.Abs(f1 - f2) / Math.Max(Math.Abs(f1), Math.Abs(f2)) < 1e-4;
+                }
+
+                // C. 速度 (以 m/s 为基底)
+                static bool TryExtractSpeedMs(string s, out double ms)
+                {
+                    ms = 0;
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?\d+(?:\.\d+)?(?:e[+-]?\d+|\*10\^[+-]?\d+)?)\s*(m/s|米/秒|米每秒|km/h|千米/小时|千米每小时|公里/小时)$");
+                    if (m.Success && TryParseScientificOrNumber(m.Groups[1].Value, out double val))
+                    {
+                        string unit = m.Groups[2].Value;
+                        ms = (unit == "km/h" || unit.Contains("千米") || unit.Contains("公里")) ? (val / 3.6) : val;
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (TryExtractSpeedMs(s1, out double v1) && TryExtractSpeedMs(s2, out double v2))
+                {
+                    return Math.Abs(v1 - v2) < 1e-3 || Math.Abs(v1 - v2) / Math.Max(Math.Abs(v1), Math.Abs(v2)) < 1e-4;
+                }
+
+                // D. 功率 (以 W 为基底)
+                static bool TryExtractWatt(string s, out double watt)
+                {
+                    watt = 0;
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?\d+(?:\.\d+)?(?:e[+-]?\d+|\*10\^[+-]?\d+)?)\s*(w|kw|mw|瓦特?|千瓦|兆瓦)$");
+                    if (m.Success && TryParseScientificOrNumber(m.Groups[1].Value, out double val))
+                    {
+                        string unit = m.Groups[2].Value;
+                        watt = unit switch
+                        {
+                            "mw" or "兆瓦" => val * 1e6,
+                            "kw" or "千瓦" => val * 1e3,
+                            _ => val
+                        };
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (TryExtractWatt(s1, out double w1) && TryExtractWatt(s2, out double w2))
+                {
+                    return Math.Abs(w1 - w2) < 1e-3 || Math.Abs(w1 - w2) / Math.Max(Math.Abs(w1), Math.Abs(w2)) < 1e-4;
+                }
+
+                // E. 压强 (以 Pa 为基底)
+                static bool TryExtractPascal(string s, out double pa)
+                {
+                    pa = 0;
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?\d+(?:\.\d+)?(?:e[+-]?\d+|\*10\^[+-]?\d+)?)\s*(pa|kpa|mpa|帕斯卡?|千帕|兆帕)$");
+                    if (m.Success && TryParseScientificOrNumber(m.Groups[1].Value, out double val))
+                    {
+                        string unit = m.Groups[2].Value;
+                        pa = unit switch
+                        {
+                            "mpa" or "兆帕" => val * 1e6,
+                            "kpa" or "千帕" => val * 1e3,
+                            _ => val
+                        };
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (TryExtractPascal(s1, out double pa1) && TryExtractPascal(s2, out double pa2))
+                {
+                    return Math.Abs(pa1 - pa2) < 1e-3 || Math.Abs(pa1 - pa2) / Math.Max(Math.Abs(pa1), Math.Abs(pa2)) < 1e-4;
+                }
+
+                return false;
+            }
+
+            if (CheckScientificPhysicalQuantityEquivalence(user, correct) || CheckScientificPhysicalQuantityEquivalence(normUser, normCorrect))
             {
                 return true;
             }

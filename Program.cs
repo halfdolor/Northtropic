@@ -258,13 +258,38 @@ app.MapGet("/api/system/backups/download", async (
     }
 });
 
-// 系统微服务 / 探针标准健康检查接口 (200 OK / 503 Service Unavailable)
+// 系统微服务 / 探针标准健康检查接口 (200 OK / 503 Service Unavailable，支持 mode=live 极速存活探针与 mode=ready/deep 全量就绪探针)
 app.MapGet("/api/health", async (
     ISystemHealthService healthService,
-    Northtropic.Data.AppDbContext dbContext) =>
+    Northtropic.Data.AppDbContext dbContext,
+    string? mode) =>
 {
     try
     {
+        // 极速存活探针 (Liveness Probe)：零数据库 IO 探测，面向 Kubernetes / 宿主守护进程高频探活
+        if (string.Equals(mode, "live", StringComparison.OrdinalIgnoreCase))
+        {
+            var procUptime = TimeSpan.Zero;
+            try
+            {
+                using var proc = System.Diagnostics.Process.GetCurrentProcess();
+                procUptime = DateTime.Now - proc.StartTime;
+            }
+            catch { }
+
+            var livePayload = new
+            {
+                status = "Live",
+                mode = "liveness",
+                timestamp = DateTime.UtcNow,
+                dotnetVersion = Environment.Version.ToString(),
+                processUptime = $"{procUptime.Days}天 {procUptime.Hours:D2}:{procUptime.Minutes:D2}:{procUptime.Seconds:D2}",
+                gcMemoryBytes = GC.GetTotalMemory(false)
+            };
+            return Results.Ok(livePayload);
+        }
+
+        // 全量就绪探针 (Readiness / Deep Probe)：检测数据库联通性、存储拓扑与架构指标
         var sw = System.Diagnostics.Stopwatch.StartNew();
         bool canConnect = await dbContext.Database.CanConnectAsync();
         sw.Stop();
@@ -274,6 +299,7 @@ app.MapGet("/api/health", async (
         var payload = new
         {
             status = canConnect ? "Healthy" : "Degraded",
+            mode = "readiness",
             timestamp = DateTime.UtcNow,
             databaseConnected = canConnect,
             databaseLatencyMs = sw.Elapsed.TotalMilliseconds,

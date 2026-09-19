@@ -734,6 +734,9 @@
                                 <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" StartIcon="@Icons.Material.Filled.Link" OnClick="RunForeignKeyCheckAsync" Disabled="@_isCheckingForeignKey">
                                     @(_isCheckingForeignKey ? "校验中..." : "外键校验")
                                 </MudButton>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.FactCheck" OnClick="RunDataIntegrityAuditAsync" Disabled="@_isAuditingIntegrity">
+                                    @(_isAuditingIntegrity ? "审计中..." : "数据拓扑审计")
+                                </MudButton>
                                 <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Compress" OnClick="VacuumDatabaseAsync" Disabled="@_isVacuuming">
                                     @(_isVacuuming ? "重整中..." : "物理碎片重整")
                                 </MudButton>
@@ -967,6 +970,95 @@
                                         }
                                     </div>
                                 </MudAlert>
+                            }
+                        </div>
+
+                        <!-- 数据拓扑与孤儿记录体检自愈中心 (Data Integrity & Orphan Self-Healing) -->
+                        <div class="pa-4 rounded-lg glass-card mb-4" style="background: var(--sub-card-bg); border: 1px solid var(--glass-card-border);">
+                            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                                <div class="d-flex align-center gap-2">
+                                    <MudIcon Icon="@Icons.Material.Filled.FactCheck" Color="Color.Success" />
+                                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold">数据拓扑完整性体检与孤儿自愈</MudText>
+                                    @if (_dataIntegrityAudit != null)
+                                    {
+                                        <MudChip T="string"
+                                                 Color="@(_dataIntegrityAudit.IsHealthy ? Color.Success : Color.Warning)"
+                                                 Size="Size.Small" Variant="Variant.Filled" Class="font-weight-bold">
+                                            @(_dataIntegrityAudit.IsHealthy ? "拓扑无暇 (0 孤儿)" : $"发现 {_dataIntegrityAudit.TotalIssuesCount} 项孤儿异常")
+                                        </MudChip>
+                                    }
+                                </div>
+                                <div class="d-flex align-center gap-2 flex-wrap">
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Search" OnClick="RunDataIntegrityAuditAsync" Disabled="@_isAuditingIntegrity">
+                                        @(_isAuditingIntegrity ? "全库审计中..." : "🔍 审计数据拓扑")
+                                    </MudButton>
+                                    @if (_dataIntegrityAudit != null && !_dataIntegrityAudit.IsHealthy)
+                                    {
+                                        <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" StartIcon="@Icons.Material.Filled.CleaningServices" OnClick="PurgeOrphanRecordsAsync" Disabled="@_isPurgingOrphans" Class="font-weight-bold">
+                                            @(_isPurgingOrphans ? "自愈清理中..." : "🧹 彻底自愈清理孤儿记录")
+                                        </MudButton>
+                                    }
+                                </div>
+                            </div>
+
+                            @if (_dataIntegrityAudit != null)
+                            {
+                                <MudGrid Spacing="2">
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">错题孤儿项</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.OrphanErrorItemsCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.OrphanErrorItemsCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">练习孤儿记录</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.OrphanPracticeRecordsCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.OrphanPracticeRecordsCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">收藏孤儿记录</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.OrphanFavoritesCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.OrphanFavoritesCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">作业孤儿分配</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.OrphanHomeworkAssignmentsCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.OrphanHomeworkAssignmentsCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">家校孤儿绑定</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.OrphanParentBindingsCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.OrphanParentBindingsCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">学习计划孤儿</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.OrphanStudyPlansCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.OrphanStudyPlansCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                </MudGrid>
+                            }
+                            else
+                            {
+                                <div class="pa-3 text-center mud-text-secondary" style="font-size: 0.82rem;">
+                                    点击“🔍 审计数据拓扑”全方位排查外键孤儿记录与悬空引用的数据完整性。
+                                </div>
                             }
                         </div>
 
@@ -1214,6 +1306,9 @@
     private string _selectedTelemetryLevel = "全部";
     private List<TableStorageMetricDto> _tableStorageMetrics = new();
     private Dictionary<string, string> _sha256Cache = new();
+    private DataIntegrityAuditDto? _dataIntegrityAudit;
+    private bool _isAuditingIntegrity = false;
+    private bool _isPurgingOrphans = false;
 
     private void FilterTelemetryEvents()
     {
@@ -1676,6 +1771,55 @@
         }
     }
 
+    private async Task RunDataIntegrityAuditAsync()
+    {
+        _isAuditingIntegrity = true;
+        StateHasChanged();
+        try
+        {
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            if (_dataIntegrityAudit.IsHealthy)
+            {
+                Snackbar.Add("🛡️ 数据拓扑完整性审计通过！全库实体无悬挂孤儿引用与格式破损。", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"⚠️ 数据拓扑审计发现 {_dataIntegrityAudit.TotalIssuesCount} 项孤儿异常记录，可点击自愈清理。", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"数据拓扑审计异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isAuditingIntegrity = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task PurgeOrphanRecordsAsync()
+    {
+        _isPurgingOrphans = true;
+        StateHasChanged();
+        try
+        {
+            var res = await SystemHealthService.PurgeOrphanedRecordsAsync();
+            Snackbar.Add($"🧹 孤儿记录清理自愈完成：共清理 {res.TotalPurgedCount} 条悬挂记录 (耗时 {res.ElapsedMilliseconds}ms)！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"清理孤儿记录异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isPurgingOrphans = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task VacuumDatabaseAsync()
     {
         _isVacuuming = true;
@@ -1752,6 +1896,14 @@
             var optRes = await SystemHealthService.OptimizeDatabaseAsync();
             var fkStatus = await SystemHealthService.RunDatabaseForeignKeyCheckAsync();
             var integrityStatus = await SystemHealthService.RunDatabaseIntegrityCheckAsync();
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            int purgedCount = 0;
+            if (!_dataIntegrityAudit.IsHealthy)
+            {
+                var purgeRes = await SystemHealthService.PurgeOrphanedRecordsAsync();
+                purgedCount = purgeRes.TotalPurgedCount;
+                _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            }
             _healthDto = await SystemHealthService.GetSystemHealthAsync();
 
             bool isFkHealthy = fkStatus.Equals("ok", StringComparison.OrdinalIgnoreCase);
@@ -1760,6 +1912,7 @@
             string reportHtml = $"<b>🚀 全维体检与自愈优化执行报告：</b><br/><br/>" +
                                 $"• <b>物理 B-Tree 完整性：</b><span style='color: {(isIntegrityHealthy ? "#10b981" : "#ef4444")}; font-weight: bold;'>{integrityStatus}</span><br/>" +
                                 $"• <b>外键关系完整性：</b><span style='color: {(isFkHealthy ? "#10b981" : "#ef4444")}; font-weight: bold;'>{fkStatus}</span><br/>" +
+                                $"• <b>数据拓扑自愈清理：</b><span style='color: #10b981; font-weight: bold;'>清理 {purgedCount} 条孤儿记录 (当前 {_dataIntegrityAudit.TotalIssuesCount} 异常)</span><br/>" +
                                 $"• <b>查询计划统计分析 (ANALYZE)：</b><span style='color: #10b981; font-weight: bold;'>{optRes.AnalyzeStatus}</span><br/>" +
                                 $"• <b>查询计划自愈 (OPTIMIZE)：</b><span style='color: #10b981; font-weight: bold;'>{optRes.OptimizeStatus}</span><br/>" +
                                 $"• <b>WAL 日志截断归档：</b><span style='color: #10b981; font-weight: bold;'>{optRes.CheckpointStatus}</span><br/>" +

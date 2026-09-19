@@ -197,6 +197,42 @@ namespace Northtropic.Services
         public double? DurationMs { get; set; }
     }
 
+    public class DataIntegrityAuditDto
+    {
+        public DateTime AuditedAt { get; set; } = DateTime.Now;
+        public int TotalOrphanErrorItems { get; set; }
+        public int TotalOrphanPracticeRecords { get; set; }
+        public int TotalOrphanUserFavorites { get; set; }
+        public int TotalOrphanHomeworkAssignments { get; set; }
+        public int TotalOrphanBindings { get; set; }
+        public int TotalOrphanStudyPlans { get; set; }
+        public int TotalCorruptedQuestions { get; set; }
+        public int OrphanErrorItemsCount => TotalOrphanErrorItems;
+        public int OrphanPracticeRecordsCount => TotalOrphanPracticeRecords;
+        public int OrphanFavoritesCount => TotalOrphanUserFavorites;
+        public int OrphanHomeworkAssignmentsCount => TotalOrphanHomeworkAssignments;
+        public int OrphanParentBindingsCount => TotalOrphanBindings;
+        public int OrphanStudyPlansCount => TotalOrphanStudyPlans;
+        public int TotalIssuesCount => TotalOrphanErrorItems + TotalOrphanPracticeRecords + TotalOrphanUserFavorites + TotalOrphanHomeworkAssignments + TotalOrphanBindings + TotalOrphanStudyPlans + TotalCorruptedQuestions;
+        public bool IsHealthy => TotalIssuesCount == 0;
+        public List<string> AuditDetails { get; set; } = new();
+    }
+
+    public class DataIntegrityPurgeResultDto
+    {
+        public bool Success { get; set; } = true;
+        public int PurgedErrorItemsCount { get; set; }
+        public int PurgedPracticeRecordsCount { get; set; }
+        public int PurgedUserFavoritesCount { get; set; }
+        public int PurgedHomeworkAssignmentsCount { get; set; }
+        public int PurgedBindingsCount { get; set; }
+        public int PurgedStudyPlansCount { get; set; }
+        public int TotalPurgedCount => PurgedErrorItemsCount + PurgedPracticeRecordsCount + PurgedUserFavoritesCount + PurgedHomeworkAssignmentsCount + PurgedBindingsCount + PurgedStudyPlansCount;
+        public double ElapsedMilliseconds { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public DateTime ExecutedAt { get; set; } = DateTime.Now;
+    }
+
     public class ArchitecturalDiagnosticResultDto
     {
         public DateTime ExecutedAt { get; set; } = DateTime.Now;
@@ -205,6 +241,8 @@ namespace Northtropic.Services
         public double LatencyMs { get; set; }
         public string SqliteIntegrity { get; set; } = "ok";
         public string ForeignKeyIntegrity { get; set; } = "ok";
+        public string DataIntegrityStatus { get; set; } = "ok";
+        public int DataIntegrityIssuesCount { get; set; }
         public int CoreTablesFound { get; set; }
         public long TotalQuestionsScanned { get; set; }
         public long GcMemoryBytes { get; set; }
@@ -230,6 +268,7 @@ namespace Northtropic.Services
         public bool RequiresOptimization { get; set; }
         public bool RequiresVacuum { get; set; }
         public bool RequiresWalCheckpoint { get; set; }
+        public bool RequiresOrphanCleanup { get; set; }
         public string UrgencyLevel { get; set; } = "Low"; // "Low", "Medium", "High", "Critical"
         public List<string> ActionReasons { get; set; } = new();
     }
@@ -240,6 +279,7 @@ namespace Northtropic.Services
         public string Message { get; set; } = string.Empty;
         public double ElapsedMilliseconds { get; set; }
         public long BytesReclaimed { get; set; }
+        public int PurgedOrphanCount { get; set; }
         public List<string> ExecutedActions { get; set; } = new();
         public long BeforeWalSizeBytes { get; set; }
         public long AfterWalSizeBytes { get; set; }
@@ -269,6 +309,8 @@ namespace Northtropic.Services
         Task<string> ExportArchitectureDiagnosticReportMarkdownAsync();
         Task<List<TableStorageMetricDto>> GetTableStorageMetricsAsync();
         Task<ArchitecturalDiagnosticResultDto> RunArchitecturalSelfDiagnosticAsync();
+        Task<DataIntegrityAuditDto> AuditDataIntegrityAsync();
+        Task<DataIntegrityPurgeResultDto> PurgeOrphanedRecordsAsync();
         IReadOnlyList<SystemArchitectureEvent> GetRecentArchitectureEvents(string? category = null, string? level = null, int? maxCount = null);
         ArchitectureTelemetrySummaryDto GetArchitectureTelemetrySummary();
         Task<AdaptiveMaintenancePlanDto> EvaluateAdaptiveMaintenancePlanAsync();
