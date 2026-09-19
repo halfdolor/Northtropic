@@ -72,9 +72,9 @@ namespace Northtropic.Services
 
     public interface IStudentEvolutionService
     {
-        Task<List<KnowledgePointMasteryDto>> GetMasteryOverviewAsync(Guid userId, string? subject = null);
-        Task<EvolutionDiagnosisReportDto> GenerateDiagnosisReportAsync(Guid userId);
-        Task<List<KnowledgePointMasteryDto>> GetPendingSpacedReviewNodesAsync(Guid userId);
-        Task<List<PrerequisiteTraceWarningDto>> TraceWeakPrerequisitesAsync(Guid userId, string subject, string category);
+        Task<List<KnowledgePointMasteryDto>> GetMasteryOverviewAsync(Guid userId, string? subject = null, Guid? requestorUserId = null);
+        Task<EvolutionDiagnosisReportDto> GenerateDiagnosisReportAsync(Guid userId, Guid? requestorUserId = null);
+        Task<List<KnowledgePointMasteryDto>> GetPendingSpacedReviewNodesAsync(Guid userId, Guid? requestorUserId = null);
+        Task<List<PrerequisiteTraceWarningDto>> TraceWeakPrerequisitesAsync(Guid userId, string subject, string category, Guid? requestorUserId = null);
     }
 }

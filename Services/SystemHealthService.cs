@@ -1821,6 +1821,58 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalUsersWithInvalidBalances} 个用户存在经验/金币异常或等级脱节");
                 }
 
+                // 15. StudyPlan Domain Invariants
+                var studyPlans = await db.StudyPlans
+                    .Include(p => p.Tasks)
+                    .Select(p => new {
+                        p.Id,
+                        p.UserId,
+                        p.DailyTargetQuestions,
+                        p.TargetAccuracyRate,
+                        p.StartDate,
+                        p.TargetEndDate,
+                        p.Status,
+                        p.CompletedDate,
+                        TaskCount = p.Tasks.Count,
+                        AllTasksCompleted = p.Tasks.Count > 0 && p.Tasks.All(t => t.IsCompleted),
+                        AnyTaskAnomalous = p.Tasks.Any(t => t.TargetCount < 1 || t.CompletedCount < 0 || (t.CompletedCount >= t.TargetCount && !t.IsCompleted) || (t.IsCompleted && t.CompletedCount < t.TargetCount))
+                    })
+                    .ToListAsync();
+
+                var activeUserPlans = studyPlans
+                    .Where(p => p.Status == StudyPlanStatus.Active)
+                    .GroupBy(p => p.UserId)
+                    .Where(g => g.Count() > 1)
+                    .ToList();
+                int multiActiveDuplicateCount = activeUserPlans.Sum(g => g.Count() - 1);
+
+                int invalidStudyPlansCount = studyPlans.Count(p =>
+                    p.DailyTargetQuestions < 1 || p.DailyTargetQuestions > 100 ||
+                    p.TargetAccuracyRate < 50.0 || p.TargetAccuracyRate > 100.0 ||
+                    p.TargetEndDate < p.StartDate ||
+                    (p.Status == StudyPlanStatus.Completed && p.CompletedDate == null) ||
+                    (p.Status == StudyPlanStatus.Active && p.AllTasksCompleted) ||
+                    p.AnyTaskAnomalous
+                ) + multiActiveDuplicateCount;
+
+                audit.TotalInvalidStudyPlans = invalidStudyPlansCount;
+                if (audit.TotalInvalidStudyPlans > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidStudyPlans} 项学习计划领域不变量异常 (包含负数题量、未同步完成态或并存多个活跃计划)");
+                }
+
+                // 16. StudentParentBinding Domain Invariants (Self-binding & Duplicate Binding)
+                int selfBindingCount = bindings.Count(b => b.ParentUserId == b.StudentUserId);
+                int duplicateBindingCount = bindings
+                    .GroupBy(b => new { b.ParentUserId, b.StudentUserId })
+                    .Where(g => g.Count() > 1)
+                    .Sum(g => g.Count() - 1);
+                audit.TotalInvalidBindings = selfBindingCount + duplicateBindingCount;
+                if (audit.TotalInvalidBindings > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidBindings} 条异常家校监护绑定 (包含自我绑定或冗余副本)");
+                }
+
                 if (audit.IsHealthy)
                 {
                     audit.AuditDetails.Add("✅ 数据库全库拓扑与业务外键完整性审计通过，未发现任何孤儿或格式损坏记录。");
@@ -2453,6 +2505,200 @@ namespace Northtropic.Services
             {
                 await db.SaveChangesAsync();
                 RecordArchitectureEvent("ErrorBookInvariants", "Success", $"校准并自愈了 {healedCount} 项错题副本领域不变量与重复数据");
+            }
+
+            return healedCount;
+        }
+
+        public async Task<int> HealStudyPlanInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            int healedCount = 0;
+
+            // 1. 加载所有计划及其任务列表
+            var plans = await db.StudyPlans
+                .Include(p => p.Tasks)
+                .ToListAsync();
+
+            foreach (var plan in plans)
+            {
+                bool planModified = false;
+
+                // A. 计划全局参数约束校准
+                if (plan.DailyTargetQuestions < 1)
+                {
+                    plan.DailyTargetQuestions = 15;
+                    planModified = true;
+                }
+                else if (plan.DailyTargetQuestions > 100)
+                {
+                    plan.DailyTargetQuestions = 100;
+                    planModified = true;
+                }
+
+                if (plan.TargetAccuracyRate < 50.0 || plan.TargetAccuracyRate > 100.0)
+                {
+                    plan.TargetAccuracyRate = Math.Clamp(plan.TargetAccuracyRate, 50.0, 100.0);
+                    if (plan.TargetAccuracyRate < 50.0) plan.TargetAccuracyRate = 85.0;
+                    planModified = true;
+                }
+
+                if (plan.TargetEndDate < plan.StartDate)
+                {
+                    plan.TargetEndDate = plan.StartDate.AddDays(7);
+                    planModified = true;
+                }
+
+                if (plan.SupervisionNudgeCount < 0)
+                {
+                    plan.SupervisionNudgeCount = 0;
+                    planModified = true;
+                }
+
+                // B. 子任务领域不变量校准与完成状态对齐
+                foreach (var task in plan.Tasks)
+                {
+                    bool taskModified = false;
+
+                    if (task.TargetCount < 1)
+                    {
+                        task.TargetCount = 1;
+                        taskModified = true;
+                    }
+
+                    if (task.CompletedCount < 0)
+                    {
+                        task.CompletedCount = 0;
+                        taskModified = true;
+                    }
+
+                    if (task.TargetAccuracy < 50.0 || task.TargetAccuracy > 100.0)
+                    {
+                        task.TargetAccuracy = Math.Clamp(task.TargetAccuracy, 50.0, 100.0);
+                        if (task.TargetAccuracy < 50.0) task.TargetAccuracy = 80.0;
+                        taskModified = true;
+                    }
+
+                    // 若已达到目标题量但未标记达标，自动推进为达标
+                    if (task.CompletedCount >= task.TargetCount && !task.IsCompleted)
+                    {
+                        task.IsCompleted = true;
+                        task.CompletedAt ??= DateTime.Now;
+                        taskModified = true;
+                    }
+                    // 若已标记达标但完成题量小于目标题量，校准完成数
+                    else if (task.IsCompleted && task.CompletedCount < task.TargetCount)
+                    {
+                        task.CompletedCount = task.TargetCount;
+                        taskModified = true;
+                    }
+
+                    if (taskModified)
+                    {
+                        healedCount++;
+                    }
+                }
+
+                // C. 计划整体完成态拓扑对齐
+                bool allTasksCompleted = plan.Tasks.Count > 0 && plan.Tasks.All(t => t.IsCompleted);
+
+                // 若所有子任务已全部达标，但计划仍处于 Active 状态，自动推进到 Completed
+                if (allTasksCompleted && plan.Status == StudyPlanStatus.Active)
+                {
+                    plan.Status = StudyPlanStatus.Completed;
+                    plan.CompletedDate ??= DateTime.Now;
+                    plan.UpdatedAt = DateTime.Now;
+                    planModified = true;
+                }
+                // 若处于 Completed 状态但没有完成时间戳，填补时间戳
+                else if (plan.Status == StudyPlanStatus.Completed && plan.CompletedDate == null)
+                {
+                    plan.CompletedDate = plan.UpdatedAt != default ? plan.UpdatedAt : DateTime.Now;
+                    planModified = true;
+                }
+                // 若处于 Active 状态但任务并未全部完成，却有 CompletedDate，清除异常完成时间戳
+                else if (plan.Status == StudyPlanStatus.Active && !allTasksCompleted && plan.CompletedDate != null)
+                {
+                    plan.CompletedDate = null;
+                    planModified = true;
+                }
+
+                if (planModified)
+                {
+                    healedCount++;
+                }
+            }
+
+            // 2. 多重活跃计划冲突收敛（去重）：同一学生只允许一份 Active 计划，保留最新创建的一份，其余转为 Adjusted
+            var userActivePlans = plans
+                .Where(p => p.Status == StudyPlanStatus.Active)
+                .GroupBy(p => p.UserId)
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            foreach (var group in userActivePlans)
+            {
+                // 按创建时间倒序排，最新保留为 Active
+                var sorted = group.OrderByDescending(p => p.CreatedAt).ToList();
+                for (int i = 1; i < sorted.Count; i++)
+                {
+                    sorted[i].Status = StudyPlanStatus.Adjusted;
+                    sorted[i].UpdatedAt = DateTime.Now;
+                    healedCount++;
+                }
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("StudyPlanInvariantSelfHealing", "Success", $"校准并自愈了 {healedCount} 项学习计划领域不变量与多活跃计划冲突");
+            }
+
+            return healedCount;
+        }
+
+        public async Task<int> HealStudentParentBindingInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            int healedCount = 0;
+
+            var bindings = await db.StudentParentBindings.ToListAsync();
+
+            // 1. 清理无效自我绑定 (ParentUserId == StudentUserId)
+            var selfBindings = bindings.Where(b => b.ParentUserId == b.StudentUserId).ToList();
+            if (selfBindings.Count > 0)
+            {
+                db.StudentParentBindings.RemoveRange(selfBindings);
+                healedCount += selfBindings.Count;
+            }
+
+            // 2. 去除重复冗余绑定副本 (相同 ParentUserId 与 StudentUserId)
+            var duplicateGroups = bindings
+                .Where(b => b.ParentUserId != b.StudentUserId)
+                .GroupBy(b => new { b.ParentUserId, b.StudentUserId })
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            foreach (var group in duplicateGroups)
+            {
+                // 保留创建时间最早的一条合法记录
+                var canonical = group.OrderBy(b => b.CreatedAt).First();
+                var duplicatesToRemove = group.Where(b => b.Id != canonical.Id).ToList();
+                if (duplicatesToRemove.Count > 0)
+                {
+                    db.StudentParentBindings.RemoveRange(duplicatesToRemove);
+                    healedCount += duplicatesToRemove.Count;
+                }
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("StudentParentBindingInvariantSelfHealing", "Success", $"清理并自愈了 {healedCount} 条无效自我监护与冗余绑定记录");
             }
 
             return healedCount;

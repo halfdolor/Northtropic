@@ -1013,6 +1013,15 @@
                                     <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick="HealErrorBookInvariantsAsync" Disabled="@_isHealingErrorBook" Class="font-weight-bold">
                                         @(_isHealingErrorBook ? "自愈中..." : "🩺 自愈错题副本不变量")
                                     </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Tertiary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AssignmentTurnedIn" OnClick="HealStudyPlanInvariantsAsync" Disabled="@_isHealingStudyPlans" Class="font-weight-bold">
+                                        @(_isHealingStudyPlans ? "自愈中..." : "🎯 自愈学习计划不变量")
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" StartIcon="@Icons.Material.Filled.TaskAlt" OnClick="HealHomeworkAssignmentInvariantsAsync" Disabled="@_isHealingHomeworkAssignments" Class="font-weight-bold">
+                                        @(_isHealingHomeworkAssignments ? "自愈中..." : "📝 自愈作业分配不变量")
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.FamilyRestroom" OnClick="HealStudentParentBindingInvariantsAsync" Disabled="@_isHealingBindings" Class="font-weight-bold">
+                                        @(_isHealingBindings ? "自愈中..." : "👨‍👩‍👧 自愈家校监护绑定")
+                                    </MudButton>
                                 </div>
                             </div>
 
@@ -1080,6 +1089,22 @@
                                             <div class="mud-text-secondary" style="font-size: 0.72rem;">资产/等级脱节</div>
                                             <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.UsersWithInvalidBalancesCount > 0 ? "#ef4444" : "#10b981");">
                                                 @_dataIntegrityAudit.UsersWithInvalidBalancesCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="6" md="3">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">学习计划领域异常</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.InvalidStudyPlansCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.InvalidStudyPlansCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="6" md="3">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">异常监护绑定</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.InvalidBindingsCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.InvalidBindingsCount
                                             </div>
                                         </div>
                                     </MudItem>
@@ -1343,6 +1368,9 @@
     private bool _isDeduplicatingQuestions = false;
     private bool _isHealingBalances = false;
     private bool _isHealingErrorBook = false;
+    private bool _isHealingStudyPlans = false;
+    private bool _isHealingHomeworkAssignments = false;
+    private bool _isHealingBindings = false;
 
     private void FilterTelemetryEvents()
     {
@@ -1927,6 +1955,72 @@
         }
     }
 
+    private async Task HealStudyPlanInvariantsAsync()
+    {
+        _isHealingStudyPlans = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealStudyPlanInvariantsAsync();
+            Snackbar.Add($"🎯 学习计划领域不变量自愈完成：成功修正/收敛 {healedCount} 项计划与任务！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"学习计划自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingStudyPlans = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HealHomeworkAssignmentInvariantsAsync()
+    {
+        _isHealingHomeworkAssignments = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealHomeworkAssignmentInvariantsAsync();
+            Snackbar.Add($"📝 作业分配领域不变量自愈完成：成功修正/对齐 {healedCount} 份作业！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"作业分配自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingHomeworkAssignments = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HealStudentParentBindingInvariantsAsync()
+    {
+        _isHealingBindings = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealStudentParentBindingInvariantsAsync();
+            Snackbar.Add($"👨‍👩‍👧 家校监护绑定自愈完成：成功清理/去重 {healedCount} 条异常绑定！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"家校绑定自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingBindings = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task VacuumDatabaseAsync()
     {
         _isVacuuming = true;
@@ -2009,6 +2103,20 @@
             {
                 var purgeRes = await SystemHealthService.PurgeOrphanedRecordsAsync();
                 purgedCount = purgeRes.TotalPurgedCount;
+                if (_dataIntegrityAudit.TotalInvalidStudyPlans > 0)
+                {
+                    await SystemHealthService.HealStudyPlanInvariantsAsync();
+                }
+                if (_dataIntegrityAudit.TotalInvalidBindings > 0)
+                {
+                    await SystemHealthService.HealStudentParentBindingInvariantsAsync();
+                }
+                if (_dataIntegrityAudit.UsersWithInvalidBalancesCount > 0)
+                {
+                    await SystemHealthService.HealGamificationInvariantsAsync();
+                }
+                await SystemHealthService.HealHomeworkAssignmentInvariantsAsync();
+                await SystemHealthService.HealErrorBookInvariantsAsync();
                 _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
             }
             _healthDto = await SystemHealthService.GetSystemHealthAsync();

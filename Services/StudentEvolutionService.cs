@@ -37,10 +37,36 @@ namespace Northtropic.Services
             return AsyncDbScope.CreateAsync(_dbContextFactory, _dbContext);
         }
 
-        public async Task<List<KnowledgePointMasteryDto>> GetMasteryOverviewAsync(Guid userId, string? subject = null)
+        private async Task<bool> IsAuthorizedToAccessStudentAsync(Guid callerUserId, Guid studentUserId, AppDbContext db)
+        {
+            if (callerUserId == studentUserId) return true;
+
+            var caller = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == callerUserId);
+            if (caller == null) return false;
+            if (caller.Role == UserRole.SuperAdmin || caller.Role == UserRole.Teacher) return true;
+
+            if (caller.Role == UserRole.Parent)
+            {
+                return await db.StudentParentBindings.AsNoTracking()
+                    .AnyAsync(b => b.ParentUserId == callerUserId && b.StudentUserId == studentUserId);
+            }
+
+            return false;
+        }
+
+        public async Task<List<KnowledgePointMasteryDto>> GetMasteryOverviewAsync(Guid userId, string? subject = null, Guid? requestorUserId = null)
         {
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
+
+            if (requestorUserId.HasValue && requestorUserId.Value != Guid.Empty && requestorUserId.Value != userId)
+            {
+                var isAuthorized = await IsAuthorizedToAccessStudentAsync(requestorUserId.Value, userId, ctx);
+                if (!isAuthorized)
+                {
+                    return new List<KnowledgePointMasteryDto>();
+                }
+            }
 
             var user = await ctx.Users.FirstOrDefaultAsync(u => u.Id == userId);
             string userGrade = user?.Grade ?? "初中二年级";
@@ -162,13 +188,27 @@ namespace Northtropic.Services
             return result.OrderByDescending(r => r.TotalAnswered).ThenByDescending(r => r.MasteryScore).ToList();
         }
 
-        public async Task<EvolutionDiagnosisReportDto> GenerateDiagnosisReportAsync(Guid userId)
+        public async Task<EvolutionDiagnosisReportDto> GenerateDiagnosisReportAsync(Guid userId, Guid? requestorUserId = null)
         {
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
+            if (requestorUserId.HasValue && requestorUserId.Value != Guid.Empty && requestorUserId.Value != userId)
+            {
+                var isAuthorized = await IsAuthorizedToAccessStudentAsync(requestorUserId.Value, userId, ctx);
+                if (!isAuthorized)
+                {
+                    return new EvolutionDiagnosisReportDto
+                    {
+                        UserId = userId,
+                        GeneratedAt = DateTime.Now,
+                        AiGrowthAdvice = "无权访问该学员的学情演进与破壁诊断报告。"
+                    };
+                }
+            }
+
             var user = await ctx.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
-            var masteryList = await GetMasteryOverviewAsync(userId);
+            var masteryList = await GetMasteryOverviewAsync(userId, requestorUserId: requestorUserId);
             var errors = await ctx.ErrorItems.AsNoTracking().Where(e => e.UserId == userId).ToListAsync();
 
             var practiced = masteryList.Where(m => m.TotalAnswered > 0).ToList();
@@ -361,18 +401,26 @@ namespace Northtropic.Services
             return report;
         }
 
-        public async Task<List<KnowledgePointMasteryDto>> GetPendingSpacedReviewNodesAsync(Guid userId)
+        public async Task<List<KnowledgePointMasteryDto>> GetPendingSpacedReviewNodesAsync(Guid userId, Guid? requestorUserId = null)
         {
-            var masteryList = await GetMasteryOverviewAsync(userId);
+            var masteryList = await GetMasteryOverviewAsync(userId, null, requestorUserId);
             return masteryList
                 .Where(m => m.NeedsSpacedReview)
                 .OrderBy(m => m.MemoryRetentionRate)
                 .ToList();
         }
 
-        public async Task<List<PrerequisiteTraceWarningDto>> TraceWeakPrerequisitesAsync(Guid userId, string subject, string category)
+        public async Task<List<PrerequisiteTraceWarningDto>> TraceWeakPrerequisitesAsync(Guid userId, string subject, string category, Guid? requestorUserId = null)
         {
             await using var dbScope = await CreateDbScopeAsync();
+            if (requestorUserId.HasValue && requestorUserId.Value != Guid.Empty && requestorUserId.Value != userId)
+            {
+                var isAuthorized = await IsAuthorizedToAccessStudentAsync(requestorUserId.Value, userId, dbScope.Context);
+                if (!isAuthorized)
+                {
+                    return new List<PrerequisiteTraceWarningDto>();
+                }
+            }
             return await PrerequisiteKnowledgeGraph.TraceWeakPrerequisitesAsync(userId, subject, category, dbScope.Context);
         }
 

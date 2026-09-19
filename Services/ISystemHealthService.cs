@@ -215,6 +215,8 @@ namespace Northtropic.Services
         public int TotalDanglingPublicQuestions { get; set; }
         public int TotalDuplicateQuestions { get; set; }
         public int TotalUsersWithInvalidBalances { get; set; }
+        public int TotalInvalidStudyPlans { get; set; }
+        public int TotalInvalidBindings { get; set; }
         public int OrphanErrorItemsCount => TotalOrphanErrorItems;
         public int OrphanPracticeRecordsCount => TotalOrphanPracticeRecords;
         public int OrphanFavoritesCount => TotalOrphanUserFavorites;
@@ -229,8 +231,10 @@ namespace Northtropic.Services
         public int DanglingPublicQuestionsCount => TotalDanglingPublicQuestions;
         public int DuplicateQuestionsCount => TotalDuplicateQuestions;
         public int UsersWithInvalidBalancesCount => TotalUsersWithInvalidBalances;
-        public int TotalIssuesCount => TotalOrphanErrorItems + TotalOrphanPracticeRecords + TotalOrphanUserFavorites + TotalOrphanHomeworkAssignments + TotalOrphanBindings + TotalOrphanStudyPlans + TotalOrphanStudyPlanTasks + TotalOrphanUserAchievements + TotalOrphanInsights + TotalOrphanLlmLogs + TotalCorruptedQuestions + TotalOrphanPrivateQuestions + TotalDanglingPublicQuestions;
-        public int TotalOptimizationCandidatesCount => TotalDuplicateQuestions + TotalUsersWithInvalidBalances;
+        public int InvalidStudyPlansCount => TotalInvalidStudyPlans;
+        public int InvalidBindingsCount => TotalInvalidBindings;
+        public int TotalIssuesCount => TotalOrphanErrorItems + TotalOrphanPracticeRecords + TotalOrphanUserFavorites + TotalOrphanHomeworkAssignments + TotalOrphanBindings + TotalOrphanStudyPlans + TotalOrphanStudyPlanTasks + TotalOrphanUserAchievements + TotalOrphanInsights + TotalOrphanLlmLogs + TotalCorruptedQuestions + TotalOrphanPrivateQuestions + TotalDanglingPublicQuestions + TotalInvalidStudyPlans + TotalInvalidBindings;
+        public int TotalOptimizationCandidatesCount => TotalDuplicateQuestions + TotalUsersWithInvalidBalances + TotalInvalidStudyPlans + TotalInvalidBindings;
         public bool IsHealthy => TotalIssuesCount == 0;
         public List<string> AuditDetails { get; set; } = new();
     }
@@ -351,6 +355,8 @@ namespace Northtropic.Services
         Task<int> HealGamificationInvariantsAsync();
         Task<int> HealHomeworkAssignmentInvariantsAsync();
         Task<int> HealErrorBookInvariantsAsync();
+        Task<int> HealStudyPlanInvariantsAsync();
+        Task<int> HealStudentParentBindingInvariantsAsync();
         IReadOnlyList<SystemArchitectureEvent> GetRecentArchitectureEvents(string? category = null, string? level = null, int? maxCount = null);
         ArchitectureTelemetrySummaryDto GetArchitectureTelemetrySummary();
         Task<AdaptiveMaintenancePlanDto> EvaluateAdaptiveMaintenancePlanAsync();

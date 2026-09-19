@@ -472,6 +472,9 @@
                                     </MudText>
                                 </div>
                             </div>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh" OnClick="ReevaluateClosedLoopProgressAsync" Disabled="@_isReevaluatingClosedLoop">
+                                @(_isReevaluatingClosedLoop ? "复盘评估中..." : "🔄 重新评估闭环学情")
+                            </MudButton>
                         </div>
 
                         <!-- 没进步原因深度剖析与家长协同纠偏建议 -->
@@ -1304,6 +1307,7 @@
     private StudyPlan? _childPlan;
     private ClosedLoopDiagnosisResultDto? _childClosedLoopInsight;
     private bool _isLoadingDetails = false;
+    private bool _isReevaluatingClosedLoop = false;
 
     public class SubjectMasteryDto
     {
@@ -1362,7 +1366,8 @@
         try
         {
             _isLoadingDetails = true;
-            var records = await PracticeService.GetUserPracticeRecordsAsync(studentId);
+            var requestorId = _currentUser?.Id;
+            var records = await PracticeService.GetUserPracticeRecordsAsync(studentId, requestorUserId: requestorId);
 
             _recentRecords = records.Take(8).ToList();
 
@@ -1378,18 +1383,18 @@
                 .OrderByDescending(s => s.TotalCount)
                 .ToList();
 
-            _studentAssignments = await PracticeService.GetHomeworkAssignmentsByStudentAsync(studentId);
+            _studentAssignments = await PracticeService.GetHomeworkAssignmentsByStudentAsync(studentId, requestorId);
 
             // 智能学情演进与错题深潜诊断加载
-            _diagnosisReport = await StudentEvolutionService.GenerateDiagnosisReportAsync(studentId);
-            _unmasteredErrors = await ErrorBookService.GetUnmasteredErrorsAsync(studentId, _currentUser?.Id);
+            _diagnosisReport = await StudentEvolutionService.GenerateDiagnosisReportAsync(studentId, requestorId);
+            _unmasteredErrors = await ErrorBookService.GetUnmasteredErrorsAsync(studentId, requestorId);
             _errorReasonBreakdown = _unmasteredErrors
                 .GroupBy(e => string.IsNullOrWhiteSpace(e.ErrorReasonCategory) ? "未归类错因" : e.ErrorReasonCategory)
                 .ToDictionary(g => g.Key, g => g.Count());
 
             // 自适应学习计划与持续迭代闭环复盘加载
-            _childPlan = await StudyPlanService.EnsureActivePlanAsync(studentId);
-            _childClosedLoopInsight = await StudyPlanService.GetLatestClosedLoopInsightAsync(studentId) ?? await StudyPlanService.EvaluateClosedLoopProgressAsync(studentId);
+            _childPlan = await StudyPlanService.EnsureActivePlanAsync(studentId, requestorUserId: requestorId);
+            _childClosedLoopInsight = await StudyPlanService.GetLatestClosedLoopInsightAsync(studentId, requestorId) ?? await StudyPlanService.EvaluateClosedLoopProgressAsync(studentId, requestorId);
         }
         catch (Exception ex)
         {
@@ -1398,6 +1403,28 @@
         finally
         {
             _isLoadingDetails = false;
+        }
+    }
+
+    private async Task ReevaluateClosedLoopProgressAsync()
+    {
+        if (_selectedStudent == null) return;
+        try
+        {
+            _isReevaluatingClosedLoop = true;
+            var requestorId = _currentUser?.Id;
+            _childClosedLoopInsight = await StudyPlanService.EvaluateClosedLoopProgressAsync(_selectedStudent.Id, requestorId);
+            _childPlan = await StudyPlanService.EnsureActivePlanAsync(_selectedStudent.Id, requestorUserId: requestorId);
+            Snackbar.Add("✅ 学情闭环复盘已重新评估更新！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"评估异常: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _isReevaluatingClosedLoop = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 

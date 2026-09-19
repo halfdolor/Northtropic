@@ -18,16 +18,16 @@ namespace Northtropic.Tests
 
         public class FakeStudentEvolutionService : IStudentEvolutionService
         {
-            public Task<List<KnowledgePointMasteryDto>> GetMasteryOverviewAsync(Guid userId, string? subject = null)
+            public Task<List<KnowledgePointMasteryDto>> GetMasteryOverviewAsync(Guid userId, string? subject = null, Guid? requestorUserId = null)
                 => Task.FromResult(new List<KnowledgePointMasteryDto>());
 
-            public Task<EvolutionDiagnosisReportDto> GenerateDiagnosisReportAsync(Guid userId)
+            public Task<EvolutionDiagnosisReportDto> GenerateDiagnosisReportAsync(Guid userId, Guid? requestorUserId = null)
                 => Task.FromResult(new EvolutionDiagnosisReportDto { UserId = userId, RecommendedSubject = "数学", RecommendedCategory = "一次函数" });
 
-            public Task<List<KnowledgePointMasteryDto>> GetPendingSpacedReviewNodesAsync(Guid userId)
+            public Task<List<KnowledgePointMasteryDto>> GetPendingSpacedReviewNodesAsync(Guid userId, Guid? requestorUserId = null)
                 => Task.FromResult(new List<KnowledgePointMasteryDto>());
 
-            public Task<List<PrerequisiteTraceWarningDto>> TraceWeakPrerequisitesAsync(Guid userId, string subject, string category)
+            public Task<List<PrerequisiteTraceWarningDto>> TraceWeakPrerequisitesAsync(Guid userId, string subject, string category, Guid? requestorUserId = null)
                 => Task.FromResult(new List<PrerequisiteTraceWarningDto>());
         }
 
