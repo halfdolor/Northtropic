@@ -543,10 +543,10 @@
     {
         if (CurrentActiveQuestion == null) return;
 
-        // 若已判定且答对，按下回车可秒关弹窗返回错题本
+        // 若已判定且答对，按下回车或空格/Next可秒关弹窗返回错题本
         if (_submitted)
         {
-            if (key == "Enter" || key == "CtrlEnter")
+            if (key == "Enter" || key == "CtrlEnter" || key == "Next")
             {
                 if (_evalResult?.IsCorrect == true)
                 {
@@ -559,15 +559,41 @@
         var q = CurrentActiveQuestion;
         var options = q.Options;
 
+        // 判断题快捷键 T (正确/对) / F (错误/错)
+        if (key == "T" || key == "F")
+        {
+            bool targetVal = key == "T";
+            var matchedOpt = options.FirstOrDefault(o => Northtropic.Services.PracticeService.TryNormalizeJudgement(o, out var j) && j == targetVal);
+            if (matchedOpt != null)
+            {
+                if (q.Type == QuestionType.SingleChoice)
+                {
+                    _selectedOption = matchedOpt;
+                }
+                else if (q.Type == QuestionType.MultipleChoice)
+                {
+                    ToggleMultiOption(matchedOpt, !_multiSelectedOptions.Contains(matchedOpt));
+                }
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+            else if (q.Type == QuestionType.FillInBlank)
+            {
+                _textAnswer = targetVal ? "正确" : "错误";
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+        }
+
         if (q.Type == QuestionType.SingleChoice)
         {
             int targetIdx = key switch
             {
-                "A" => 0,
-                "B" => 1,
-                "C" => 2,
-                "D" => 3,
-                "E" => 4,
+                "A" => 0, "1" => 0,
+                "B" => 1, "2" => 1,
+                "C" => 2, "3" => 2,
+                "D" => 3, "4" => 3,
+                "E" => 4, "5" => 4,
                 _ => -1
             };
 
@@ -582,11 +608,11 @@
         {
             int targetIdx = key switch
             {
-                "A" => 0,
-                "B" => 1,
-                "C" => 2,
-                "D" => 3,
-                "E" => 4,
+                "A" => 0, "1" => 0,
+                "B" => 1, "2" => 1,
+                "C" => 2, "3" => 2,
+                "D" => 3, "4" => 3,
+                "E" => 4, "5" => 4,
                 _ => -1
             };
 
@@ -602,6 +628,16 @@
         if (key == "Enter" || key == "CtrlEnter")
         {
             await SubmitReviseAsync();
+        }
+        else if (key == "Next")
+        {
+            bool hasAnswer = !string.IsNullOrEmpty(_selectedOption) ||
+                             _multiSelectedOptions.Count > 0 ||
+                             !string.IsNullOrWhiteSpace(_textAnswer);
+            if (hasAnswer)
+            {
+                await SubmitReviseAsync();
+            }
         }
     }
 

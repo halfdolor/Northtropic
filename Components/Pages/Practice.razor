@@ -1676,7 +1676,7 @@
                     </tr>
                     <tr>
                         <td><kbd class="shortcut-badge">Space</kbd> 或 <kbd class="shortcut-badge">→</kbd></td>
-                        <td>查看解析后直接进入下一题</td>
+                        <td>已作答时快速提交，已提交时极速切换下一题</td>
                     </tr>
                     <tr>
                         <td><kbd class="shortcut-badge">←</kbd></td>
@@ -3418,6 +3418,16 @@
             if (_submitted || _evalMode.Contains("整卷统一") || _paperSubmitted)
             {
                 await NextQuestionAsync();
+            }
+            else
+            {
+                bool hasAnswer = !string.IsNullOrEmpty(_selectedOption) ||
+                                 _multiSelectedOptions.Count > 0 ||
+                                 !string.IsNullOrWhiteSpace(_textAnswer);
+                if (hasAnswer)
+                {
+                    await SubmitAnswerAsync();
+                }
             }
         }
         else if (key == "Prev")

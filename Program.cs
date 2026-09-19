@@ -161,6 +161,11 @@ app.MapGet("/api/questions/export", async (
             }
         }
 
+        if (currentUserId == Guid.Empty)
+        {
+            return Results.StatusCode(401);
+        }
+
         format = format?.ToLowerInvariant();
 
         if (format == "xlsx" || format == "excel")

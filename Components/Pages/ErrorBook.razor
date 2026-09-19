@@ -1061,7 +1061,18 @@
             if (!string.IsNullOrWhiteSpace(_searchQuery))
             {
                 var qText = _searchQuery.Trim();
-                query = query.Where(i => i.Question != null && (i.Question.Stem.Contains(qText, StringComparison.OrdinalIgnoreCase) || i.Question.Category.Contains(qText, StringComparison.OrdinalIgnoreCase)));
+                var cleanId = qText.TrimStart('#');
+                query = query.Where(i => i.Question != null && (
+                    i.Question.Stem.Contains(qText, StringComparison.OrdinalIgnoreCase) ||
+                    i.Question.Category.Contains(qText, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrEmpty(i.Question.Subject) && i.Question.Subject.Contains(qText, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(i.Question.GradeTarget) && i.Question.GradeTarget.Contains(qText, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(i.Question.TypeDisplayName) && i.Question.TypeDisplayName.Contains(qText, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(i.ErrorReasonCategory) && i.ErrorReasonCategory.Contains(qText, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(i.AiCustomAdvice) && i.AiCustomAdvice.Contains(qText, StringComparison.OrdinalIgnoreCase)) ||
+                    i.Id.ToString().Contains(cleanId, StringComparison.OrdinalIgnoreCase) ||
+                    i.QuestionId.ToString().Contains(cleanId, StringComparison.OrdinalIgnoreCase)
+                ));
             }
 
             query = _sortBy switch

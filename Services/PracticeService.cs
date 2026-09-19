@@ -722,6 +722,12 @@ namespace Northtropic.Services
                     return $"向量范数与模长记号等价：已自动识别向量/复数模长符号（\\|...\\| 与 |...|）数学等价性，对应标准答案 [{correct}]";
                 }
 
+                // 化学热化学方程式与焓变 ΔH 等价识别 (优先于普通 /mol 复合单位判定)
+                if (CheckThermochemicalEquationMatch(user, correct) || CheckThermochemicalEquationMatch(normU, normC))
+                {
+                    return $"化学热化学方程式等价：已自动识别化学反应物与生成物化学计量、聚集状态及焓变 ΔH（单位与数值）的科学等价性，对应标准方程式 [{correct}]";
+                }
+
                 // 化学可逆反应与反应式等价
                 if (user.Contains("⇌") || correct.Contains("⇌") || user.Contains("\\rightleftharpoons") || correct.Contains("\\rightleftharpoons") ||
                     user.Contains("<=>") || correct.Contains("<=>") || user.Contains("<->") || correct.Contains("<->"))
@@ -818,7 +824,6 @@ namespace Northtropic.Services
                     return $"解析几何抛物线方程等价：已自动识别抛物线标准方程与函数/一般展开式的代数等价性（{axisDesc}，顶点 ({curParX}, {curParY})，焦准距 2p={curPar2P}），对应标准方程 [{correct}]";
                 }
 
-
                 // 空间/平面向量列矩阵与坐标表达等价 (\begin{pmatrix} 2 \\ -3 \end{pmatrix} vs (2,-3))
                 if ((user.Contains("pmatrix") || user.Contains("bmatrix") || correct.Contains("pmatrix") || correct.Contains("bmatrix")) &&
                     (user.Contains("(") || correct.Contains("(") || user.Contains(",") || correct.Contains(",")))
@@ -870,10 +875,10 @@ namespace Northtropic.Services
                     return $"三角角度与弧度制等价：已自动识别角度制 (如 30°、45°、90°) 与弧度制 (如 \\pi/6、\\pi/4、\\pi/2) 的精确数理等价对应，对应标准答案 [{correct}]";
                 }
 
-                // 国际单位制科学词头换算等价 (如 kHz 与 Hz、kJ 与 J、kV 与 V、kΩ 与 Ω 等)
+                // 国际单位制科学词头换算等价 (如 A与mA、kWh与度与J、h与min与s、kHz与Hz、kJ与J、kΩ与Ω等)
                 if (CheckScientificUnitMultiplierEquivalence(user, correct) || CheckScientificUnitMultiplierEquivalence(normU, normC))
                 {
-                    return $"国际单位制科学词头换算等价：已自动对齐频率、能量、电压、阻抗或力学等国际制单位词头倍数（如 kHz 与 Hz、kJ 与 J、kV 与 V 等），对应标准答案 [{correct}]";
+                    return $"国际单位制科学词头换算等价：已自动对齐电流（A/mA/μA）、电能度数（kWh/度/J）、时间（h/min/s）、频率、电压、阻抗或力学等国际制单位词头倍数换算，对应标准答案 [{correct}]";
                 }
 
                 // 复数代数形式等价 (z = a + bi, bi + a, 0 + bi 等，需包含虚数单位 i)
@@ -1400,8 +1405,8 @@ namespace Northtropic.Services
             var slashIdx = s.IndexOf('/');
             if (slashIdx > 0 && slashIdx < s.Length - 1)
             {
-                var numStr = s.Substring(0, slashIdx).Trim();
-                var denStr = s.Substring(slashIdx + 1).Trim();
+                var numStr = s.Substring(0, slashIdx).Trim().Trim('(', ')');
+                var denStr = s.Substring(slashIdx + 1).Trim().Trim('(', ')');
                 if (double.TryParse(numStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double num) &&
                     double.TryParse(denStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double den) &&
                     Math.Abs(den) > 1e-9)
@@ -1447,6 +1452,12 @@ namespace Northtropic.Services
 
             expr = expr.Trim().Replace(" ", "").Replace("（", "(").Replace("）", ")");
             expr = System.Text.RegularExpressions.Regex.Replace(expr, @"\\frac\{([^}]+)\}\{([^}]+)\}", "(($1)/($2))");
+
+            // 规范化截距式负分母/负分子 (例如 x/(-4) 或 +y/(-5) 或 -y/(-5))
+            expr = System.Text.RegularExpressions.Regex.Replace(expr, @"(?<=^|[+])\s*\(?([a-zA-Z0-9]+)\)?/\(\s*-\s*(\d+(?:\.\d+)?)\s*\)", "-$1/$2");
+            expr = System.Text.RegularExpressions.Regex.Replace(expr, @"-\s*\(?([a-zA-Z0-9]+)\)?/\(\s*-\s*(\d+(?:\.\d+)?)\s*\)", "+$1/$2");
+            expr = System.Text.RegularExpressions.Regex.Replace(expr, @"(?<=^|[+])\s*\(\s*-\s*([a-zA-Z0-9]+)\s*\)/(\d+(?:\.\d+)?)", "-$1/$2");
+            expr = System.Text.RegularExpressions.Regex.Replace(expr, @"-\s*\(\s*-\s*([a-zA-Z0-9]+)\s*\)/(\d+(?:\.\d+)?)", "+$1/$2");
 
             expr = System.Text.RegularExpressions.Regex.Replace(expr, @"(?<=^|[+-])-\(([^()]+)\)", "-1*($1)");
             expr = System.Text.RegularExpressions.Regex.Replace(expr, @"(?<=^|[+-])\+\(([^()]+)\)", "+1*($1)");
@@ -1517,7 +1528,7 @@ namespace Northtropic.Services
                 if (term.Contains(var1))
                 {
                     if (term.Contains("^")) return false;
-                    string rest = term.Replace(var1.ToString(), "").Replace("*", "").Trim('(', ')');
+                    string rest = term.Replace(var1.ToString(), "").Replace("*", "").Replace("(", "").Replace(")", "").Trim();
                     double coef;
                     if (string.IsNullOrEmpty(rest))
                     {
@@ -1538,7 +1549,7 @@ namespace Northtropic.Services
                 else if (term.Contains(var2))
                 {
                     if (term.Contains("^")) return false;
-                    string rest = term.Replace(var2.ToString(), "").Replace("*", "").Trim('(', ')');
+                    string rest = term.Replace(var2.ToString(), "").Replace("*", "").Replace("(", "").Replace(")", "").Trim();
                     double coef;
                     if (string.IsNullOrEmpty(rest))
                     {
@@ -2205,6 +2216,91 @@ namespace Northtropic.Services
             if (real == 0.0) real = 0.0;
             if (imag == 0.0) imag = 0.0;
             return true;
+        }
+
+        public static bool CheckThermochemicalEquationMatch(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+
+            // 快速前置过滤：热化学方程式必须包含焓变记号
+            bool hasDeltaU = u.Contains("Delta", StringComparison.OrdinalIgnoreCase) || u.Contains("Δ") || u.Contains("delta", StringComparison.OrdinalIgnoreCase);
+            bool hasDeltaC = c.Contains("Delta", StringComparison.OrdinalIgnoreCase) || c.Contains("Δ") || c.Contains("delta", StringComparison.OrdinalIgnoreCase);
+            if (!hasDeltaU || !hasDeltaC) return false;
+
+            static bool TryParseThermochemical(string input, out string reaction, out double deltaH, out string unit)
+            {
+                reaction = string.Empty;
+                deltaH = 0;
+                unit = string.Empty;
+                if (string.IsNullOrWhiteSpace(input)) return false;
+
+                // 匹配热化学焓变特征: \Delta H / ΔH / deltaH / \delta H / delta H
+                // 允许标态上标如 ^\theta, ^\circ, ^o, ^0, 或下标如 \Delta_r H_m 等
+                var pattern = @"(?i)(?:\\?(?:Delta|delta)|Δ)(?:_[a-zA-Z0-9]+)?\s*[hH](?:(?:\^|_)?(?:\\circ|\\theta|\theta|0|o|θ|[a-zA-Z0-9]+))?\s*=\s*([+-]?\s*\d+(?:\.\d+)?)\s*([a-zA-Z0-9·*^/\\{}\s+-]*)";
+                var match = System.Text.RegularExpressions.Regex.Match(input, pattern);
+                if (!match.Success) return false;
+
+                string valStr = match.Groups[1].Value.Replace(" ", "");
+                if (!double.TryParse(valStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out deltaH))
+                {
+                    return false;
+                }
+
+                unit = match.Groups[2].Value.Trim();
+
+                // 提取反应方程式主体部分 (支持 ΔH 在末尾，或在开头通过逗号/分号隔开)
+                if (match.Index > 0)
+                {
+                    reaction = input.Substring(0, match.Index).Trim().TrimEnd(';', '；', ',', '，');
+                }
+                else
+                {
+                    reaction = input.Substring(match.Index + match.Length).Trim().TrimStart(';', '；', ',', '，');
+                }
+
+                return !string.IsNullOrWhiteSpace(reaction);
+            }
+
+            if (!TryParseThermochemical(u, out var uRxn, out var uDeltaH, out var uUnit) ||
+                !TryParseThermochemical(c, out var cRxn, out var cDeltaH, out var cUnit))
+            {
+                return false;
+            }
+
+            // 1. 检验反应方程式主体
+            bool rxnMatch = CheckFillInBlankMatch(uRxn, cRxn);
+
+            if (!rxnMatch) return false;
+
+            // 2. 检验焓变单位与数值
+            static string NormalizeDeltaHUnit(string rawUnit)
+            {
+                rawUnit = rawUnit.ToLowerInvariant().Replace(" ", "").Replace("~", "").Replace("$", "")
+                    .Replace("\\text{", "").Replace("\\mathrm{", "").Replace("}", "")
+                    .Replace("\\cdot", "").Replace("·", "").Replace("*", "");
+
+                if (rawUnit.Contains("kj") && rawUnit.Contains("mol")) return "kj/mol";
+                if (rawUnit.Contains("j") && rawUnit.Contains("mol")) return "j/mol";
+                return rawUnit;
+            }
+
+            string normUUnit = NormalizeDeltaHUnit(uUnit);
+            string normCUnit = NormalizeDeltaHUnit(cUnit);
+
+            if (normUUnit == normCUnit || string.IsNullOrEmpty(normUUnit) || string.IsNullOrEmpty(normCUnit))
+            {
+                return AreNumbersClose(uDeltaH, cDeltaH);
+            }
+            else if (normUUnit == "j/mol" && normCUnit == "kj/mol")
+            {
+                return AreNumbersClose(uDeltaH, cDeltaH * 1000.0);
+            }
+            else if (normUUnit == "kj/mol" && normCUnit == "j/mol")
+            {
+                return AreNumbersClose(uDeltaH * 1000.0, cDeltaH);
+            }
+
+            return false;
         }
 
         public static bool CheckCoordinateEquationMatch(string u, string c)
@@ -3563,6 +3659,14 @@ namespace Northtropic.Services
             if (CheckChemicalReactionCommutativeMatch(normUser, normCorrect) ||
                 CheckChemicalReactionCommutativeMatch(user, correct) ||
                 CheckChemicalReactionCommutativeMatch(chemUser, chemCorrect))
+            {
+                return true;
+            }
+
+            // 化学热化学方程式与焓变 ΔH 等价识别 (反应物/生成物、聚集状态及焓变数值单位)
+            if (CheckThermochemicalEquationMatch(user, correct) ||
+                CheckThermochemicalEquationMatch(normUser, normCorrect) ||
+                CheckThermochemicalEquationMatch(chemUser, chemCorrect))
             {
                 return true;
             }
@@ -5078,38 +5182,73 @@ namespace Northtropic.Services
                     ("khz|千赫", 1e3, "freq"),
                     ("hz|赫兹|赫", 1.0, "freq"),
 
+                    // 电能与功实用单位 (1 kWh = 1 度 = 3.6e6 J)
+                    (@"mwh|mw·h|mw\*h|兆瓦时", 3.6e9, "energy"),
+                    (@"kwh|kw·h|kw\*h|kw\s*h|千瓦时|度", 3.6e6, "energy"),
+                    (@"wh|w·h|w\*h|瓦时", 3600.0, "energy"),
+                    (@"ws|w·s|w\*s|瓦秒", 1.0, "energy"),
                     ("gj|吉焦", 1e9, "energy"),
                     ("mj|兆焦", 1e6, "energy"),
                     ("kj|千焦", 1e3, "energy"),
                     ("j|焦耳|焦", 1.0, "energy"),
 
+                    // 电学电阻
                     (@"g\\omega|gω|gΩ|gomega", 1e9, "res"),
                     (@"m\\omega|mω|mΩ|momega|兆欧", 1e6, "res"),
                     (@"k\\omega|kω|kΩ|komega|千欧", 1e3, "res"),
                     (@"\\omega|ω|Ω|omega|ohm|欧姆|欧", 1.0, "res"),
 
+                    // 电学电压
                     ("kv|千伏", 1e3, "volt"),
                     ("mv|毫伏", 1e-3, "volt"),
                     ("v|伏特|伏", 1.0, "volt"),
 
+                    // 电学电流 (A, mA, μA, kA)
+                    ("ka|千安", 1e3, "curr"),
+                    ("ma|毫安", 1e-3, "curr"),
+                    (@"ua|μa|\\mu\s*a|微安", 1e-6, "curr"),
+                    ("a|安培|安", 1.0, "curr"),
+
+                    // 电学电容 (F, mF, μF, nF, pF)
+                    ("mf|毫法", 1e-3, "cap"),
+                    (@"uf|μf|\\mu\s*f|微法", 1e-6, "cap"),
+                    ("nf|纳法", 1e-9, "cap"),
+                    ("pf|皮法", 1e-12, "cap"),
+                    ("f|法拉|法", 1.0, "cap"),
+
+                    // 磁学磁感应强度 (T, mT)
+                    ("mt|毫特", 1e-3, "mag"),
+                    ("特斯拉|特", 1.0, "mag"),
+
+                    // 时间 (h, min, s, ms)
+                    (@"h|小时|时|hr|hrs", 3600.0, "time"),
+                    (@"min|mins|分钟|分", 60.0, "time"),
+                    ("ms|毫秒", 1e-3, "time"),
+                    ("s|秒|sec|secs", 1.0, "time"),
+
+                    // 压强
                     ("mpa|兆帕", 1e6, "press"),
                     ("kpa|千帕", 1e3, "press"),
                     ("pa|帕斯卡|帕", 1.0, "press"),
 
+                    // 力学
                     ("kn|千牛", 1e3, "force"),
                     ("n|牛顿|牛", 1.0, "force"),
 
+                    // 功率
                     ("gw|吉瓦", 1e9, "power"),
                     ("mw|兆瓦", 1e6, "power"),
                     ("kw|千瓦", 1e3, "power"),
                     ("w|瓦特|瓦", 1.0, "power"),
 
+                    // 长度
                     ("km|千米|公里", 1e3, "len"),
                     ("dm|分米", 0.1, "len"),
                     ("cm|厘米", 0.01, "len"),
                     ("mm|毫米", 0.001, "len"),
                     ("m|米", 1.0, "len"),
 
+                    // 质量
                     ("t|吨", 1e3, "mass"),
                     ("kg|千克|公斤", 1.0, "mass"),
                     ("mg|毫克", 1e-6, "mass"),
