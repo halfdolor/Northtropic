@@ -1782,6 +1782,45 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalDanglingPublicQuestions} 道公共试题引用了已删除用户 (建议解绑置空创建者)");
                 }
 
+                // 13. Duplicate Questions (相同 Stem 和 Type 的冗余重复题)
+                var allQuestions = await db.Questions
+                    .Select(q => new { q.Id, Stem = (q.Stem ?? "").Trim(), q.Type })
+                    .ToListAsync();
+                var duplicateGroups = allQuestions
+                    .GroupBy(q => new { q.Stem, q.Type })
+                    .Where(g => g.Count() > 1 && !string.IsNullOrWhiteSpace(g.Key.Stem))
+                    .ToList();
+                audit.TotalDuplicateQuestions = duplicateGroups.Sum(g => g.Count() - 1);
+                if (audit.TotalDuplicateQuestions > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {duplicateGroups.Count} 组共 {audit.TotalDuplicateQuestions} 道题库重复试题冗余副本");
+                }
+
+                // 14. User Gamification & Balance Invariants (负资产与等级脱节)
+                var users = await db.Users.Select(u => new { u.Id, u.Exp, u.Coins, u.Level }).ToListAsync();
+                int invalidUsersCount = 0;
+                foreach (var u in users)
+                {
+                    int expectedLevel = 1;
+                    int tempExp = Math.Max(0, u.Exp);
+                    int needed = GamificationService.CalculateExpNeeded(expectedLevel);
+                    while (tempExp >= needed)
+                    {
+                        tempExp -= needed;
+                        expectedLevel++;
+                        needed = GamificationService.CalculateExpNeeded(expectedLevel);
+                    }
+                    if (u.Exp < 0 || u.Coins < 0 || u.Level < 1 || (u.Exp >= 0 && u.Level != expectedLevel))
+                    {
+                        invalidUsersCount++;
+                    }
+                }
+                audit.TotalUsersWithInvalidBalances = invalidUsersCount;
+                if (audit.TotalUsersWithInvalidBalances > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalUsersWithInvalidBalances} 个用户存在经验/金币异常或等级脱节");
+                }
+
                 if (audit.IsHealthy)
                 {
                     audit.AuditDetails.Add("✅ 数据库全库拓扑与业务外键完整性审计通过，未发现任何孤儿或格式损坏记录。");
@@ -1984,6 +2023,227 @@ namespace Northtropic.Services
             }
 
             return result;
+        }
+
+        public async Task<DataIntegrityDeduplicateResultDto> DeduplicateQuestionsAsync()
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var result = new DataIntegrityDeduplicateResultDto();
+
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? tx = null;
+            try
+            {
+                if (db.Database.IsRelational())
+                {
+                    tx = await db.Database.BeginTransactionAsync();
+                }
+
+                var allQuestions = await db.Questions.ToListAsync();
+
+                var duplicateGroups = allQuestions
+                    .GroupBy(q => new { Stem = (q.Stem ?? "").Trim(), q.Type })
+                    .Where(g => g.Count() > 1 && !string.IsNullOrWhiteSpace(g.Key.Stem))
+                    .ToList();
+
+                result.DuplicateGroupsDetected = duplicateGroups.Count;
+
+                if (duplicateGroups.Count == 0)
+                {
+                    result.Success = true;
+                    result.Message = "未检测到重复试题，题库拓扑结构健康！";
+                    sw.Stop();
+                    result.ElapsedMilliseconds = sw.ElapsedMilliseconds;
+                    return result;
+                }
+
+                var allDupGroupQIds = duplicateGroups.SelectMany(g => g.Select(q => q.Id)).ToHashSet();
+
+                var allPracticeRecords = await db.PracticeRecords
+                    .Where(r => allDupGroupQIds.Contains(r.QuestionId))
+                    .ToListAsync();
+                var practiceMap = allPracticeRecords.GroupBy(r => r.QuestionId).ToDictionary(g => g.Key, g => g.ToList());
+
+                var allErrorItems = await db.ErrorItems
+                    .Where(e => allDupGroupQIds.Contains(e.QuestionId))
+                    .ToListAsync();
+                var errorMap = allErrorItems.GroupBy(e => e.QuestionId).ToDictionary(g => g.Key, g => g.ToList());
+
+                var allFavorites = await db.UserFavorites
+                    .Where(f => allDupGroupQIds.Contains(f.QuestionId))
+                    .ToListAsync();
+                var favMap = allFavorites.GroupBy(f => f.QuestionId).ToDictionary(g => g.Key, g => g.ToList());
+
+                foreach (var group in duplicateGroups)
+                {
+                    // 选取主试题: 公共题优先 -> 关联流水/错题/收藏最多优先 -> 创建时间最早优先
+                    var master = group
+                        .OrderByDescending(q => q.IsPublic)
+                        .ThenByDescending(q => (practiceMap.TryGetValue(q.Id, out var pr) ? pr.Count : 0) +
+                                               (errorMap.TryGetValue(q.Id, out var er) ? er.Count : 0) +
+                                               (favMap.TryGetValue(q.Id, out var fr) ? fr.Count : 0))
+                        .ThenBy(q => q.CreatedAt)
+                        .First();
+
+                    var masterRecords = practiceMap.TryGetValue(master.Id, out var mPr) ? mPr : new List<PracticeRecord>();
+                    var masterErrors = errorMap.TryGetValue(master.Id, out var mEr) ? mEr : new List<ErrorItem>();
+                    var masterFavs = favMap.TryGetValue(master.Id, out var mFr) ? mFr : new List<UserFavorite>();
+
+                    var duplicates = group.Where(q => q.Id != master.Id).ToList();
+
+                    foreach (var dup in duplicates)
+                    {
+                        // 1. PracticeRecords 重定向
+                        if (practiceMap.TryGetValue(dup.Id, out var dupPr))
+                        {
+                            foreach (var record in dupPr)
+                            {
+                                record.QuestionId = master.Id;
+                                result.ReassignedPracticeRecordsCount++;
+                            }
+                        }
+
+                        // 2. ErrorItems 重定向或合并
+                        if (errorMap.TryGetValue(dup.Id, out var dupEr))
+                        {
+                            foreach (var err in dupEr)
+                            {
+                                var existingMasterErr = masterErrors.FirstOrDefault(e => e.UserId == err.UserId);
+                                if (existingMasterErr != null)
+                                {
+                                    existingMasterErr.RevisionCount += (err.RevisionCount + 1);
+                                    if (err.CreatedAt > existingMasterErr.CreatedAt)
+                                    {
+                                        existingMasterErr.CreatedAt = err.CreatedAt;
+                                    }
+                                    if (!err.IsMastered)
+                                    {
+                                        existingMasterErr.IsMastered = false;
+                                    }
+                                    db.ErrorItems.Remove(err);
+                                }
+                                else
+                                {
+                                    err.QuestionId = master.Id;
+                                    masterErrors.Add(err);
+                                }
+                                result.ReassignedErrorItemsCount++;
+                            }
+                        }
+
+                        // 3. UserFavorites 重定向或去重
+                        if (favMap.TryGetValue(dup.Id, out var dupFr))
+                        {
+                            foreach (var fav in dupFr)
+                            {
+                                var existingMasterFav = masterFavs.FirstOrDefault(f => f.UserId == fav.UserId);
+                                if (existingMasterFav != null)
+                                {
+                                    db.UserFavorites.Remove(fav);
+                                }
+                                else
+                                {
+                                    fav.QuestionId = master.Id;
+                                    masterFavs.Add(fav);
+                                }
+                                result.ReassignedFavoritesCount++;
+                            }
+                        }
+
+                        // 4. LlmGenerationLogs 重定向
+                        var logs = await db.LlmGenerationLogs.Where(l => l.QuestionId == dup.Id).ToListAsync();
+                        foreach (var l in logs)
+                        {
+                            l.QuestionId = master.Id;
+                        }
+
+                        // 5. 移除冗余副题
+                        db.Questions.Remove(dup);
+                        result.DuplicateQuestionsPurged++;
+                    }
+                }
+
+                if (result.DuplicateQuestionsPurged > 0)
+                {
+                    await db.SaveChangesAsync();
+                }
+
+                if (tx != null)
+                {
+                    await tx.CommitAsync();
+                }
+
+                sw.Stop();
+                result.ElapsedMilliseconds = Math.Round(sw.Elapsed.TotalMilliseconds, 2);
+                result.Success = true;
+                result.Message = result.DuplicateQuestionsPurged > 0
+                    ? $"题库去重自愈完成：检测到 {result.DuplicateGroupsDetected} 组重复，物理清理 {result.DuplicateQuestionsPurged} 道冗余题，重定向 {result.ReassignedPracticeRecordsCount} 条答题流水与 {result.ReassignedErrorItemsCount} 条错题 (耗时 {result.ElapsedMilliseconds}ms)。"
+                    : "题库拓扑完整，未发现重复试题。";
+
+                RecordArchitectureEvent("Deduplication", "Success", result.Message, result.ElapsedMilliseconds);
+            }
+            catch (Exception ex)
+            {
+                if (tx != null) await tx.RollbackAsync();
+                sw.Stop();
+                result.Success = false;
+                result.ElapsedMilliseconds = Math.Round(sw.Elapsed.TotalMilliseconds, 2);
+                result.Message = $"题库去重自愈失败: {ex.Message}";
+                RecordArchitectureEvent("Deduplication", "Error", result.Message, result.ElapsedMilliseconds);
+            }
+
+            return result;
+        }
+
+        public async Task<int> HealGamificationInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            var users = await db.Users.ToListAsync();
+            int healedCount = 0;
+
+            foreach (var user in users)
+            {
+                bool changed = false;
+                if (user.Exp < 0)
+                {
+                    user.Exp = 0;
+                    changed = true;
+                }
+                if (user.Coins < 0)
+                {
+                    user.Coins = 0;
+                    changed = true;
+                }
+
+                if (user.Level < 1)
+                {
+                    user.Level = 1;
+                    changed = true;
+                }
+
+                int expNeeded = GamificationService.CalculateExpNeeded(user.Level);
+                while (user.Exp >= expNeeded)
+                {
+                    user.Exp -= expNeeded;
+                    user.Level++;
+                    changed = true;
+                    expNeeded = GamificationService.CalculateExpNeeded(user.Level);
+                }
+
+                if (changed) healedCount++;
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("GamificationInvariants", "Success", $"校准了 {healedCount} 个异常用户游戏化资产与等级");
+            }
+
+            return healedCount;
         }
     }
 }

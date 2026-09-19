@@ -708,6 +708,18 @@ namespace Northtropic.Services
                 var normU = user.Replace(" ", "").ToLowerInvariant();
                 var normC = correct.Replace(" ", "").ToLowerInvariant();
 
+                // 化学离子符号书写与上下标、电荷次序等价 (如 Fe^{3+} vs Fe3+ vs Fe^+3, SO_4^{2-} vs SO42- vs SO4^2-)
+                if (CheckChemicalIonEquivalence(user, correct) || CheckChemicalIonEquivalence(normU, normC))
+                {
+                    return $"化学离子式表达等价：已自动识别离子电荷数、正负符号次序（如 3+ 与 +3）及上下标书写方式，对应标准离子式 [{correct}]";
+                }
+
+                // 微积分不定积分常数 C 加法交换与大小写等价 (如 x^2 + C vs C + x^2 vs x^2 + c)
+                if (CheckIndefiniteIntegralConstantCMatch(user, correct) || CheckIndefiniteIntegralConstantCMatch(normU, normC))
+                {
+                    return $"微积分不定积分常数等价：已自动识别原函数与积分任意常数 C 的加法交换律与大小写表达，对应标准答案 [{correct}]";
+                }
+
                 // 代数因式分解因子乘积交换律等价
                 if (CheckPolynomialFactorProductCommutativeMatch(user, correct) ||
                     CheckPolynomialFactorProductCommutativeMatch(normU, normC))
@@ -904,11 +916,12 @@ namespace Northtropic.Services
                     return $"三角角度与弧度制等价：已自动识别角度制 (如 30°、45°、90°) 与弧度制 (如 \\pi/6、\\pi/4、\\pi/2) 的精确数理等价对应，对应标准答案 [{correct}]";
                 }
 
-                // 国际单位制科学词头换算等价 (如 A与mA、kWh与度与J、h与min与s、kHz与Hz、kJ与J、kΩ与Ω等) 与物理工程量纲
+                // 国际单位制科学词头换算等价 (如 A与mA、kWh与度与J、h与min与s、kHz与Hz、kJ与J、kΩ与Ω、L与mL、mol/L与mmol/L等) 与物理工程量纲
                 if (CheckScientificUnitMultiplierEquivalence(user, correct) || CheckScientificUnitMultiplierEquivalence(normU, normC))
                 {
-                    return $"国际单位制科学词头换算等价（物理与工程量纲智能换算）：已自动对齐电流（A/mA/μA）、电能度数（kWh/度/J）、时间（h/min/s）、频率（Hz/kHz/MHz）、电容（F/uF/nF/pF）、速度（km/h与m/s）、功率（W/kW/MW）、压强（Pa/kPa/MPa）、电压、阻抗或力学等物理与工程量纲智能换算，对应标准答案 [{correct}]";
+                    return $"国际单位制科学词头换算等价（物理与工程量纲、化学量纲智能换算）：已自动对齐体积容积（L/mL/m³/dm³）、物质的量浓度（mol/L与mmol/L）、磁通量（Wb/Mx）、电感（H/mH）、电导（S/mS）、电流（A/mA/μA）、电能度数（kWh/度/J）、时间（h/min/s）、频率（Hz/kHz/MHz）、电容（F/uF/nF/pF）、速度（km/h与m/s）、功率（W/kW/MW）、压强（Pa/kPa/MPa）、电压、阻抗或力学等理化工程量纲智能换算，对应标准答案 [{correct}]";
                 }
+
 
                 // 复数代数形式等价 (z = a + bi, bi + a, 0 + bi 等，需包含虚数单位 i)
                 if ((normU.Contains("i") || normC.Contains("i")) &&
@@ -5380,8 +5393,14 @@ namespace Northtropic.Services
             // 中学与大学三角特殊角角度制与弧度制双向等价 (如 30° vs \pi/6, 45° vs \pi/4, 90° vs \pi/2, 180° vs \pi, 360° vs 2\pi)
             if (CheckAngleAndRadianEquivalence(user, correct) || CheckAngleAndRadianEquivalence(normUser, normCorrect)) return true;
 
-            // 国际单位制常用科学词头换算等价 (如 kHz 与 Hz、MHz 与 Hz、kJ 与 J、kV 与 V、kΩ 与 Ω 等)
+            // 国际单位制常用科学词头换算等价 (如 kHz 与 Hz、MHz 与 Hz、kJ 与 J、kV 与 V、kΩ 与 Ω、L 与 mL、mol/L 与 mmol/L 等)
             if (CheckScientificUnitMultiplierEquivalence(user, correct) || CheckScientificUnitMultiplierEquivalence(normUser, normCorrect)) return true;
+
+            // 化学离子符号书写与上下标、电荷次序等价 (如 Fe^{3+} vs Fe3+ vs Fe^+3, SO_4^{2-} vs SO42- vs SO4^2-)
+            if (CheckChemicalIonEquivalence(user, correct) || CheckChemicalIonEquivalence(normUser, normCorrect)) return true;
+
+            // 微积分不定积分常数 C 加法交换与大小写等价 (如 x^2 + C vs C + x^2 vs x^2 + c)
+            if (CheckIndefiniteIntegralConstantCMatch(user, correct) || CheckIndefiniteIntegralConstantCMatch(normUser, normCorrect)) return true;
 
             return false;
         }
@@ -5486,6 +5505,27 @@ namespace Northtropic.Services
         {
             if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
 
+            // 电学电感亨利 (H) 与电导西门子 (S) 语境预处理，避免与时间单位 (h, s) 混淆
+            bool isInductanceContext = System.Text.RegularExpressions.Regex.IsMatch(u, @"(?:亨|毫亨|微亨|纳亨|mH|μH|uH|nH|\bH\b)") ||
+                                       System.Text.RegularExpressions.Regex.IsMatch(c, @"(?:亨|毫亨|微亨|纳亨|mH|μH|uH|nH|\bH\b)");
+            if (isInductanceContext)
+            {
+                u = System.Text.RegularExpressions.Regex.Replace(u, @"(?<=\d)\s*H\b", "亨");
+                c = System.Text.RegularExpressions.Regex.Replace(c, @"(?<=\d)\s*H\b", "亨");
+            }
+
+            bool isConductanceContext = System.Text.RegularExpressions.Regex.IsMatch(u, @"(?:西门子|西|毫西|微西|mS|μS|uS|\bS\b)") ||
+                                        System.Text.RegularExpressions.Regex.IsMatch(c, @"(?:西门子|西|毫西|微西|mS|μS|uS|\bS\b)");
+            if (isConductanceContext)
+            {
+                u = System.Text.RegularExpressions.Regex.Replace(u, @"(?<=\d)\s*mS\b", "毫西");
+                c = System.Text.RegularExpressions.Regex.Replace(c, @"(?<=\d)\s*mS\b", "毫西");
+                u = System.Text.RegularExpressions.Regex.Replace(u, @"(?<=\d)\s*(?:uS|μS)\b", "微西");
+                c = System.Text.RegularExpressions.Regex.Replace(c, @"(?<=\d)\s*(?:uS|μS)\b", "微西");
+                u = System.Text.RegularExpressions.Regex.Replace(u, @"(?<=\d)\s*S\b", "西门子");
+                c = System.Text.RegularExpressions.Regex.Replace(c, @"(?<=\d)\s*S\b", "西门子");
+            }
+
             static bool TryParseUnitNumber(string s, out double num)
             {
                 num = 0;
@@ -5583,6 +5623,36 @@ namespace Northtropic.Services
                     ("mt|毫特", 1e-3, "mag"),
                     ("特斯拉|特", 1.0, "mag"),
 
+                    // 磁学磁通量 (Wb, mWb, μWb, Mx)
+                    (@"mwb|毫韦伯|毫韦", 1e-3, "flux"),
+                    (@"uwb|μwb|\\mu\s*wb|微韦伯|微韦", 1e-6, "flux"),
+                    (@"wb|韦伯|韦", 1.0, "flux"),
+                    (@"mx|麦克斯韦|麦", 1e-8, "flux"),
+
+                    // 电学电感 (H, mH, μH, nH)
+                    (@"mh|毫亨", 1e-3, "inductance"),
+                    (@"uh|μh|\\mu\s*h|微亨", 1e-6, "inductance"),
+                    (@"nh|纳亨", 1e-9, "inductance"),
+                    (@"亨利|亨", 1.0, "inductance"),
+
+                    // 电学电导 (S, mS, μS)
+                    (@"毫西门子|毫西", 1e-3, "conductance"),
+                    (@"微西门子|微西", 1e-6, "conductance"),
+                    (@"西门子|西", 1.0, "conductance"),
+
+                    // 物质的量浓度 (mol/L, mol/dm³, mmol/L, mol/m³)
+                    (@"mol/l|mol/dm\^3|mol/dm³|mol/dm3|摩尔/升|摩尔每升", 1.0, "conc"),
+                    (@"mmol/l|mmol/dm\^3|mmol/dm³|mmol/dm3|毫摩尔/升|毫摩尔每升", 1e-3, "conc"),
+                    (@"mol/m\^3|mol/m³|mol/m3|摩尔/立方米|摩尔每立方米", 1e-3, "conc"),
+                    (@"umol/l|μmol/l|\\mu\s*mol/l|微摩尔/升", 1e-6, "conc"),
+
+                    // 体积与容积 (m³, dm³, cm³, L, mL)
+                    (@"m\^3|m³|m3|立方米", 1.0, "vol"),
+                    (@"dm\^3|dm³|dm3|立方分米", 1e-3, "vol"),
+                    (@"cm\^3|cm³|cm3|cc|立方厘米", 1e-6, "vol"),
+                    (@"ml|毫升", 1e-6, "vol"),
+                    (@"l|\\ell|升|公升", 1e-3, "vol"),
+
                     // 时间 (h, min, s, ms)
                     (@"h|小时|时|hr|hrs", 3600.0, "time"),
                     (@"min|mins|分钟|分", 60.0, "time"),
@@ -5667,6 +5737,123 @@ namespace Northtropic.Services
                 {
                     return true;
                 }
+            }
+
+            return false;
+        }
+
+        public static bool CheckChemicalIonEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+
+            string normU = NormalizeChemicalIon(u);
+            string normC = NormalizeChemicalIon(c);
+
+            if (string.IsNullOrEmpty(normU) || string.IsNullOrEmpty(normC)) return false;
+            return string.Equals(normU, normC, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeChemicalIon(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+            s = s.Trim().Replace(" ", "").Replace("$", "").Replace("￥", "");
+            s = s.Replace("【", "[").Replace("】", "]");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:text|mathrm|mathbf)\{([^}]*)\}", "$1");
+            s = s.Replace("\\text{", "").Replace("\\mathrm{", "").Replace("\\mathbf{", "");
+            s = s.Replace("\\,", "").Replace("~", "");
+
+            // 剥离 LaTeX 下标 _4 -> 4, _{4} -> 4
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"_\{?(\d+)\}?", "$1");
+
+            // Unicode 上下标数字与正负号转换为标准字符
+            s = s.Replace("³⁺", "3+").Replace("²⁺", "2+").Replace("⁴⁺", "4+").Replace("⁵⁺", "5+")
+                 .Replace("³⁻", "3-").Replace("²⁻", "2-").Replace("⁴⁻", "4-").Replace("⁵⁻", "5-")
+                 .Replace("⁺", "+").Replace("⁻", "-");
+            s = s.Replace("⁰", "0").Replace("¹", "1").Replace("²", "2").Replace("³", "3")
+                 .Replace("⁴", "4").Replace("⁵", "5").Replace("⁶", "6").Replace("⁷", "7")
+                 .Replace("⁸", "8").Replace("⁹", "9");
+
+            // 提取末尾电荷部分
+            // 支持多种电荷形式:
+            // LaTeX: ^{3+}, ^{2-}, ^{+3}, ^{-2}, ^{+}, ^{-}, ^3+, ^2-, ^+3, ^-2, ^+, ^-
+            // 括号: ^(3+), ^(2-), ^(+3), ^(-2), (3+), (2-), (+3), (-2)
+            // 简写: 3+, 2+, +3, +2, +, -, 1+, 1-, +1, -1, +++, ++, ---, --
+            var chargeRegex = new System.Text.RegularExpressions.Regex(@"(?:\^[\{\(]?|\(?)([1-5]?[+-]|[+-][1-5]?|\+{1,4}|-{1,4})[\}\)]?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var match = chargeRegex.Match(s);
+            if (!match.Success) return string.Empty;
+
+            string rawCharge = match.Groups[1].Value;
+            string basePart = s.Substring(0, match.Index).Trim();
+            if (string.IsNullOrEmpty(basePart)) return string.Empty;
+
+            int chargeSign = 1;
+            int chargeVal = 1;
+
+            if (rawCharge.All(ch => ch == '+'))
+            {
+                chargeSign = 1;
+                chargeVal = rawCharge.Length;
+            }
+            else if (rawCharge.All(ch => ch == '-'))
+            {
+                chargeSign = -1;
+                chargeVal = rawCharge.Length;
+            }
+            else
+            {
+                if (rawCharge.Contains("-")) chargeSign = -1;
+                else chargeSign = 1;
+
+                string digits = new string(rawCharge.Where(char.IsDigit).ToArray());
+                if (int.TryParse(digits, out int val) && val > 0)
+                {
+                    chargeVal = val;
+                }
+                else
+                {
+                    chargeVal = 1;
+                }
+            }
+
+            string baseNorm = basePart.ToLowerInvariant()
+                .Replace("(", "").Replace(")", "")
+                .Replace("[", "").Replace("]", "");
+
+            return $"{baseNorm}__ch__{(chargeSign > 0 ? "+" : "-")}{chargeVal}";
+        }
+
+        public static bool CheckIndefiniteIntegralConstantCMatch(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+
+            static bool TryExtractConstantC(string s, out string integrand)
+            {
+                integrand = string.Empty;
+                if (string.IsNullOrWhiteSpace(s)) return false;
+                s = s.Trim().Replace(" ", "");
+
+                // 检查是否包含常数项 +C, +c, C+, c+, +常数
+                var matchTrailing = System.Text.RegularExpressions.Regex.Match(s, @"^(.*)[+](?:C|c|常数)$");
+                if (matchTrailing.Success)
+                {
+                    integrand = matchTrailing.Groups[1].Value.Trim();
+                    return !string.IsNullOrEmpty(integrand);
+                }
+
+                var matchLeading = System.Text.RegularExpressions.Regex.Match(s, @"^(?:C|c|常数)[+](.*)$");
+                if (matchLeading.Success)
+                {
+                    integrand = matchLeading.Groups[1].Value.Trim();
+                    return !string.IsNullOrEmpty(integrand);
+                }
+
+                return false;
+            }
+
+            if (TryExtractConstantC(u, out var userIntegrand) && TryExtractConstantC(c, out var corrIntegrand))
+            {
+                if (string.Equals(userIntegrand, corrIntegrand, StringComparison.OrdinalIgnoreCase)) return true;
+                if (CheckFillInBlankMatch(userIntegrand, corrIntegrand)) return true;
             }
 
             return false;

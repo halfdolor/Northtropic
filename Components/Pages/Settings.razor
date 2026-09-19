@@ -998,6 +998,18 @@
                                             @(_isPurgingOrphans ? "自愈清理中..." : "🧹 彻底自愈清理孤儿记录")
                                         </MudButton>
                                     }
+                                    @if (_dataIntegrityAudit != null && _dataIntegrityAudit.DuplicateQuestionsCount > 0)
+                                    {
+                                        <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="DeduplicateQuestionsAsync" Disabled="@_isDeduplicatingQuestions" Class="font-weight-bold">
+                                            @(_isDeduplicatingQuestions ? "去重自愈中..." : "🔄 题库去重与重定向")
+                                        </MudButton>
+                                    }
+                                    @if (_dataIntegrityAudit != null && _dataIntegrityAudit.UsersWithInvalidBalancesCount > 0)
+                                    {
+                                        <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Balance" OnClick="HealGamificationInvariantsAsync" Disabled="@_isHealingBalances" Class="font-weight-bold">
+                                            @(_isHealingBalances ? "校准中..." : "⚖️ 校准资产与等级")
+                                        </MudButton>
+                                    }
                                 </div>
                             </div>
 
@@ -1049,6 +1061,22 @@
                                             <div class="mud-text-secondary" style="font-size: 0.72rem;">学习计划孤儿</div>
                                             <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.OrphanStudyPlansCount > 0 ? "#ef4444" : "#10b981");">
                                                 @_dataIntegrityAudit.OrphanStudyPlansCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="6" md="3">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">题库重复副本</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.DuplicateQuestionsCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.DuplicateQuestionsCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="6" md="3">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">资产/等级脱节</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.UsersWithInvalidBalancesCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.UsersWithInvalidBalancesCount
                                             </div>
                                         </div>
                                     </MudItem>
@@ -1309,6 +1337,8 @@
     private DataIntegrityAuditDto? _dataIntegrityAudit;
     private bool _isAuditingIntegrity = false;
     private bool _isPurgingOrphans = false;
+    private bool _isDeduplicatingQuestions = false;
+    private bool _isHealingBalances = false;
 
     private void FilterTelemetryEvents()
     {
@@ -1816,6 +1846,57 @@
         finally
         {
             _isPurgingOrphans = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeduplicateQuestionsAsync()
+    {
+        _isDeduplicatingQuestions = true;
+        StateHasChanged();
+        try
+        {
+            var res = await SystemHealthService.DeduplicateQuestionsAsync();
+            if (res.Success)
+            {
+                Snackbar.Add($"🔄 {res.Message}", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"题库去重自愈异常: {res.Message}", Severity.Warning);
+            }
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"题库去重自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isDeduplicatingQuestions = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HealGamificationInvariantsAsync()
+    {
+        _isHealingBalances = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealGamificationInvariantsAsync();
+            Snackbar.Add($"⚖️ 游戏化资产与等级不变量校准完成：成功修正 {healedCount} 个异常用户！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"校准资产与等级异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingBalances = false;
             StateHasChanged();
         }
     }

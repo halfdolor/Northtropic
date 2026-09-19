@@ -213,6 +213,8 @@ namespace Northtropic.Services
         public int TotalCorruptedQuestions { get; set; }
         public int TotalOrphanPrivateQuestions { get; set; }
         public int TotalDanglingPublicQuestions { get; set; }
+        public int TotalDuplicateQuestions { get; set; }
+        public int TotalUsersWithInvalidBalances { get; set; }
         public int OrphanErrorItemsCount => TotalOrphanErrorItems;
         public int OrphanPracticeRecordsCount => TotalOrphanPracticeRecords;
         public int OrphanFavoritesCount => TotalOrphanUserFavorites;
@@ -225,9 +227,25 @@ namespace Northtropic.Services
         public int OrphanLlmLogsCount => TotalOrphanLlmLogs;
         public int OrphanPrivateQuestionsCount => TotalOrphanPrivateQuestions;
         public int DanglingPublicQuestionsCount => TotalDanglingPublicQuestions;
+        public int DuplicateQuestionsCount => TotalDuplicateQuestions;
+        public int UsersWithInvalidBalancesCount => TotalUsersWithInvalidBalances;
         public int TotalIssuesCount => TotalOrphanErrorItems + TotalOrphanPracticeRecords + TotalOrphanUserFavorites + TotalOrphanHomeworkAssignments + TotalOrphanBindings + TotalOrphanStudyPlans + TotalOrphanStudyPlanTasks + TotalOrphanUserAchievements + TotalOrphanInsights + TotalOrphanLlmLogs + TotalCorruptedQuestions + TotalOrphanPrivateQuestions + TotalDanglingPublicQuestions;
+        public int TotalOptimizationCandidatesCount => TotalDuplicateQuestions + TotalUsersWithInvalidBalances;
         public bool IsHealthy => TotalIssuesCount == 0;
         public List<string> AuditDetails { get; set; } = new();
+    }
+
+    public class DataIntegrityDeduplicateResultDto
+    {
+        public bool Success { get; set; } = true;
+        public int DuplicateGroupsDetected { get; set; }
+        public int DuplicateQuestionsPurged { get; set; }
+        public int ReassignedPracticeRecordsCount { get; set; }
+        public int ReassignedErrorItemsCount { get; set; }
+        public int ReassignedFavoritesCount { get; set; }
+        public double ElapsedMilliseconds { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public DateTime ExecutedAt { get; set; } = DateTime.Now;
     }
 
     public class DataIntegrityPurgeResultDto
@@ -329,6 +347,8 @@ namespace Northtropic.Services
         Task<ArchitecturalDiagnosticResultDto> RunArchitecturalSelfDiagnosticAsync();
         Task<DataIntegrityAuditDto> AuditDataIntegrityAsync();
         Task<DataIntegrityPurgeResultDto> PurgeOrphanedRecordsAsync();
+        Task<DataIntegrityDeduplicateResultDto> DeduplicateQuestionsAsync();
+        Task<int> HealGamificationInvariantsAsync();
         IReadOnlyList<SystemArchitectureEvent> GetRecentArchitectureEvents(string? category = null, string? level = null, int? maxCount = null);
         ArchitectureTelemetrySummaryDto GetArchitectureTelemetrySummary();
         Task<AdaptiveMaintenancePlanDto> EvaluateAdaptiveMaintenancePlanAsync();

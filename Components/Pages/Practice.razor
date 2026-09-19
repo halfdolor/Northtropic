@@ -600,6 +600,12 @@
                                        Size="Size.Medium"
                                        OnClick="ToggleFavoriteCurrentAsync" />
                     </MudTooltip>
+                    <MudTooltip Text="复制试题与标准解析至剪贴板 (快捷键: C)">
+                        <MudIconButton Icon="@Icons.Material.Outlined.ContentCopy"
+                                       Color="Color.Default"
+                                       Size="Size.Medium"
+                                       OnClick="CopyQuestionMarkdownAsync" />
+                    </MudTooltip>
                     <MudTooltip Text="@GetDifficultyDescriptor(q.Difficulty)">
                         <MudChip T="string" Color="@GetDifficultyColor(q.Difficulty)" Size="Size.Small" Variant="Variant.Filled">
                             @GetDifficultyBadgeText(q.Difficulty)
@@ -1675,12 +1681,16 @@
                         <td>在填空/主观输入框焦点状态下直接提交</td>
                     </tr>
                     <tr>
-                        <td><kbd class="shortcut-badge">Space</kbd> / <kbd class="shortcut-badge">→</kbd> / <kbd class="shortcut-badge">N</kbd></td>
+                        <td><kbd class="shortcut-badge">Space</kbd> / <kbd class="shortcut-badge">→</kbd> / <kbd class="shortcut-badge">PageDown</kbd> / <kbd class="shortcut-badge">N</kbd></td>
                         <td>已作答时快速提交，已提交时极速切换下一题 (或 Alt+N)</td>
                     </tr>
                     <tr>
-                        <td><kbd class="shortcut-badge">←</kbd> / <kbd class="shortcut-badge">B</kbd></td>
+                        <td><kbd class="shortcut-badge">←</kbd> / <kbd class="shortcut-badge">PageUp</kbd> / <kbd class="shortcut-badge">B</kbd></td>
                         <td>返回上一道题目 (解析模式按 B，或随时按 Alt+B)</td>
+                    </tr>
+                    <tr>
+                        <td><kbd class="shortcut-badge">C</kbd> / <kbd class="shortcut-badge">Alt</kbd> + <kbd class="shortcut-badge">C</kbd></td>
+                        <td>📋 快速复制当前试题 Markdown 与标准解析至剪贴板</td>
                     </tr>
                     <tr>
                         <td><kbd class="shortcut-badge">?</kbd></td>
@@ -3664,6 +3674,14 @@
             return;
         }
 
+        // 快捷键 C (解析展示时) 或 Alt+C (任意时刻): 复制试题内容与标准解析至系统剪贴板
+        if ((e.AltKey && keyLower == "c") || (keyLower == "c" && _submitted))
+        {
+            await CopyQuestionMarkdownAsync();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
         // 如果是单选题
         if (q.Type == QuestionType.SingleChoice && !_submitted)
         {
@@ -3758,15 +3776,15 @@
                 }
             }
         }
-        // 翻题与方向键导航 (支持 → / ←，以及 N / B，解析模式下随时直达，未提交模式下可用 Alt+N / Alt+B 避免与选项 B 冲突)
-        else if ((e.Key == "ArrowRight" || keyLower == "n" || (e.AltKey && keyLower == "n")) && (_submitted || _evalMode.Contains("整卷统一")))
+        // 翻题与方向键导航 (支持 → / PageDown / ← / PageUp，以及 N / B，解析模式下随时直达，未提交模式下可用 Alt+N / Alt+B 避免与选项 B 冲突)
+        else if ((e.Key == "ArrowRight" || e.Key == "PageDown" || keyLower == "n" || (e.AltKey && keyLower == "n")) && (_submitted || _evalMode.Contains("整卷统一")))
         {
             if (_currentIndex < _questions.Count)
             {
                 await NextQuestionAsync();
             }
         }
-        else if (e.Key == "ArrowLeft" || (e.AltKey && keyLower == "b") || (keyLower == "b" && (_submitted || (_evalMode.Contains("整卷统一") && q.Type != QuestionType.SingleChoice && q.Type != QuestionType.MultipleChoice))))
+        else if (e.Key == "ArrowLeft" || e.Key == "PageUp" || (e.AltKey && keyLower == "b") || (keyLower == "b" && (_submitted || (_evalMode.Contains("整卷统一") && q.Type != QuestionType.SingleChoice && q.Type != QuestionType.MultipleChoice))))
         {
             if (_currentIndex > 1)
             {
@@ -3774,6 +3792,62 @@
             }
         }
     }
+
+    private async Task CopyQuestionMarkdownAsync()
+    {
+        var q = CurrentQuestion;
+        if (q == null) return;
+
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"### 试题 #{_currentIndex} ({GetQuestionTypeName(q.Type)} · {q.Subject})");
+            sb.AppendLine();
+            sb.AppendLine(q.Stem);
+            sb.AppendLine();
+
+            if (q.Options != null && q.Options.Count > 0)
+            {
+                sb.AppendLine("#### 选项");
+                for (int i = 0; i < q.Options.Count; i++)
+                {
+                    char optLetter = (char)('A' + i);
+                    sb.AppendLine($"- **{optLetter}.** {q.Options[i]}");
+                }
+                sb.AppendLine();
+            }
+
+            if (_submitted || _paperSubmitted || !string.IsNullOrWhiteSpace(q.StandardAnalysis))
+            {
+                sb.AppendLine("#### 标准答案与解析");
+                if (!string.IsNullOrWhiteSpace(q.CorrectAnswer))
+                {
+                    sb.AppendLine($"- **正确答案**: `{q.CorrectAnswer}`");
+                }
+                if (!string.IsNullOrWhiteSpace(q.StandardAnalysis))
+                {
+                    sb.AppendLine($"- **详细解析**: {q.StandardAnalysis}");
+                }
+            }
+
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString().TrimEnd());
+            Snackbar.Add("📋 试题与标准解析已成功复制到系统剪贴板！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"复制失败: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private static string GetQuestionTypeName(QuestionType type) => type switch
+    {
+        QuestionType.SingleChoice => "单选题",
+        QuestionType.MultipleChoice => "多选题",
+        QuestionType.FillInBlank => "填空题",
+        QuestionType.ShortAnswer => "简答题",
+        QuestionType.EssayAnalysis => "问答解析综合大题",
+        _ => "试题"
+    };
 
     private async Task InsertSymbol(string symbol)
     {
