@@ -1022,6 +1022,9 @@
                                     <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.FamilyRestroom" OnClick="HealStudentParentBindingInvariantsAsync" Disabled="@_isHealingBindings" Class="font-weight-bold">
                                         @(_isHealingBindings ? "自愈中..." : "👨‍👩‍👧 自愈家校监护绑定")
                                     </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.BookmarkRemove" OnClick="HealUserFavoriteInvariantsAsync" Disabled="@_isHealingFavorites" Class="font-weight-bold">
+                                        @(_isHealingFavorites ? "自愈中..." : "⭐ 自愈收藏冗余副本")
+                                    </MudButton>
                                 </div>
                             </div>
 
@@ -1076,7 +1079,7 @@
                                             </div>
                                         </div>
                                     </MudItem>
-                                    <MudItem xs="6" sm="6" md="3">
+                                    <MudItem xs="6" sm="4" md="2">
                                         <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
                                             <div class="mud-text-secondary" style="font-size: 0.72rem;">题库重复副本</div>
                                             <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.DuplicateQuestionsCount > 0 ? "#ef4444" : "#10b981");">
@@ -1084,7 +1087,7 @@
                                             </div>
                                         </div>
                                     </MudItem>
-                                    <MudItem xs="6" sm="6" md="3">
+                                    <MudItem xs="6" sm="4" md="2">
                                         <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
                                             <div class="mud-text-secondary" style="font-size: 0.72rem;">资产/等级脱节</div>
                                             <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.UsersWithInvalidBalancesCount > 0 ? "#ef4444" : "#10b981");">
@@ -1092,7 +1095,7 @@
                                             </div>
                                         </div>
                                     </MudItem>
-                                    <MudItem xs="6" sm="6" md="3">
+                                    <MudItem xs="6" sm="4" md="2">
                                         <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
                                             <div class="mud-text-secondary" style="font-size: 0.72rem;">学习计划领域异常</div>
                                             <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.InvalidStudyPlansCount > 0 ? "#ef4444" : "#10b981");">
@@ -1100,11 +1103,27 @@
                                             </div>
                                         </div>
                                     </MudItem>
-                                    <MudItem xs="6" sm="6" md="3">
+                                    <MudItem xs="6" sm="4" md="2">
                                         <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
                                             <div class="mud-text-secondary" style="font-size: 0.72rem;">异常监护绑定</div>
                                             <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.InvalidBindingsCount > 0 ? "#ef4444" : "#10b981");">
                                                 @_dataIntegrityAudit.InvalidBindingsCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">作业领域异常</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.InvalidHomeworkAssignmentsCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.InvalidHomeworkAssignmentsCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">收藏重复副本</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.DuplicateFavoritesCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.DuplicateFavoritesCount
                                             </div>
                                         </div>
                                     </MudItem>
@@ -1371,6 +1390,7 @@
     private bool _isHealingStudyPlans = false;
     private bool _isHealingHomeworkAssignments = false;
     private bool _isHealingBindings = false;
+    private bool _isHealingFavorites = false;
 
     private void FilterTelemetryEvents()
     {
@@ -2021,6 +2041,28 @@
         }
     }
 
+    private async Task HealUserFavoriteInvariantsAsync()
+    {
+        _isHealingFavorites = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealUserFavoriteInvariantsAsync();
+            Snackbar.Add($"⭐ 收藏夹冗余副本自愈完成：成功清理/去重 {healedCount} 条重复收藏！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"收藏夹自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingFavorites = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task VacuumDatabaseAsync()
     {
         _isVacuuming = true;
@@ -2117,6 +2159,7 @@
                 }
                 await SystemHealthService.HealHomeworkAssignmentInvariantsAsync();
                 await SystemHealthService.HealErrorBookInvariantsAsync();
+                await SystemHealthService.HealUserFavoriteInvariantsAsync();
                 _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
             }
             _healthDto = await SystemHealthService.GetSystemHealthAsync();

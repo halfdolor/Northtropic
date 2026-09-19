@@ -1873,6 +1873,45 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalInvalidBindings} 条异常家校监护绑定 (包含自我绑定或冗余副本)");
                 }
 
+                // 17. HomeworkAssignment Domain Invariants (异常答题计数、未对齐的准确率/得分、完成状态脱节)
+                var homeworkInvariants = await db.HomeworkAssignments
+                    .Select(h => new {
+                        h.Id,
+                        h.QuestionCount,
+                        h.TotalAnswered,
+                        h.CorrectCount,
+                        h.AccuracyRate,
+                        h.Score,
+                        h.IsCompleted,
+                        h.CompletedAt
+                    })
+                    .ToListAsync();
+                int invalidHomeworkCount = homeworkInvariants.Count(h =>
+                    h.QuestionCount < 1 ||
+                    h.TotalAnswered < 0 || h.TotalAnswered > h.QuestionCount ||
+                    h.CorrectCount < 0 || h.CorrectCount > h.TotalAnswered ||
+                    h.Score < 0 || h.Score > 100 ||
+                    (h.TotalAnswered > 0 && Math.Abs(h.AccuracyRate - (double)h.CorrectCount / h.TotalAnswered * 100) > 0.5) ||
+                    (h.IsCompleted && h.CompletedAt == null) ||
+                    (!h.IsCompleted && h.CompletedAt != null)
+                );
+                audit.TotalInvalidHomeworkAssignments = invalidHomeworkCount;
+                if (audit.TotalInvalidHomeworkAssignments > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidHomeworkAssignments} 份作业分配存在领域不变量异常 (包含负数答题量、答对数越界或完成时间脱节)");
+                }
+
+                // 18. UserFavorites Duplicate Invariants (同一用户对同一题目的重复收藏冗余)
+                int duplicateFavoritesCount = favorites
+                    .GroupBy(f => new { f.UserId, f.QuestionId })
+                    .Where(g => g.Count() > 1)
+                    .Sum(g => g.Count() - 1);
+                audit.TotalDuplicateFavorites = duplicateFavoritesCount;
+                if (audit.TotalDuplicateFavorites > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalDuplicateFavorites} 条收藏夹冗余副本 (同一题目被相同用户重复收藏)");
+                }
+
                 if (audit.IsHealthy)
                 {
                     audit.AuditDetails.Add("✅ 数据库全库拓扑与业务外键完整性审计通过，未发现任何孤儿或格式损坏记录。");
@@ -2699,6 +2738,40 @@ namespace Northtropic.Services
             {
                 await db.SaveChangesAsync();
                 RecordArchitectureEvent("StudentParentBindingInvariantSelfHealing", "Success", $"清理并自愈了 {healedCount} 条无效自我监护与冗余绑定记录");
+            }
+
+            return healedCount;
+        }
+
+        public async Task<int> HealUserFavoriteInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            int healedCount = 0;
+            var favorites = await db.UserFavorites.ToListAsync();
+
+            var duplicateGroups = favorites
+                .GroupBy(f => new { f.UserId, f.QuestionId })
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            foreach (var group in duplicateGroups)
+            {
+                // 保留最早创建的一条合法收藏记录
+                var canonical = group.OrderBy(f => f.CreatedAt).First();
+                var duplicatesToRemove = group.Where(f => f.Id != canonical.Id).ToList();
+                if (duplicatesToRemove.Count > 0)
+                {
+                    db.UserFavorites.RemoveRange(duplicatesToRemove);
+                    healedCount += duplicatesToRemove.Count;
+                }
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("UserFavoriteInvariantSelfHealing", "Success", $"清理并自愈了 {healedCount} 条收藏夹冗余重复副本");
             }
 
             return healedCount;

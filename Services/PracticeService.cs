@@ -3480,8 +3480,8 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=[\(\[,])\s*inf\b", "+inf");
                 s = s.Replace("\\emptyset", "∅").Replace("\\varnothing", "∅").Replace("\\empty", "∅").Replace("空集", "∅").Replace("{}", "∅").Replace("Ø", "∅").Replace("ø", "∅");
                 s = s.Replace("\\cup", "u").Replace("∪", "u").Replace("\\cap", "∩");
-                // 区间与集合并集连词解构 (如 (-inf, 1] U [3, +inf), (-inf, 1]并[3, +inf), (-inf, 1]或[3, +inf))
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=[\]\)\}])\s*(?:\\cup|∪|U|并集?|或者?)\s*(?=[\[\(\{])", "u");
+                // 区间与集合并集连词解构 (如 (-inf, 1] U [3, +inf), (-inf, 1]并[3, +inf), (-inf, 1]或[3, +inf), [1, 2] 与 [3, 4])
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=[\]\)\}])\s*(?:\\cup|∪|U|并集?|或者?|与|及|并且|和)\s*(?=[\[\(\{])", "u");
                 // 数学集合隶属度符号归一: \in, ∈, 属于 -> in; \notin, ∉, 不属于 -> !in
                 s = s.Replace("\\notin", " !in ").Replace("∉", " !in ").Replace("不属于", " !in ");
                 s = s.Replace("\\in", " in ").Replace("∈", " in ").Replace("属于", " in ");
@@ -3672,7 +3672,9 @@ namespace Northtropic.Services
                 sLower = sLower.Replace("标准大气压", "atm").Replace("毫米汞柱", "mmhg");
                 sLower = sLower.Replace("千瓦时", "kwh").Replace("度电", "kwh");
                 sLower = sLower.Replace("电子伏特", "ev").Replace("电子伏", "ev").Replace("兆电子伏", "mev");
-                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"m\s*[\*·]?\s*s\^?-2\b|m/s²", "m/s^2");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bm\s*[\*·]?\s*s\^?-2\b|m/s²|\bm\s+s\^-2\b", "m/s^2");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bn\s*[\*·]\s*m\b|\bn\s+m\b", "n*m");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bt\s*[\*·]\s*m\^?2\b|\bt\s+m\^?2\b", "wb");
                 // 化学同位素规范化: 如 ^{14}c, ^{14}_{6}c, c-14, 碳-14, 碳14 -> c-14
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\^\{?(\d+)\}?(?:_\{?\d+\}?)?([a-z]+)", "$2-$1");
                 sLower = sLower.Replace("碳-14", "c-14").Replace("碳14", "c-14")
@@ -4049,10 +4051,10 @@ namespace Northtropic.Services
                     }
                 }
 
-                // 如果包含复合 "或者" / "或" / "并" / "u" / "∪" 连接的多段不等式或区间 (如 x < -1 或 x > 1, (-inf, -1) u (1, +inf))
-                if (System.Text.RegularExpressions.Regex.IsMatch(s, @"\b(?:或者|或|并)\b|(?<=\d|\))\s*(?:或者|或|并)\s*(?=[a-zA-Z\(])") || s.Contains('u') || s.Contains('∪') || s.Contains("\\cup"))
+                // 如果包含复合 "或者" / "或" / "并" / "与" / "及" / "并且" / "u" / "∪" 连接的多段不等式或区间 (如 x < -1 或 x > 1, (-inf, -1) u (1, +inf))
+                if (System.Text.RegularExpressions.Regex.IsMatch(s, @"\b(?:或者|或|并|与|及|并且|和)\b|(?<=\d|\))\s*(?:或者|或|并|与|及|并且|和)\s*(?=[a-zA-Z\(])") || s.Contains('u') || s.Contains('∪') || s.Contains("\\cup"))
                 {
-                    var parts = System.Text.RegularExpressions.Regex.Split(s, @"\s*(?:或者|或|并|\\cup|∪|u)\s*")
+                    var parts = System.Text.RegularExpressions.Regex.Split(s, @"\s*(?:或者|或|并|与|及|并且|和|\\cup|∪|u)\s*")
                         .Select(p => NormalizeIntervalOrInequality(p.Trim()))
                         .Where(p => !string.IsNullOrEmpty(p))
                         .OrderBy(p => p, StringComparer.Ordinal)

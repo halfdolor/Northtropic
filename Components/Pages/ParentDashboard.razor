@@ -730,7 +730,13 @@
                                             else if (assign.Deadline.HasValue && assign.Deadline.Value < DateTime.Now)
                                             {
                                                 <MudChip T="string" Color="Color.Error" Size="Size.Small" Icon="@Icons.Material.Filled.AlarmOff" Variant="Variant.Filled">
-                                                    已逾期 (@assign.QuestionCount 题)
+                                                    已逾期 (@assign.TotalAnswered/@assign.QuestionCount 题)
+                                                </MudChip>
+                                            }
+                                            else if (assign.TotalAnswered > 0)
+                                            {
+                                                <MudChip T="string" Color="Color.Info" Size="Size.Small" Icon="@Icons.Material.Filled.Autorenew">
+                                                    进行中 (@assign.TotalAnswered/@assign.QuestionCount 题)
                                                 </MudChip>
                                             }
                                             else
@@ -739,7 +745,25 @@
                                                     待完成 (@assign.QuestionCount 题)
                                                 </MudChip>
                                             }
+
+                                            @if (!assign.IsCompleted && assign.Deadline.HasValue && assign.Deadline.Value >= DateTime.Now && (assign.Deadline.Value - DateTime.Now).TotalHours <= 24)
+                                            {
+                                                <MudChip T="string" Color="Color.Warning" Variant="Variant.Outlined" Size="Size.Small" Icon="@Icons.Material.Filled.AccessAlarm" Class="font-weight-bold">
+                                                    即将截止 (剩 @((int)Math.Max(1, Math.Ceiling((assign.Deadline.Value - DateTime.Now).TotalHours))) 小时)
+                                                </MudChip>
+                                            }
                                         </div>
+
+                                        @if (!assign.IsCompleted && assign.TotalAnswered > 0)
+                                        {
+                                            <div class="my-2">
+                                                <div class="d-flex justify-space-between align-center text-caption mud-text-secondary mb-1">
+                                                    <span>作答进度：@assign.TotalAnswered / @assign.QuestionCount 题</span>
+                                                    <span class="font-weight-bold" style="color: #3b82f6;">@(assign.QuestionCount > 0 ? (int)((double)assign.TotalAnswered / assign.QuestionCount * 100) : 0)%</span>
+                                                </div>
+                                                <MudProgressLinear Color="Color.Info" Value="@(assign.QuestionCount > 0 ? (double)assign.TotalAnswered / assign.QuestionCount * 100 : 0)" Rounded="true" Style="height: 6px; border-radius: 3px;" />
+                                            </div>
+                                        }
 
                                         @if (!string.IsNullOrWhiteSpace(assign.ParentNote))
                                         {
