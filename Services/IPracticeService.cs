@@ -72,7 +72,7 @@ namespace Northtropic.Services
         Task<AnswerCheckResult> SubmitAnswerAsync(Question activeQuestion, string userAnswer, int timeTakenSeconds, int currentCombo, Guid? targetUserId = null, System.Threading.CancellationToken cancellationToken = default);
         Task<WholePaperSubmissionResult> SubmitBatchPaperAsync(List<(Question Question, string UserAnswer, int TimeTakenSeconds)> submissions, int initialCombo, Guid? targetUserId = null, System.Threading.CancellationToken cancellationToken = default);
         Task<List<LlmGenerationLog>> GetLlmGenerationLogsAsync(Guid userId);
-        Task<PracticeAnalyticsDto> GetPracticeAnalyticsAsync(Guid userId, string? subject = null, bool? isCorrect = null);
+        Task<PracticeAnalyticsDto> GetPracticeAnalyticsAsync(Guid userId, string? subject = null, bool? isCorrect = null, Guid? requestorUserId = null);
         Task<bool> ToggleFavoriteAsync(Guid userId, Guid questionId, string? note = null);
         Task<bool> IsFavoriteAsync(Guid userId, Guid questionId);
         Task<List<Question>> GetFavoriteQuestionsAsync(Guid userId);
@@ -80,8 +80,8 @@ namespace Northtropic.Services
         Task<List<Question>> GetQuestionsByIdsAsync(List<Guid> questionIds);
         Task<HomeworkAssignment> CreateHomeworkAssignmentAsync(Guid creatorUserId, Guid studentUserId, string title, string subject, string category, int questionCount, int difficulty, DateTime? deadline, string note);
         Task<HomeworkAssignment?> GetHomeworkAssignmentByIdAsync(Guid assignmentId);
-        Task<List<HomeworkAssignment>> GetHomeworkAssignmentsByStudentAsync(Guid studentUserId);
-        Task<List<HomeworkAssignment>> GetHomeworkAssignmentsByCreatorAsync(Guid creatorUserId);
+        Task<List<HomeworkAssignment>> GetHomeworkAssignmentsByStudentAsync(Guid studentUserId, Guid? requestorUserId = null);
+        Task<List<HomeworkAssignment>> GetHomeworkAssignmentsByCreatorAsync(Guid creatorUserId, Guid? requestorUserId = null);
         Task<bool> CompleteHomeworkAssignmentAsync(Guid assignmentId, int correctCount, int totalAnswered, int score, Guid? studentUserId = null);
         Task<bool> DeleteHomeworkAssignmentAsync(Guid assignmentId, Guid? requestorUserId = null);
         Task<(bool Success, string Message)> SendHomeworkReminderNudgeAsync(Guid parentId, Guid assignmentId, string? customNudge = null);

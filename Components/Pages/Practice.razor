@@ -1187,6 +1187,16 @@
                     </div>
                 }
 
+                @if (!string.IsNullOrWhiteSpace(_lastResult.StudyPlanProgressFeedback))
+                {
+                    <div class="pa-3 my-2 rounded-lg d-flex align-center gap-2" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(139, 92, 246, 0.15)); border: 1px solid rgba(59, 130, 246, 0.35);">
+                        <MudIcon Icon="@Icons.Material.Filled.Stars" Color="Color.Primary" Size="Size.Small" />
+                        <MudText Typo="Typo.body2" Class="font-weight-bold" Style="color: var(--mud-palette-primary);">
+                            @_lastResult.StudyPlanProgressFeedback
+                        </MudText>
+                    </div>
+                }
+
                 <MudText Typo="Typo.body2" Class="mt-2">
                     <strong>标准答案：</strong> @_lastResult.StandardAnswer
                 </MudText>

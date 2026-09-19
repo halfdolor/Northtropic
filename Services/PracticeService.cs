@@ -591,6 +591,7 @@ namespace Northtropic.Services
                         if (existingError.RevisionCount >= 3)
                         {
                             existingError.IsMastered = true;
+                            planFeedback = "🎉 绝杀突破！该题已连续 3 次复练答对，成功达成【已净化】！错题本消灭总数 +1！";
                             var user = ctx.Users.Local.FirstOrDefault(u => u.Id == currentUserId)
                                 ?? await ctx.Users.FirstOrDefaultAsync(u => u.Id == currentUserId, cancellationToken);
                             if (user != null)
@@ -615,7 +616,7 @@ namespace Northtropic.Services
                             .OrderByDescending(p => p.CreatedAt)
                             .FirstOrDefaultAsync(cancellationToken);
 
-                    if (activePlan != null && activePlan.Tasks != null && activePlan.Tasks.Count > 0)
+                    if (activePlan != null)
                     {
                         var targetTask = activePlan.Tasks
                             .Where(t => !t.IsCompleted && t.Subject == activeQuestion.Subject && t.Category == activeQuestion.Category)
@@ -639,13 +640,15 @@ namespace Northtropic.Services
                             {
                                 activePlan.Status = StudyPlanStatus.Completed;
                                 activePlan.CompletedDate = DateTime.Now;
-                                planFeedback = $"🏆 太棒了！你已圆满达成当前提分学习计划全部任务指标！";
+                                string taskMsg = "🏆 太棒了！你已圆满达成当前提分学习计划全部任务指标！";
+                                planFeedback = string.IsNullOrEmpty(planFeedback) ? taskMsg : $"{planFeedback} | {taskMsg}";
                             }
                             else
                             {
-                                planFeedback = targetTask.IsCompleted
+                                string taskMsg = targetTask.IsCompleted
                                     ? $"🎉 恭喜达成学习计划任务【{targetTask.Title}】({targetTask.CompletedCount}/{targetTask.TargetCount})！"
                                     : $"🎯 学习计划推进：【{targetTask.Title}】已完成 {targetTask.CompletedCount}/{targetTask.TargetCount} 题！";
+                                planFeedback = string.IsNullOrEmpty(planFeedback) ? taskMsg : $"{planFeedback} | {taskMsg}";
                             }
                         }
                     }
@@ -1436,14 +1439,43 @@ namespace Northtropic.Services
         {
             val = 0;
             if (string.IsNullOrWhiteSpace(s)) return false;
-            s = s.Trim().Trim('(', ')');
+            s = s.Trim().Trim('(', ')').Replace("−", "-").Replace("－", "-").Replace("＋", "+").Replace("％", "%").Replace("\\%", "%");
             if (string.IsNullOrEmpty(s)) return false;
 
+            // 1. 百分比智能识别 (例如 25% -> 0.25, 0.5% -> 0.005)
+            if (s.EndsWith("%"))
+            {
+                var pctPart = s.Substring(0, s.Length - 1).Trim();
+                if (TryParseFractionOrDouble(pctPart, out var pctVal))
+                {
+                    val = pctVal / 100.0;
+                    return true;
+                }
+            }
+
+            // 2. LaTeX 分式解析 (支持 \frac{a}{b}, \dfrac{a}{b}, \tfrac{a}{b} 以及带符号如 -\frac{1}{2})
+            var fracMatch = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?)\s*\\(?:frac|dfrac|tfrac)\s*\{([^}]+)\}\s*\{([^}]+)\}$");
+            if (fracMatch.Success)
+            {
+                double sign = fracMatch.Groups[1].Value == "-" ? -1.0 : 1.0;
+                var numStr = fracMatch.Groups[2].Value.Trim();
+                var denStr = fracMatch.Groups[3].Value.Trim();
+                if (TryParseFractionOrDouble(numStr, out double num) &&
+                    TryParseFractionOrDouble(denStr, out double den) &&
+                    Math.Abs(den) > 1e-9)
+                {
+                    val = sign * (num / den);
+                    return true;
+                }
+            }
+
+            // 3. 常规浮点数解析
             if (double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out val))
             {
                 return true;
             }
 
+            // 4. 标准斜杠分式解析 (如 a/b, 3/4, -1/2)
             var slashIdx = s.IndexOf('/');
             if (slashIdx > 0 && slashIdx < s.Length - 1)
             {
@@ -3193,12 +3225,28 @@ namespace Northtropic.Services
 
             static string Normalize(string s)
             {
+                // 零宽不可见字符与非断行空格消除
+                s = s.Replace("\u200B", "").Replace("\uFEFF", "").Replace("\u200C", "").Replace("\u200D", "").Replace("\u00A0", " ");
                 s = s.Trim().Trim('$', '￥');
                 s = s.TrimEnd('。', '；', ';');
                 if (s.EndsWith(".") && !s.EndsWith(".."))
                 {
                     s = s.Substring(0, s.Length - 1).Trim();
                 }
+                // Unicode 负号与减号归一
+                s = s.Replace("−", "-").Replace("－", "-");
+                // 英语常用缩略语归一 (如 don't -> do not, doesn't -> does not, can't -> cannot 等)
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bcan't\b", "cannot", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwon't\b", "will not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bdon't\b", "do not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bdoesn't\b", "does not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bdidn't\b", "did not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bisn't\b", "is not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\baren't\b", "are not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwasn't\b", "was not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bweren't\b", "were not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bit's\b", "it is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
                 // 省略前导零的小数补齐: 如 .5 -> 0.5, -.75 -> -0.75, +.25 -> +0.25, x = .5 -> x = 0.5
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=^|[^\d\.])\.(\d+)", "0.$1");
                 // 全角数字转换为半角数字
@@ -5872,10 +5920,39 @@ namespace Northtropic.Services
                 .ToListAsync();
         }
 
-        public async Task<PracticeAnalyticsDto> GetPracticeAnalyticsAsync(Guid userId, string? subject = null, bool? isCorrect = null)
+        private async Task<bool> IsAuthorizedToAccessStudentDataAsync(Guid callerUserId, Guid studentUserId, AppDbContext db)
         {
+            if (callerUserId == studentUserId) return true;
+            var caller = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == callerUserId);
+            if (caller != null && (caller.Role == UserRole.SuperAdmin || caller.Role == UserRole.Teacher))
+            {
+                return true;
+            }
+
+            var hasBinding = await db.StudentParentBindings
+                .AsNoTracking()
+                .AnyAsync(b => b.ParentUserId == callerUserId && b.StudentUserId == studentUserId);
+
+            return hasBinding;
+        }
+
+        public async Task<PracticeAnalyticsDto> GetPracticeAnalyticsAsync(Guid userId, string? subject = null, bool? isCorrect = null, Guid? requestorUserId = null)
+        {
+            if (userId == Guid.Empty) return new PracticeAnalyticsDto();
+
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
+
+            // 防越权 (IDOR) 鉴权：若查询目标非本人，必须验证调用者权限 (超级管理员/教师/合法绑定的监护人家长)
+            var callerId = requestorUserId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (callerId.HasValue && callerId.Value != userId)
+            {
+                var isAuthorized = await IsAuthorizedToAccessStudentDataAsync(callerId.Value, userId, ctx);
+                if (!isAuthorized)
+                {
+                    return new PracticeAnalyticsDto();
+                }
+            }
 
             var query = ctx.PracticeRecords
                 .AsNoTracking()
@@ -6214,10 +6291,23 @@ namespace Northtropic.Services
                 .FirstOrDefaultAsync(a => a.Id == assignmentId);
         }
 
-        public async Task<List<HomeworkAssignment>> GetHomeworkAssignmentsByStudentAsync(Guid studentUserId)
+        public async Task<List<HomeworkAssignment>> GetHomeworkAssignmentsByStudentAsync(Guid studentUserId, Guid? requestorUserId = null)
         {
+            if (studentUserId == Guid.Empty) return new List<HomeworkAssignment>();
+
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
+
+            // 防越权 (IDOR) 鉴权：若查询目标非本人，必须验证调用者权限 (超级管理员/教师/合法绑定的监护人家长)
+            var callerId = requestorUserId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (callerId.HasValue && callerId.Value != studentUserId)
+            {
+                var isAuthorized = await IsAuthorizedToAccessStudentDataAsync(callerId.Value, studentUserId, ctx);
+                if (!isAuthorized)
+                {
+                    return new List<HomeworkAssignment>();
+                }
+            }
 
             return await ctx.HomeworkAssignments
                 .Include(a => a.CreatorUser)
@@ -6226,10 +6316,23 @@ namespace Northtropic.Services
                 .ToListAsync();
         }
 
-        public async Task<List<HomeworkAssignment>> GetHomeworkAssignmentsByCreatorAsync(Guid creatorUserId)
+        public async Task<List<HomeworkAssignment>> GetHomeworkAssignmentsByCreatorAsync(Guid creatorUserId, Guid? requestorUserId = null)
         {
+            if (creatorUserId == Guid.Empty) return new List<HomeworkAssignment>();
+
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
+
+            // 防越权 (IDOR) 鉴权：若查询布置者非本人，必须验证调用者权限 (超级管理员/教师)
+            var callerId = requestorUserId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (callerId.HasValue && callerId.Value != creatorUserId)
+            {
+                var caller = await ctx.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == callerId.Value);
+                if (caller == null || (caller.Role != UserRole.SuperAdmin && caller.Role != UserRole.Teacher))
+                {
+                    return new List<HomeworkAssignment>();
+                }
+            }
 
             return await ctx.HomeworkAssignments
                 .Include(a => a.StudentUser)
