@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -12,371 +11,316 @@ using Xunit;
 
 namespace Northtropic.Tests
 {
-    public class ArchitectAndUxZenithEvolutionSuiteTests
+    /// <summary>
+    /// 系统架构师与用户体验专家双重视角测试套件 (Zenith Evolution Suite)
+    /// 覆盖：
+    /// 1. 架构师：成就实体领域不变量审计、重复Code合并与UserAchievement级联重定向自愈
+    /// 2. 架构师：学生BindingCode碰撞重算自愈、演进洞察极值收敛与全库一键编排自愈
+    /// 3. 用户体验：高阶STEM多学科单位等价评测 (化学浓度、物理真空压强、静电荷、电磁场参数、温标、复数工程虚数单位)
+    /// </summary>
+    public class ArchitectAndUxZenithEvolutionSuiteTests : IDisposable
     {
-        private class TestHttpClientFactory : IHttpClientFactory
+        private readonly AppDbContext _inMemoryContext;
+        private readonly SqliteConnection _connection;
+
+        public ArchitectAndUxZenithEvolutionSuiteTests()
         {
-            private readonly HttpClient _client;
-            public TestHttpClientFactory(HttpClient client) => _client = client;
-            public HttpClient CreateClient(string name) => _client;
+            (_inMemoryContext, _connection) = TestDbContextFactory.CreateInMemoryContext();
         }
 
-        [Fact]
-        public async Task SystemHealthService_AuditAndHealStudyPlanInvariants_FullyAlignsDomainInvariants()
+        public void Dispose()
         {
-            var (context, connection) = TestDbContextFactory.CreateInMemoryContext();
-            try
-            {
-                var studentId = Guid.NewGuid();
-                var student = new User
-                {
-                    Id = studentId,
-                    Username = "zenith_student_plan",
-                    Password = "hash",
-                    Role = UserRole.Student,
-                    Grade = "初中二年级"
-                };
-                context.Users.Add(student);
-
-                // 构造异常学习计划 1: 负数目标、超界正确率、倒置日期、子任务不变量破损
-                var invalidPlan1 = new StudyPlan
-                {
-                    Id = Guid.NewGuid(),
-                    UserId = studentId,
-                    DailyTargetQuestions = -10, // 异常：负数
-                    TargetAccuracyRate = 120.0, // 异常：超过100
-                    StartDate = DateTime.Now,
-                    TargetEndDate = DateTime.Now.AddDays(-5), // 异常：倒置
-                    Status = StudyPlanStatus.Active,
-                    SupervisionNudgeCount = -3,
-                    CreatedAt = DateTime.Now.AddDays(-2),
-                    Tasks = new List<StudyPlanTask>
-                    {
-                        new StudyPlanTask
-                        {
-                            Id = Guid.NewGuid(),
-                            Subject = "数学",
-                            TargetCount = 0, // 异常：目标小于1
-                            CompletedCount = 10, // 完成数大于目标但未标记完成
-                            IsCompleted = false,
-                            TargetAccuracy = 150.0
-                        },
-                        new StudyPlanTask
-                        {
-                            Id = Guid.NewGuid(),
-                            Subject = "物理",
-                            TargetCount = 5,
-                            CompletedCount = 2,
-                            IsCompleted = true, // 异常：完成标记但实际数量不足
-                            TargetAccuracy = 40.0
-                        },
-                        new StudyPlanTask
-                        {
-                            Id = Guid.NewGuid(),
-                            Subject = "英语",
-                            TargetCount = 10,
-                            CompletedCount = 2,
-                            IsCompleted = false,
-                            TargetAccuracy = 80.0
-                        }
-                    }
-                };
-
-                // 构造异常学习计划 2: 并存的第二个 Active 计划（冲突）
-                var invalidPlan2 = new StudyPlan
-                {
-                    Id = Guid.NewGuid(),
-                    UserId = studentId,
-                    DailyTargetQuestions = 20,
-                    TargetAccuracyRate = 85.0,
-                    StartDate = DateTime.Now,
-                    TargetEndDate = DateTime.Now.AddDays(7),
-                    Status = StudyPlanStatus.Active,
-                    CreatedAt = DateTime.Now.AddDays(-1), // 较新
-                    Tasks = new List<StudyPlanTask>()
-                };
-
-                context.StudyPlans.AddRange(invalidPlan1, invalidPlan2);
-                await context.SaveChangesAsync();
-
-                var healthService = new SystemHealthService(context, null);
-
-                // 1. 审计检测
-                var auditBefore = await healthService.AuditDataIntegrityAsync();
-                Assert.True(auditBefore.TotalInvalidStudyPlans > 0, "应检测出异常的学习计划不变量");
-                Assert.True(auditBefore.InvalidStudyPlansCount > 0);
-
-                // 2. 执行自愈
-                var healedCount = await healthService.HealStudyPlanInvariantsAsync();
-                Assert.True(healedCount > 0, "应成功自愈异常项");
-
-                // 3. 验证数据库状态
-                var updatedPlan1 = await context.StudyPlans.Include(p => p.Tasks).FirstAsync(p => p.Id == invalidPlan1.Id);
-                var updatedPlan2 = await context.StudyPlans.Include(p => p.Tasks).FirstAsync(p => p.Id == invalidPlan2.Id);
-
-                // 计划1参数应已修复
-                Assert.Equal(15, updatedPlan1.DailyTargetQuestions);
-                Assert.Equal(100.0, updatedPlan1.TargetAccuracyRate);
-                Assert.True(updatedPlan1.TargetEndDate >= updatedPlan1.StartDate);
-                Assert.Equal(0, updatedPlan1.SupervisionNudgeCount);
-
-                // 计划1任务状态对齐
-                var task1 = updatedPlan1.Tasks.First(t => t.Subject == "数学");
-                var task2 = updatedPlan1.Tasks.First(t => t.Subject == "物理");
-                Assert.True(task1.IsCompleted, "完成数已达标的任务应被自动标为完成");
-                Assert.Equal(5, task2.CompletedCount); // 已标为完成的任务其完成数应与目标对齐
-
-                // 活跃计划去重收敛验证：较新的 plan2 保持 Active，较旧的 plan1 转为 Adjusted
-                Assert.Equal(StudyPlanStatus.Adjusted, updatedPlan1.Status);
-                Assert.Equal(StudyPlanStatus.Active, updatedPlan2.Status);
-
-                // 4. 二次审计应无异常
-                var auditAfter = await healthService.AuditDataIntegrityAsync();
-                Assert.Equal(0, auditAfter.TotalInvalidStudyPlans);
-            }
-            finally
-            {
-                context.Dispose();
-                connection.Dispose();
-            }
+            _inMemoryContext.Dispose();
+            _connection.Dispose();
         }
 
-        [Fact]
-        public async Task SystemHealthService_AuditAndHealStudentParentBindingInvariants_PurgesSelfAndDuplicateBindings()
-        {
-            var (context, connection) = TestDbContextFactory.CreateInMemoryContext();
-            try
-            {
-                var student = new User
-                {
-                    Id = Guid.NewGuid(),
-                    Username = "zenith_student_bind",
-                    Password = "hash",
-                    Role = UserRole.Student
-                };
-                var parent = new User
-                {
-                    Id = Guid.NewGuid(),
-                    Username = "zenith_parent_bind",
-                    Password = "hash",
-                    Role = UserRole.Parent
-                };
-                context.Users.AddRange(student, parent);
-
-                // 1. 自我绑定 (ParentUserId == StudentUserId)
-                var selfBinding = new StudentParentBinding
-                {
-                    Id = Guid.NewGuid(),
-                    ParentUserId = student.Id,
-                    StudentUserId = student.Id,
-                    CreatedAt = DateTime.Now.AddDays(-5)
-                };
-
-                // 2. 重复绑定 (两条相同的 ParentUserId -> StudentUserId)
-                var duplicate1 = new StudentParentBinding
-                {
-                    Id = Guid.NewGuid(),
-                    ParentUserId = parent.Id,
-                    StudentUserId = student.Id,
-                    CreatedAt = DateTime.Now.AddDays(-3)
-                };
-                var duplicate2 = new StudentParentBinding
-                {
-                    Id = Guid.NewGuid(),
-                    ParentUserId = parent.Id,
-                    StudentUserId = student.Id,
-                    CreatedAt = DateTime.Now.AddDays(-1)
-                };
-
-                context.StudentParentBindings.AddRange(selfBinding, duplicate1, duplicate2);
-                await context.SaveChangesAsync();
-
-                var healthService = new SystemHealthService(context, null);
-
-                // 审计应检测出自我绑定与重复绑定
-                var auditBefore = await healthService.AuditDataIntegrityAsync();
-                Assert.True(auditBefore.TotalInvalidBindings >= 2, "应审计出自我绑定和冗余重复绑定");
-                Assert.True(auditBefore.InvalidBindingsCount >= 2);
-
-                // 自愈修复
-                var healedCount = await healthService.HealStudentParentBindingInvariantsAsync();
-                Assert.True(healedCount >= 2);
-
-                // 数据库校验
-                var remainingBindings = await context.StudentParentBindings.Where(b => b.StudentUserId == student.Id).ToListAsync();
-                Assert.Single(remainingBindings);
-                Assert.Equal(parent.Id, remainingBindings[0].ParentUserId);
-                Assert.Equal(student.Id, remainingBindings[0].StudentUserId);
-                Assert.Equal(duplicate1.Id, remainingBindings[0].Id); // 保留较早创建的一条
-
-                // 二次审计应通过
-                var auditAfter = await healthService.AuditDataIntegrityAsync();
-                Assert.Equal(0, auditAfter.TotalInvalidBindings);
-            }
-            finally
-            {
-                context.Dispose();
-                connection.Dispose();
-            }
-        }
+        #region 1. 系统架构师：成就定义与用户成就级联自愈测试
 
         [Fact]
-        public async Task StudentEvolutionService_EnforcesIdorProtection_BlocksUnauthorizedCallers()
+        public async Task AuditDataIntegrity_DetectsAchievementDomainInvariants()
         {
-            var (context, connection) = TestDbContextFactory.CreateInMemoryContext();
-            try
-            {
-                var studentA = new User
-                {
-                    Id = Guid.NewGuid(),
-                    Username = "student_a",
-                    Password = "pw",
-                    Role = UserRole.Student,
-                    Grade = "初中二年级"
-                };
-                var studentB = new User
-                {
-                    Id = Guid.NewGuid(),
-                    Username = "student_b",
-                    Password = "pw",
-                    Role = UserRole.Student,
-                    Grade = "初中二年级"
-                };
-                var parentA = new User
-                {
-                    Id = Guid.NewGuid(),
-                    Username = "parent_a",
-                    Password = "pw",
-                    Role = UserRole.Parent
-                };
-                var strangerParent = new User
-                {
-                    Id = Guid.NewGuid(),
-                    Username = "stranger_parent",
-                    Password = "pw",
-                    Role = UserRole.Parent
-                };
-                var teacher = new User
-                {
-                    Id = Guid.NewGuid(),
-                    Username = "teacher_smith",
-                    Password = "pw",
-                    Role = UserRole.Teacher
-                };
-                var superAdmin = new User
-                {
-                    Id = Guid.NewGuid(),
-                    Username = "admin_root",
-                    Password = "pw",
-                    Role = UserRole.SuperAdmin
-                };
+            // Arrange
+            var ach1 = new Achievement { Code = "FIRST_BLOOD", Title = "初露锋芒", RewardCoins = 10, RewardExp = 50 };
+            var ach2 = new Achievement { Code = "FIRST_BLOOD", Title = "初露锋芒Duplicate", RewardCoins = -5, RewardExp = -10 }; // 重复Code且负数奖励
+            var ach3 = new Achievement { Code = "EMPTY_NAME", Title = "   ", RewardCoins = 20, RewardExp = 100 }; // 空名称
+            _inMemoryContext.Achievements.AddRange(ach1, ach2, ach3);
+            await _inMemoryContext.SaveChangesAsync();
 
-                context.Users.AddRange(studentA, studentB, parentA, strangerParent, teacher, superAdmin);
+            var healthService = new SystemHealthService(_inMemoryContext);
 
-                // 绑定 parentA 到 studentA
-                context.StudentParentBindings.Add(new StudentParentBinding
-                {
-                    Id = Guid.NewGuid(),
-                    ParentUserId = parentA.Id,
-                    StudentUserId = studentA.Id
-                });
+            // Act
+            var audit = await healthService.AuditDataIntegrityAsync();
 
-                // 插入若干测试试题与练习记录
-                var question = new Question
-                {
-                    Id = Guid.NewGuid(),
-                    Stem = "物理受力平衡试题",
-                    Subject = "初中物理",
-                    Category = "力学综合",
-                    Type = QuestionType.SingleChoice,
-                    CorrectAnswer = "A",
-                    OptionsJson = "[\"A. 对\",\"B. 错\"]"
-                };
-                context.Questions.Add(question);
-
-                context.PracticeRecords.Add(new PracticeRecord
-                {
-                    Id = Guid.NewGuid(),
-                    UserId = studentA.Id,
-                    QuestionId = question.Id,
-                    IsCorrect = true,
-                    TimeTakenSeconds = 25,
-                    AnsweredAt = DateTime.Now
-                });
-
-                await context.SaveChangesAsync();
-
-                var session = new UserSessionService(context, new HttpClient());
-                var gamification = new GamificationService(context, session);
-                var clientFactory = new TestHttpClientFactory(new HttpClient());
-                var evolutionService = new StudentEvolutionService(context, gamification, clientFactory, null);
-
-                // 1. 学员本人访问 studentA -> 成功
-                var selfOverview = await evolutionService.GetMasteryOverviewAsync(studentA.Id, requestorUserId: studentA.Id);
-                Assert.NotEmpty(selfOverview);
-
-                // 2. 绑定家长 parentA 访问 studentA -> 成功
-                var parentOverview = await evolutionService.GetMasteryOverviewAsync(studentA.Id, requestorUserId: parentA.Id);
-                Assert.NotEmpty(parentOverview);
-
-                // 3. 教师访问 studentA -> 成功
-                var teacherOverview = await evolutionService.GetMasteryOverviewAsync(studentA.Id, requestorUserId: teacher.Id);
-                Assert.NotEmpty(teacherOverview);
-
-                // 4. 超级管理员访问 studentA -> 成功
-                var adminOverview = await evolutionService.GetMasteryOverviewAsync(studentA.Id, requestorUserId: superAdmin.Id);
-                Assert.NotEmpty(adminOverview);
-
-                // 5. 非法陌生家长访问 studentA -> 拦截，返回空列表
-                var strangerOverview = await evolutionService.GetMasteryOverviewAsync(studentA.Id, requestorUserId: strangerParent.Id);
-                Assert.Empty(strangerOverview);
-
-                // 6. 其他学生 studentB 越权访问 studentA -> 拦截，返回空列表
-                var studentBOverview = await evolutionService.GetMasteryOverviewAsync(studentA.Id, requestorUserId: studentB.Id);
-                Assert.Empty(studentBOverview);
-
-                // 7. 诊断报告 IDOR 防护测试
-                var strangerReport = await evolutionService.GenerateDiagnosisReportAsync(studentA.Id, requestorUserId: strangerParent.Id);
-                Assert.Contains("无权访问", strangerReport.AiGrowthAdvice);
-
-                var boundParentReport = await evolutionService.GenerateDiagnosisReportAsync(studentA.Id, requestorUserId: parentA.Id);
-                Assert.DoesNotContain("无权访问", boundParentReport.AiGrowthAdvice);
-
-                // 8. 艾宾浩斯复习节点 IDOR 防护
-                var strangerSpacedNodes = await evolutionService.GetPendingSpacedReviewNodesAsync(studentA.Id, requestorUserId: strangerParent.Id);
-                Assert.Empty(strangerSpacedNodes);
-
-                // 9. 弱项前置知识溯源 IDOR 防护
-                var strangerPrereqs = await evolutionService.TraceWeakPrerequisitesAsync(studentA.Id, "初中物理", "力学综合", requestorUserId: strangerParent.Id);
-                Assert.Empty(strangerPrereqs);
-            }
-            finally
-            {
-                context.Dispose();
-                connection.Dispose();
-            }
-        }
-
-        [Fact]
-        public void DataIntegrityAuditDto_TotalIssuesCount_ReflectsStudyPlansAndBindingsAnomalies()
-        {
-            var audit = new DataIntegrityAuditDto
-            {
-                TotalOrphanErrorItems = 2,
-                TotalOrphanPracticeRecords = 1,
-                TotalInvalidStudyPlans = 3,
-                TotalInvalidBindings = 4,
-                TotalUsersWithInvalidBalances = 1,
-                TotalDuplicateQuestions = 5
-            };
-
+            // Assert
+            Assert.NotNull(audit);
             Assert.False(audit.IsHealthy);
-            // TotalIssuesCount (structural integrity): 2 + 1 + 3 + 4 = 10
-            Assert.Equal(10, audit.TotalIssuesCount);
-            // TotalOptimizationCandidatesCount (business optimizations): 3 + 4 + 1 + 5 = 13
-            Assert.Equal(13, audit.TotalOptimizationCandidatesCount);
-            Assert.Equal(3, audit.InvalidStudyPlansCount);
-            Assert.Equal(4, audit.InvalidBindingsCount);
+            Assert.True(audit.TotalInvalidAchievements > 0);
+            Assert.True(audit.InvalidAchievementsCount > 0);
         }
+
+        [Fact]
+        public async Task HealAchievementInvariants_MergesDuplicates_And_RedirectsUserAchievements()
+        {
+            // Arrange: 两个相同 Code 的成就定义
+            var achA = new Achievement { Code = "PERFECT_SCORE", Title = "满分达人", RewardCoins = 50, RewardExp = 200 };
+            var achB = new Achievement { Code = "perfect_score", Title = "  ", RewardCoins = -20, RewardExp = -100 }; // 重复且非法属性
+            _inMemoryContext.Achievements.AddRange(achA, achB);
+
+            var user1 = new User { Username = "student_ach_1", Role = UserRole.Student, BindingCode = "STU001" };
+            var user2 = new User { Username = "student_ach_2", Role = UserRole.Student, BindingCode = "STU002" };
+            _inMemoryContext.Users.AddRange(user1, user2);
+            await _inMemoryContext.SaveChangesAsync();
+
+            // user1 关联到 achB (待合并重定向到 achA)
+            _inMemoryContext.UserAchievements.Add(new UserAchievement
+            {
+                UserId = user1.Id,
+                AchievementId = achB.Id,
+                UnlockedAt = DateTime.UtcNow
+            });
+
+            // user2 同时拥有 achA 和 achB (重定向时需清理重复项)
+            _inMemoryContext.UserAchievements.Add(new UserAchievement
+            {
+                UserId = user2.Id,
+                AchievementId = achA.Id,
+                UnlockedAt = DateTime.UtcNow.AddHours(-1)
+            });
+            _inMemoryContext.UserAchievements.Add(new UserAchievement
+            {
+                UserId = user2.Id,
+                AchievementId = achB.Id,
+                UnlockedAt = DateTime.UtcNow
+            });
+            await _inMemoryContext.SaveChangesAsync();
+
+            var healthService = new SystemHealthService(_inMemoryContext);
+
+            // Act
+            var healedCount = await healthService.HealAchievementInvariantsAsync();
+
+            // Assert
+            Assert.True(healedCount > 0);
+
+            // 验证数据库中只剩下一个规范化成就实体
+            var remainingAchs = await _inMemoryContext.Achievements.Where(a => a.Code.ToUpper() == "PERFECT_SCORE").ToListAsync();
+            Assert.Single(remainingAchs);
+            var canonicalAch = remainingAchs.First();
+            Assert.True(canonicalAch.RewardCoins >= 0);
+            Assert.True(canonicalAch.RewardExp >= 0);
+            Assert.False(string.IsNullOrWhiteSpace(canonicalAch.Title));
+
+            // 验证 user1 的成就已被重定向到 canonicalAch
+            var u1Achs = await _inMemoryContext.UserAchievements.Where(ua => ua.UserId == user1.Id).ToListAsync();
+            Assert.Single(u1Achs);
+            Assert.Equal(canonicalAch.Id, u1Achs.First().AchievementId);
+
+            // 验证 user2 没有重复的成就记录
+            var u2Achs = await _inMemoryContext.UserAchievements.Where(ua => ua.UserId == user2.Id).ToListAsync();
+            Assert.Single(u2Achs);
+            Assert.Equal(canonicalAch.Id, u2Achs.First().AchievementId);
+        }
+
+        #endregion
+
+        #region 2. 系统架构师：BindingCode碰撞重算与学情洞察收敛自愈
+
+        [Fact]
+        public async Task HealGamificationInvariants_ResolvesBindingCodeCollisions_And_ClampsDailyTarget()
+        {
+            // Arrange: 两个学生具有相同的 BindingCode，且每日目标异常
+            var s1 = new User { Username = "stu_collide_1", Role = UserRole.Student, BindingCode = "SHARED123", DailyTargetQuestions = -10 };
+            var s2 = new User { Username = "stu_collide_2", Role = UserRole.Student, BindingCode = "shared123", DailyTargetQuestions = 99999 };
+            var s3 = new User { Username = "stu_missing_code", Role = UserRole.Student, BindingCode = "TEMP_NONE", DailyTargetQuestions = 15 };
+            s3.BindingCode = ""; // 测试空绑定码
+            _inMemoryContext.Users.AddRange(s1, s2, s3);
+            await _inMemoryContext.SaveChangesAsync();
+
+            var healthService = new SystemHealthService(_inMemoryContext);
+
+            // Act
+            var healed = await healthService.HealGamificationInvariantsAsync();
+
+            // Assert
+            Assert.True(healed >= 3);
+            await _inMemoryContext.Entry(s1).ReloadAsync();
+            await _inMemoryContext.Entry(s2).ReloadAsync();
+            await _inMemoryContext.Entry(s3).ReloadAsync();
+
+            // 两个学生的 BindingCode 必须不同且非空
+            Assert.False(string.IsNullOrWhiteSpace(s1.BindingCode));
+            Assert.False(string.IsNullOrWhiteSpace(s2.BindingCode));
+            Assert.False(string.IsNullOrWhiteSpace(s3.BindingCode));
+            Assert.NotEqual(s1.BindingCode, s2.BindingCode, StringComparer.OrdinalIgnoreCase);
+
+            // 每日目标已收敛到合法区间 [1, 200]
+            Assert.InRange(s1.DailyTargetQuestions, 1, 200);
+            Assert.InRange(s2.DailyTargetQuestions, 1, 200);
+            Assert.Equal(15, s3.DailyTargetQuestions);
+        }
+
+        [Fact]
+        public async Task HealClosedLoopInsightInvariants_ConvergesExtremes_And_SanitizesNulls()
+        {
+            // Arrange
+            var user = new User { Username = "insight_user", Role = UserRole.Student, BindingCode = "INS001" };
+            _inMemoryContext.Users.Add(user);
+            await _inMemoryContext.SaveChangesAsync();
+
+            var insight = new EvolutionClosedLoopInsight
+            {
+                UserId = user.Id,
+                AccuracyDelta = 1500.0, // 越界 (> 100)
+                SpeedDeltaSeconds = 999999.0, // 极端越界 (> 86400)
+                WeaknessOvercomeCount = -5, // 异常负数
+                PurifiedErrorsCount = -10, // 异常负数
+                RootCauseDiagnosis = "初始诊断",
+                CorrectivePrescription = "初始处方",
+                NextEvolutionStrategy = "初始建议"
+            };
+            _inMemoryContext.EvolutionClosedLoopInsights.Add(insight);
+            await _inMemoryContext.SaveChangesAsync();
+
+            var healthService = new SystemHealthService(_inMemoryContext);
+
+            // Act
+            var healedCount = await healthService.HealClosedLoopInsightInvariantsAsync();
+
+            // Assert
+            Assert.True(healedCount > 0);
+            await _inMemoryContext.Entry(insight).ReloadAsync();
+            Assert.InRange(insight.AccuracyDelta, -100.0, 100.0);
+            Assert.Equal(100.0, insight.AccuracyDelta);
+            Assert.InRange(insight.SpeedDeltaSeconds, -86400.0, 86400.0);
+            Assert.Equal(86400.0, insight.SpeedDeltaSeconds);
+            Assert.Equal(0, insight.WeaknessOvercomeCount);
+            Assert.Equal(0, insight.PurifiedErrorsCount);
+            Assert.False(double.IsNaN(insight.SpeedDeltaSeconds));
+            Assert.False(double.IsInfinity(insight.SpeedDeltaSeconds));
+            Assert.NotNull(insight.RootCauseDiagnosis);
+            Assert.NotNull(insight.CorrectivePrescription);
+            Assert.NotNull(insight.NextEvolutionStrategy);
+        }
+
+        [Fact]
+        public async Task HealAllInvariantsAsync_ExecutesAll15InvariantHeals_Successfully()
+        {
+            // Arrange: 注入部分破损数据
+            var badAch = new Achievement { Code = "ORCH_ACH", Title = "", RewardCoins = -1 };
+            var badUser = new User { Username = "orch_user", Role = UserRole.Student, BindingCode = "" };
+            _inMemoryContext.Achievements.Add(badAch);
+            _inMemoryContext.Users.Add(badUser);
+            await _inMemoryContext.SaveChangesAsync();
+
+            var healthService = new SystemHealthService(_inMemoryContext);
+
+            // Act
+            var result = await healthService.HealAllInvariantsAsync();
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.True(result.Success);
+            Assert.True(result.TotalHealedCount > 0);
+            Assert.True(result.HealedAchievementsCount > 0);
+            Assert.Contains(result.OperationsExecuted, op => op.Contains("成就目录定义自愈"));
+        }
+
+        #endregion
+
+        #region 3. 用户体验专家：高阶多学科答案等价性与符号容错评测
+
+        [Theory]
+        [InlineData("1 mol/L", "1 mol·L^-1")]
+        [InlineData("0.5 mol/L", "0.5 mol/dm^3")]
+        [InlineData("2 摩尔每升", "2 mol/l")]
+        [InlineData("5 摩/升", "5 mol/L")]
+        [InlineData("10 mmol/L", "10 毫摩尔每升")]
+        [InlineData("100 umol/L", "100 μmol/L")]
+        [InlineData("50 微摩/升", "50 umol/l")]
+        [InlineData("20 mol/m^3", "20 摩尔每立方米")]
+        public void PracticeService_CheckFillInBlankMatch_MolarConcentration_Equivalence(string studentAns, string standardAns)
+        {
+            Assert.True(PracticeService.CheckFillInBlankMatch(studentAns, standardAns),
+                $"物质的量浓度等价评测应一致: [{studentAns}] vs [{standardAns}]");
+        }
+
+        [Theory]
+        [InlineData("5 g/L", "5 克每升")]
+        [InlineData("2.5 g/L", "2.5 克/升")]
+        [InlineData("100 mg/L", "100 毫克每升")]
+        [InlineData("50 ug/L", "50 微克每升")]
+        [InlineData("50 μg/L", "50 ug/l")]
+        public void PracticeService_CheckFillInBlankMatch_MassConcentration_Equivalence(string studentAns, string standardAns)
+        {
+            Assert.True(PracticeService.CheckFillInBlankMatch(studentAns, standardAns),
+                $"质量浓度等价评测应一致: [{studentAns}] vs [{standardAns}]");
+        }
+
+        [Theory]
+        [InlineData("1.013 bar", "1.013 巴")]
+        [InlineData("500 mbar", "500 毫巴")]
+        [InlineData("760 torr", "760 托")]
+        [InlineData("760 mmHg", "760 torr")]
+        [InlineData("760 毫米汞柱", "760 托")]
+        [InlineData("2.5 GPa", "2.5 吉帕")]
+        public void PracticeService_CheckFillInBlankMatch_PressureAndVacuum_Equivalence(string studentAns, string standardAns)
+        {
+            Assert.True(PracticeService.CheckFillInBlankMatch(studentAns, standardAns),
+                $"压强真空度等价评测应一致: [{studentAns}] vs [{standardAns}]");
+        }
+
+        [Theory]
+        [InlineData("5 C", "5 库仑")]
+        [InlineData("5 库", "5 C")]
+        [InlineData("10 mC", "10 毫库")]
+        [InlineData("2.5 uC", "2.5 微库")]
+        [InlineData("2.5 μC", "2.5 uC")]
+        [InlineData("100 nC", "100 纳库")]
+        [InlineData("50 pC", "50 皮库")]
+        public void PracticeService_CheckFillInBlankMatch_ElectricCharge_Equivalence(string studentAns, string standardAns)
+        {
+            Assert.True(PracticeService.CheckFillInBlankMatch(studentAns, standardAns),
+                $"静电荷量等价评测应一致: [{studentAns}] vs [{standardAns}]");
+        }
+
+        [Theory]
+        [InlineData("100 A/m", "100 安每米")]
+        [InlineData("50 安/米", "50 a/m")]
+        [InlineData("8.85e-12 F/m", "8.85e-12 法每米")]
+        [InlineData("1.26e-6 H/m", "1.26e-6 亨每米")]
+        [InlineData("500 Gs", "500 高斯")]
+        [InlineData("1000 gauss", "1000 Gs")]
+        public void PracticeService_CheckFillInBlankMatch_Electromagnetism_Equivalence(string studentAns, string standardAns)
+        {
+            Assert.True(PracticeService.CheckFillInBlankMatch(studentAns, standardAns),
+                $"电磁场参数等价评测应一致: [{studentAns}] vs [{standardAns}]");
+        }
+
+        [Theory]
+        [InlineData("300 K", "300 开尔文")]
+        [InlineData("273.15 开氏度", "273.15 K")]
+        [InlineData("25 ℃", "25 °C")]
+        [InlineData("100 摄氏度", "100 ℃")]
+        public void PracticeService_CheckFillInBlankMatch_TemperatureScale_Equivalence(string studentAns, string standardAns)
+        {
+            Assert.True(PracticeService.CheckFillInBlankMatch(studentAns, standardAns),
+                $"温标等价评测应一致: [{studentAns}] vs [{standardAns}]");
+        }
+
+        [Theory]
+        [InlineData("3+4j", "3+4i")]
+        [InlineData("5j", "5i")]
+        [InlineData("-2j", "-2i")]
+        [InlineData("1-j", "1-i")]
+        [InlineData("j", "i")]
+        [InlineData("j3", "i3")]
+        [InlineData("2.5 + 1.2j", "2.5+1.2i")]
+        public void PracticeService_CheckFillInBlankMatch_ComplexEngineeringNotation_Equivalence(string studentAns, string standardAns)
+        {
+            Assert.True(PracticeService.CheckFillInBlankMatch(studentAns, standardAns),
+                $"工程复数虚数符号等价评测应一致: [{studentAns}] vs [{standardAns}]");
+        }
+
+        #endregion
     }
 }

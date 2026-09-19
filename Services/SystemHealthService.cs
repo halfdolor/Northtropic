@@ -2042,14 +2042,16 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalInvalidCurriculumConfigs} 项课程学科考点配置异常 (包含空年级学科、破损JSON或重复学科配置副本)");
                 }
 
-                // 24. EvolutionClosedLoopInsight Domain Invariants (潜力分越界、负数净化数/攻克数或同秒重复副本)
+                // 24. EvolutionClosedLoopInsight Domain Invariants (潜力分越界、负数净化数/攻克数、正确率变动越界或同秒重复副本)
                 var insightsToCheck = await db.EvolutionClosedLoopInsights
-                    .Select(i => new { i.Id, i.UserId, i.PotentialScore, i.WeaknessOvercomeCount, i.PurifiedErrorsCount, i.AnalyzedAt })
+                    .Select(i => new { i.Id, i.UserId, i.PotentialScore, i.WeaknessOvercomeCount, i.PurifiedErrorsCount, i.AccuracyDelta, i.SpeedDeltaSeconds, i.AnalyzedAt })
                     .ToListAsync();
                 int anomalousInsightsCount = insightsToCheck.Count(i =>
                     i.PotentialScore < 0 || i.PotentialScore > 100 ||
                     i.WeaknessOvercomeCount < 0 ||
-                    i.PurifiedErrorsCount < 0
+                    i.PurifiedErrorsCount < 0 ||
+                    i.AccuracyDelta < -100.0 || i.AccuracyDelta > 100.0 ||
+                    double.IsNaN(i.SpeedDeltaSeconds) || double.IsInfinity(i.SpeedDeltaSeconds)
                 );
                 int duplicateInsightsCount = insightsToCheck
                     .GroupBy(i => new { i.UserId, TimeKey = new DateTime(i.AnalyzedAt.Year, i.AnalyzedAt.Month, i.AnalyzedAt.Day, i.AnalyzedAt.Hour, i.AnalyzedAt.Minute, i.AnalyzedAt.Second) })
@@ -2058,7 +2060,27 @@ namespace Northtropic.Services
                 audit.TotalInvalidInsights = anomalousInsightsCount + duplicateInsightsCount;
                 if (audit.TotalInvalidInsights > 0)
                 {
-                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidInsights} 条学情闭环洞察领域不变量异常 (包含潜力分越界、负数计数或同秒重复副本)");
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidInsights} 条学情闭环洞察领域不变量异常 (包含潜力分越界、负数计数、正确率极值或同秒重复副本)");
+                }
+
+                // 25. Achievement Domain Invariants (重复成就 Code、非法奖励或空标题)
+                var achievementsToCheck = await db.Achievements
+                    .Select(a => new { a.Id, a.Code, a.Title, a.RewardExp, a.RewardCoins })
+                    .ToListAsync();
+                int anomalousAchievementsCount = achievementsToCheck.Count(a =>
+                    a.RewardExp < 0 || a.RewardCoins < 0 ||
+                    string.IsNullOrWhiteSpace(a.Code) ||
+                    string.IsNullOrWhiteSpace(a.Title)
+                );
+                int duplicateAchievementsCodeCount = achievementsToCheck
+                    .Where(a => !string.IsNullOrWhiteSpace(a.Code))
+                    .GroupBy(a => a.Code.Trim().ToUpperInvariant())
+                    .Where(g => g.Count() > 1)
+                    .Sum(g => g.Count() - 1);
+                audit.TotalInvalidAchievements = anomalousAchievementsCount + duplicateAchievementsCodeCount;
+                if (audit.TotalInvalidAchievements > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidAchievements} 项成就基础定义不变量异常 (包含负数奖励、空标识/标题或重复Code定义)");
                 }
 
                 if (audit.IsHealthy)
@@ -2566,7 +2588,59 @@ namespace Northtropic.Services
                     changed = true;
                 }
 
+                // 规范化学员绑定码 (BindingCode)
+                if (user.Role == UserRole.Student)
+                {
+                    if (string.IsNullOrWhiteSpace(user.BindingCode))
+                    {
+                        user.BindingCode = "ST" + Guid.NewGuid().ToString("N").Substring(0, 4).ToUpperInvariant();
+                        changed = true;
+                    }
+                    else if (user.BindingCode != user.BindingCode.Trim().ToUpperInvariant())
+                    {
+                        user.BindingCode = user.BindingCode.Trim().ToUpperInvariant();
+                        changed = true;
+                    }
+                }
+
+                // 规范化每日目标做题量
+                if (user.DailyTargetQuestions < 5)
+                {
+                    user.DailyTargetQuestions = 20;
+                    changed = true;
+                }
+                else if (user.DailyTargetQuestions > 200)
+                {
+                    user.DailyTargetQuestions = 200;
+                    changed = true;
+                }
+
                 if (changed) healedCount++;
+            }
+
+            // 解决学生之间的 BindingCode 重复碰撞
+            var duplicateBindingGroups = users
+                .Where(u => u.Role == UserRole.Student && !string.IsNullOrWhiteSpace(u.BindingCode))
+                .GroupBy(u => u.BindingCode)
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            var existingCodes = new HashSet<string>(users.Where(u => !string.IsNullOrWhiteSpace(u.BindingCode)).Select(u => u.BindingCode), StringComparer.OrdinalIgnoreCase);
+
+            foreach (var group in duplicateBindingGroups)
+            {
+                foreach (var dupUser in group.Skip(1))
+                {
+                    string newCode;
+                    do
+                    {
+                        newCode = "ST" + Guid.NewGuid().ToString("N").Substring(0, 4).ToUpperInvariant();
+                    } while (existingCodes.Contains(newCode));
+
+                    existingCodes.Add(newCode);
+                    dupUser.BindingCode = newCode;
+                    healedCount++;
+                }
             }
 
             if (healedCount > 0)
@@ -3231,6 +3305,11 @@ namespace Northtropic.Services
                 if (result.HealedInsightsCount > 0)
                     result.OperationsExecuted.Add($"学情闭环洞察自愈: 纠偏去重 {result.HealedInsightsCount} 项洞察不变量");
 
+                // 15. 成就目录基础定义不变量自愈
+                result.HealedAchievementsCount = await HealAchievementInvariantsAsync();
+                if (result.HealedAchievementsCount > 0)
+                    result.OperationsExecuted.Add($"成就目录定义自愈: 合并修复 {result.HealedAchievementsCount} 项成就定义与关联重定向");
+
                 sw.Stop();
                 result.ElapsedMilliseconds = sw.Elapsed.TotalMilliseconds;
                 result.Success = true;
@@ -3478,6 +3557,40 @@ namespace Northtropic.Services
                     changed = true;
                 }
 
+                if (ins.AccuracyDelta < -100.0)
+                {
+                    ins.AccuracyDelta = -100.0;
+                    changed = true;
+                }
+                else if (ins.AccuracyDelta > 100.0)
+                {
+                    ins.AccuracyDelta = 100.0;
+                    changed = true;
+                }
+
+                if (double.IsNaN(ins.SpeedDeltaSeconds) || double.IsInfinity(ins.SpeedDeltaSeconds))
+                {
+                    ins.SpeedDeltaSeconds = 0.0;
+                    changed = true;
+                }
+                else if (ins.SpeedDeltaSeconds < -86400.0)
+                {
+                    ins.SpeedDeltaSeconds = -86400.0;
+                    changed = true;
+                }
+                else if (ins.SpeedDeltaSeconds > 86400.0)
+                {
+                    ins.SpeedDeltaSeconds = 86400.0;
+                    changed = true;
+                }
+
+                if (ins.RootCauseDiagnosis == null) { ins.RootCauseDiagnosis = string.Empty; changed = true; }
+                if (ins.CorrectivePrescription == null) { ins.CorrectivePrescription = string.Empty; changed = true; }
+                if (ins.SuccessExperienceSummary == null) { ins.SuccessExperienceSummary = string.Empty; changed = true; }
+                if (ins.NextEvolutionStrategy == null) { ins.NextEvolutionStrategy = string.Empty; changed = true; }
+                if (ins.FailureReasonsCsv == null) { ins.FailureReasonsCsv = string.Empty; changed = true; }
+                if (ins.SuccessExperiencesCsv == null) { ins.SuccessExperiencesCsv = string.Empty; changed = true; }
+
                 if (changed) healedCount++;
             }
 
@@ -3502,6 +3615,137 @@ namespace Northtropic.Services
             {
                 await db.SaveChangesAsync();
                 RecordArchitectureEvent("HealClosedLoopInsights", "Success", $"自愈纠偏 {healedCount} 项学情闭环演进洞察领域不变量与重复副本");
+            }
+
+            return healedCount;
+        }
+
+        public async Task<int> HealAchievementInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            var achievements = await db.Achievements.ToListAsync();
+            var userAchievements = await db.UserAchievements.ToListAsync();
+            int healedCount = 0;
+
+            // 1. 规范化成就奖励与定义字段 (经验/金币非负，标题/标识非空并去除首尾空白)
+            foreach (var ach in achievements)
+            {
+                bool changed = false;
+                if (ach.RewardExp < 0)
+                {
+                    ach.RewardExp = 0;
+                    changed = true;
+                }
+                else if (ach.RewardExp > 10000)
+                {
+                    ach.RewardExp = 10000;
+                    changed = true;
+                }
+
+                if (ach.RewardCoins < 0)
+                {
+                    ach.RewardCoins = 0;
+                    changed = true;
+                }
+                else if (ach.RewardCoins > 10000)
+                {
+                    ach.RewardCoins = 10000;
+                    changed = true;
+                }
+
+                if (string.IsNullOrWhiteSpace(ach.Title))
+                {
+                    ach.Title = "无名成就";
+                    changed = true;
+                }
+                else if (ach.Title != ach.Title.Trim())
+                {
+                    ach.Title = ach.Title.Trim();
+                    changed = true;
+                }
+
+                if (string.IsNullOrWhiteSpace(ach.Code))
+                {
+                    ach.Code = "ACHIEVEMENT_" + ach.Id.ToString("N").Substring(0, 8).ToUpperInvariant();
+                    changed = true;
+                }
+                else if (ach.Code != ach.Code.Trim().ToUpperInvariant())
+                {
+                    ach.Code = ach.Code.Trim().ToUpperInvariant();
+                    changed = true;
+                }
+
+                if (ach.Description == null)
+                {
+                    ach.Description = string.Empty;
+                    changed = true;
+                }
+
+                if (string.IsNullOrWhiteSpace(ach.Icon))
+                {
+                    ach.Icon = "EmojiEvents";
+                    changed = true;
+                }
+
+                if (changed) healedCount++;
+            }
+
+            // 2. 合并重复 Code 的成就定义，重定向关联 UserAchievement 并清除冗余副本
+            var duplicateCodeGroups = achievements
+                .Where(a => !string.IsNullOrWhiteSpace(a.Code))
+                .GroupBy(a => a.Code.Trim().ToUpperInvariant())
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            foreach (var group in duplicateCodeGroups)
+            {
+                // 选定标准成就：优先保留描述更长或奖励更合理的，若相同则取首项
+                var canonical = group
+                    .OrderByDescending(a => (a.Description?.Length ?? 0) + a.RewardExp + a.RewardCoins)
+                    .First();
+
+                var duplicates = group.Where(a => a.Id != canonical.Id).ToList();
+
+                foreach (var dup in duplicates)
+                {
+                    // 查找所有关联到此重复成就的用户解锁记录
+                    var linkedUserAchs = userAchievements.Where(ua => ua.AchievementId == dup.Id).ToList();
+                    foreach (var ua in linkedUserAchs)
+                    {
+                        // 检查该用户是否已有 canonical 成就解锁记录
+                        bool hasCanonical = userAchievements.Any(existing =>
+                            existing.UserId == ua.UserId &&
+                            existing.AchievementId == canonical.Id &&
+                            existing.Id != ua.Id);
+
+                        if (hasCanonical)
+                        {
+                            // 用户已解锁标准成就，直接清理此多余副本
+                            db.UserAchievements.Remove(ua);
+                            userAchievements.Remove(ua);
+                            healedCount++;
+                        }
+                        else
+                        {
+                            // 重定向至标准成就
+                            ua.AchievementId = canonical.Id;
+                            healedCount++;
+                        }
+                    }
+
+                    // 移除重复的成就定义
+                    db.Achievements.Remove(dup);
+                    achievements.Remove(dup);
+                    healedCount++;
+                }
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("HealAchievements", "Success", $"自愈纠偏 {healedCount} 项成就目录基础定义不变量与重复定义合并");
             }
 
             return healedCount;

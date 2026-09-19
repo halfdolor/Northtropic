@@ -1046,6 +1046,9 @@
                                     <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Insights" OnClick="HealClosedLoopInsightsAsync" Disabled="@_isHealingInsights" Class="font-weight-bold">
                                         @(_isHealingInsights ? "自愈中..." : "🧬 自愈学情闭环洞察")
                                     </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.WorkspacePremium" OnClick="HealAchievementsAsync" Disabled="@_isHealingAchievements" Class="font-weight-bold">
+                                        @(_isHealingAchievements ? "自愈中..." : "🎖️ 自愈成就定义不变量")
+                                    </MudButton>
                                 </div>
                             </div>
 
@@ -1225,6 +1228,14 @@
                                             <div class="mud-text-secondary" style="font-size: 0.72rem;">闭环洞察异常</div>
                                             <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalInvalidInsights > 0 ? "#ef4444" : "#10b981");">
                                                 @_dataIntegrityAudit.TotalInvalidInsights
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">成就定义异常</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.InvalidAchievementsCount > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.InvalidAchievementsCount
                                             </div>
                                         </div>
                                     </MudItem>
@@ -1498,6 +1509,7 @@
     private bool _isHealingLlmLogs = false;
     private bool _isHealingCurriculumConfigs = false;
     private bool _isHealingInsights = false;
+    private bool _isHealingAchievements = false;
     private bool _isHealingAllInvariants = false;
     private DataIntegrityHealAllResultDto? _healAllInvariantsResult;
 
@@ -2306,6 +2318,29 @@
         finally
         {
             _isHealingInsights = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HealAchievementsAsync()
+    {
+        _isHealingAchievements = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealAchievementInvariantsAsync();
+            Snackbar.Add($"🎖️ 成就基础定义自愈完成：成功收敛修复 {healedCount} 项成就目录定义与关联重定向！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+            FilterTelemetryEvents();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"成就定义自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingAchievements = false;
             StateHasChanged();
         }
     }
