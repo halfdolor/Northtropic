@@ -16,13 +16,11 @@ namespace Northtropic.Tests
     {
         private readonly AppDbContext _context;
         private readonly SqliteConnection _connection;
-        private readonly IDbContextFactory<AppDbContext> _contextFactory;
         private readonly HttpClient _httpClient;
 
         public ArchitectAndUxApexResilienceTests()
         {
             (_context, _connection) = TestDbContextFactory.CreateInMemoryContext();
-            _contextFactory = new TestDbContextFactoryWrapper(_context);
             _httpClient = new HttpClient();
         }
 
@@ -31,14 +29,6 @@ namespace Northtropic.Tests
             _context.Dispose();
             _connection.Dispose();
             _httpClient.Dispose();
-        }
-
-        private class TestDbContextFactoryWrapper : IDbContextFactory<AppDbContext>
-        {
-            private readonly AppDbContext _context;
-            public TestDbContextFactoryWrapper(AppDbContext context) => _context = context;
-            public AppDbContext CreateDbContext() => _context;
-            public Task<AppDbContext> CreateDbContextAsync(System.Threading.CancellationToken cancellationToken = default) => Task.FromResult(_context);
         }
 
         #region UX Expert Tolerant Grading Tests
@@ -154,11 +144,11 @@ namespace Northtropic.Tests
             _context.ErrorItems.Add(errorItemB);
             await _context.SaveChangesAsync();
 
-            var sessionService = new UserSessionService(_context, _httpClient, _contextFactory);
+            var sessionService = new UserSessionService(_context, _httpClient, null);
             await sessionService.SwitchUserAsync(studentA.Id);
 
             var gamificationService = new GamificationService(_context, sessionService);
-            var errorBookService = new ErrorBookService(_context, gamificationService, sessionService, _contextFactory);
+            var errorBookService = new ErrorBookService(_context, gamificationService, sessionService, null);
 
             // 1. Student A tries to clear Student B's mastered errors -> blocked (0 cleared)
             int clearedByUnauthorized = await errorBookService.ClearMasteredErrorsAsync(studentB.Id);
@@ -204,11 +194,11 @@ namespace Northtropic.Tests
             _context.Questions.Add(question);
             await _context.SaveChangesAsync();
 
-            var sessionService = new UserSessionService(_context, _httpClient, _contextFactory);
+            var sessionService = new UserSessionService(_context, _httpClient, null);
             await sessionService.SwitchUserAsync(studentA.Id);
 
             var gamificationService = new GamificationService(_context, sessionService);
-            var practiceService = new PracticeService(_context, gamificationService, sessionService, null!, _contextFactory);
+            var practiceService = new PracticeService(_context, gamificationService, sessionService, null!, null);
 
             // 1. Student A tries to toggle Student B's favorite -> blocked (returns false, no favorite created)
             bool toggled = await practiceService.ToggleFavoriteAsync(studentB.Id, question.Id, "Hacked favorite");

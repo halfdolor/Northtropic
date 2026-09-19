@@ -930,7 +930,7 @@ namespace Northtropic.Services
                 }
 
                 // 三角函数幂次记号等价 (如 \sin^2 x vs (\sin x)^2)
-                if ((normU.Contains("sin(") || normU.Contains("cos(") || normU.Contains("tan(") || normU.Contains("cot(") || normC.Contains("sin(") || normC.Contains("cos(") || normC.Contains("tan(")) &&
+                if ((normU.Contains("sin") || normU.Contains("cos") || normU.Contains("tan") || normU.Contains("cot") || normC.Contains("sin") || normC.Contains("cos") || normC.Contains("tan")) &&
                     (normU.Contains("^") || normC.Contains("^") || user.Contains("^") || correct.Contains("^")))
                 {
                     return $"三角函数幂次记号等价：已自动识别 sin^2(x) 与 (sin x)^2 的代数等价性，对应标准答案 [{correct}]";
@@ -3580,7 +3580,14 @@ namespace Northtropic.Services
                         var suffix = sClean.Substring(splitIdx + 2).Trim();
                         if (!string.IsNullOrEmpty(suffix))
                         {
-                            roots = new List<string> { $"{prefix}+{suffix}", $"{prefix}-{suffix}" };
+                            if (double.TryParse(prefix, out double pVal) && double.TryParse(suffix, out double sVal))
+                            {
+                                roots = new List<string> { (pVal + sVal).ToString("G"), (pVal - sVal).ToString("G") };
+                            }
+                            else
+                            {
+                                roots = new List<string> { $"{prefix}+{suffix}", $"{prefix}-{suffix}" };
+                            }
                             return true;
                         }
                     }
