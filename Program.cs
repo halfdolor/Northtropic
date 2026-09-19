@@ -154,6 +154,9 @@ app.MapGet("/api/questions/download-template", (IQuestionImportService importSer
     }
 });
 
+// 全局大文件/高开销全量导出并发限流锁（限制最大并发为 2，防止高并发导出压垮 DB 线程与内存）
+var exportConcurrencyLock = new SemaphoreSlim(2, 2);
+
 // 题库批量导出原生流 API (支持 Excel / CSV / JSON)
 app.MapGet("/api/questions/export", async (
     IQuestionManagementService mgmtService,
@@ -166,6 +169,10 @@ app.MapGet("/api/questions/export", async (
     Northtropic.Models.PublishStatusEnum? status,
     string? ticket) =>
 {
+    if (!await exportConcurrencyLock.WaitAsync(2000))
+    {
+        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+    }
     try
     {
         var currentUserId = userSession.CurrentUserId ?? Guid.Empty;
@@ -206,6 +213,10 @@ app.MapGet("/api/questions/export", async (
     catch (Exception ex)
     {
         return Results.Problem(detail: $"导出题库数据异常: {ex.Message}", statusCode: 500);
+    }
+    finally
+    {
+        exportConcurrencyLock.Release();
     }
 });
 
@@ -301,7 +312,10 @@ app.MapGet("/api/health", async (
                 timestamp = DateTime.UtcNow,
                 dotnetVersion = Environment.Version.ToString(),
                 processUptime = $"{procUptime.Days}天 {procUptime.Hours:D2}:{procUptime.Minutes:D2}:{procUptime.Seconds:D2}",
-                gcMemoryBytes = GC.GetTotalMemory(false)
+                gcMemoryBytes = GC.GetTotalMemory(false),
+                gcGen0 = GC.CollectionCount(0),
+                gcGen1 = GC.CollectionCount(1),
+                gcGen2 = GC.CollectionCount(2)
             };
             return Results.Ok(livePayload);
         }
@@ -331,7 +345,10 @@ app.MapGet("/api/health", async (
             latencyRating = metrics.LatencyRating,
             totalPracticeRecords = metrics.TotalPracticeRecords,
             totalErrorItems = metrics.TotalErrorItems,
-            threadPoolSaturation = metrics.ThreadPoolSaturationRatio
+            threadPoolSaturation = metrics.ThreadPoolSaturationRatio,
+            gcGen0 = metrics.GcGen0Collections,
+            gcGen1 = metrics.GcGen1Collections,
+            gcGen2 = metrics.GcGen2Collections
         };
 
         return canConnect ? Results.Ok(payload) : Results.Json(payload, statusCode: 503);
@@ -355,6 +372,10 @@ app.MapGet("/api/system/diagnostics/export", async (
     string? format,
     string? ticket) =>
 {
+    if (!await exportConcurrencyLock.WaitAsync(2000))
+    {
+        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+    }
     try
     {
         bool authorized = false;
@@ -412,6 +433,10 @@ app.MapGet("/api/system/diagnostics/export", async (
     catch (Exception ex)
     {
         return Results.Problem(detail: $"导出架构诊断报告异常: {ex.Message}", statusCode: 500);
+    }
+    finally
+    {
+        exportConcurrencyLock.Release();
     }
 });
 

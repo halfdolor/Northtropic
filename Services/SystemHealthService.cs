@@ -1765,6 +1765,23 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalCorruptedQuestions} 道选择题选项格式异常 (未包含合法选项列表)");
                 }
 
+                // 12. Questions Creator Topology (孤儿私有题与悬垂公共题)
+                var questionsWithCreator = await db.Questions
+                    .Where(q => q.CreatedByUserId.HasValue)
+                    .Select(q => new { q.Id, q.IsPublic, CreatedByUserId = q.CreatedByUserId!.Value })
+                    .ToListAsync();
+                var danglingQuestions = questionsWithCreator.Where(q => !userIdSet.Contains(q.CreatedByUserId)).ToList();
+                audit.TotalOrphanPrivateQuestions = danglingQuestions.Count(q => !q.IsPublic);
+                audit.TotalDanglingPublicQuestions = danglingQuestions.Count(q => q.IsPublic);
+                if (audit.TotalOrphanPrivateQuestions > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalOrphanPrivateQuestions} 道无主私有试题 (所属创建者已被删除或不存在)");
+                }
+                if (audit.TotalDanglingPublicQuestions > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalDanglingPublicQuestions} 道公共试题引用了已删除用户 (建议解绑置空创建者)");
+                }
+
                 if (audit.IsHealthy)
                 {
                     audit.AuditDetails.Add("✅ 数据库全库拓扑与业务外键完整性审计通过，未发现任何孤儿或格式损坏记录。");
@@ -1902,6 +1919,39 @@ namespace Northtropic.Services
                 {
                     db.LlmGenerationLogs.RemoveRange(orphanLogs);
                     result.PurgedLlmLogsCount = orphanLogs.Count;
+                }
+
+                // 11. Questions Creator Topology (清理孤儿私有题，解绑悬垂公共题)
+                var questionsWithCreator = await db.Questions
+                    .Where(q => q.CreatedByUserId.HasValue)
+                    .ToListAsync();
+                var danglingQuestions = questionsWithCreator
+                    .Where(q => !userIdSet.Contains(q.CreatedByUserId!.Value))
+                    .ToList();
+
+                var orphanPrivateQuestions = danglingQuestions.Where(q => !q.IsPublic).ToList();
+                if (orphanPrivateQuestions.Count > 0)
+                {
+                    var privateQIds = orphanPrivateQuestions.Select(q => q.Id).ToHashSet();
+                    var cascadeErrors = await db.ErrorItems.Where(e => privateQIds.Contains(e.QuestionId)).ToListAsync();
+                    if (cascadeErrors.Count > 0) db.ErrorItems.RemoveRange(cascadeErrors);
+                    var cascadeRecords = await db.PracticeRecords.Where(r => privateQIds.Contains(r.QuestionId)).ToListAsync();
+                    if (cascadeRecords.Count > 0) db.PracticeRecords.RemoveRange(cascadeRecords);
+                    var cascadeFavorites = await db.UserFavorites.Where(f => privateQIds.Contains(f.QuestionId)).ToListAsync();
+                    if (cascadeFavorites.Count > 0) db.UserFavorites.RemoveRange(cascadeFavorites);
+
+                    db.Questions.RemoveRange(orphanPrivateQuestions);
+                    result.PurgedPrivateQuestionsCount = orphanPrivateQuestions.Count;
+                }
+
+                var danglingPublicQuestions = danglingQuestions.Where(q => q.IsPublic).ToList();
+                if (danglingPublicQuestions.Count > 0)
+                {
+                    foreach (var pubQ in danglingPublicQuestions)
+                    {
+                        pubQ.CreatedByUserId = null;
+                    }
+                    result.SanitizedPublicQuestionsCount = danglingPublicQuestions.Count;
                 }
 
                 if (result.TotalPurgedCount > 0)

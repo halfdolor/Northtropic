@@ -1675,12 +1675,12 @@
                         <td>在填空/主观输入框焦点状态下直接提交</td>
                     </tr>
                     <tr>
-                        <td><kbd class="shortcut-badge">Space</kbd> 或 <kbd class="shortcut-badge">→</kbd></td>
-                        <td>已作答时快速提交，已提交时极速切换下一题</td>
+                        <td><kbd class="shortcut-badge">Space</kbd> / <kbd class="shortcut-badge">→</kbd> / <kbd class="shortcut-badge">N</kbd></td>
+                        <td>已作答时快速提交，已提交时极速切换下一题 (或 Alt+N)</td>
                     </tr>
                     <tr>
-                        <td><kbd class="shortcut-badge">←</kbd></td>
-                        <td>返回上一道题目</td>
+                        <td><kbd class="shortcut-badge">←</kbd> / <kbd class="shortcut-badge">B</kbd></td>
+                        <td>返回上一道题目 (解析模式按 B，或随时按 Alt+B)</td>
                     </tr>
                     <tr>
                         <td><kbd class="shortcut-badge">?</kbd></td>
@@ -3758,15 +3758,15 @@
                 }
             }
         }
-        // 左右方向键导航
-        else if (e.Key == "ArrowRight" && (_submitted || _evalMode.Contains("整卷统一")))
+        // 翻题与方向键导航 (支持 → / ←，以及 N / B，解析模式下随时直达，未提交模式下可用 Alt+N / Alt+B 避免与选项 B 冲突)
+        else if ((e.Key == "ArrowRight" || keyLower == "n" || (e.AltKey && keyLower == "n")) && (_submitted || _evalMode.Contains("整卷统一")))
         {
             if (_currentIndex < _questions.Count)
             {
                 await NextQuestionAsync();
             }
         }
-        else if (e.Key == "ArrowLeft" && (_submitted || _evalMode.Contains("整卷统一")))
+        else if (e.Key == "ArrowLeft" || (e.AltKey && keyLower == "b") || (keyLower == "b" && (_submitted || (_evalMode.Contains("整卷统一") && q.Type != QuestionType.SingleChoice && q.Type != QuestionType.MultipleChoice))))
         {
             if (_currentIndex > 1)
             {

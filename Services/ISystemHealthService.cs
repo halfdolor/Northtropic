@@ -211,6 +211,8 @@ namespace Northtropic.Services
         public int TotalOrphanInsights { get; set; }
         public int TotalOrphanLlmLogs { get; set; }
         public int TotalCorruptedQuestions { get; set; }
+        public int TotalOrphanPrivateQuestions { get; set; }
+        public int TotalDanglingPublicQuestions { get; set; }
         public int OrphanErrorItemsCount => TotalOrphanErrorItems;
         public int OrphanPracticeRecordsCount => TotalOrphanPracticeRecords;
         public int OrphanFavoritesCount => TotalOrphanUserFavorites;
@@ -221,7 +223,9 @@ namespace Northtropic.Services
         public int OrphanUserAchievementsCount => TotalOrphanUserAchievements;
         public int OrphanInsightsCount => TotalOrphanInsights;
         public int OrphanLlmLogsCount => TotalOrphanLlmLogs;
-        public int TotalIssuesCount => TotalOrphanErrorItems + TotalOrphanPracticeRecords + TotalOrphanUserFavorites + TotalOrphanHomeworkAssignments + TotalOrphanBindings + TotalOrphanStudyPlans + TotalOrphanStudyPlanTasks + TotalOrphanUserAchievements + TotalOrphanInsights + TotalOrphanLlmLogs + TotalCorruptedQuestions;
+        public int OrphanPrivateQuestionsCount => TotalOrphanPrivateQuestions;
+        public int DanglingPublicQuestionsCount => TotalDanglingPublicQuestions;
+        public int TotalIssuesCount => TotalOrphanErrorItems + TotalOrphanPracticeRecords + TotalOrphanUserFavorites + TotalOrphanHomeworkAssignments + TotalOrphanBindings + TotalOrphanStudyPlans + TotalOrphanStudyPlanTasks + TotalOrphanUserAchievements + TotalOrphanInsights + TotalOrphanLlmLogs + TotalCorruptedQuestions + TotalOrphanPrivateQuestions + TotalDanglingPublicQuestions;
         public bool IsHealthy => TotalIssuesCount == 0;
         public List<string> AuditDetails { get; set; } = new();
     }
@@ -239,7 +243,9 @@ namespace Northtropic.Services
         public int PurgedUserAchievementsCount { get; set; }
         public int PurgedInsightsCount { get; set; }
         public int PurgedLlmLogsCount { get; set; }
-        public int TotalPurgedCount => PurgedErrorItemsCount + PurgedPracticeRecordsCount + PurgedUserFavoritesCount + PurgedHomeworkAssignmentsCount + PurgedBindingsCount + PurgedStudyPlansCount + PurgedStudyPlanTasksCount + PurgedUserAchievementsCount + PurgedInsightsCount + PurgedLlmLogsCount;
+        public int PurgedPrivateQuestionsCount { get; set; }
+        public int SanitizedPublicQuestionsCount { get; set; }
+        public int TotalPurgedCount => PurgedErrorItemsCount + PurgedPracticeRecordsCount + PurgedUserFavoritesCount + PurgedHomeworkAssignmentsCount + PurgedBindingsCount + PurgedStudyPlansCount + PurgedStudyPlanTasksCount + PurgedUserAchievementsCount + PurgedInsightsCount + PurgedLlmLogsCount + PurgedPrivateQuestionsCount + SanitizedPublicQuestionsCount;
         public double ElapsedMilliseconds { get; set; }
         public string Message { get; set; } = string.Empty;
         public DateTime ExecutedAt { get; set; } = DateTime.Now;

@@ -2673,13 +2673,14 @@ namespace Northtropic.Services
             ["乙酸乙酯"] = "ch3cooch2ch3",
 
             // 结晶水合物与矿物俗名
-            ["胆矾"] = "cuso4*5h2o", ["蓝矾"] = "cuso4*5h2o",
-            ["绿矾"] = "feso4*7h2o",
-            ["明矾"] = "kal(so4)2*12h2o",
-            ["熟石膏"] = "2caso4*h2o", ["生石膏"] = "caso4*2h2o",
+            ["胆矾"] = "cuso4*5h2o", ["蓝矾"] = "cuso4*5h2o", ["五水硫酸铜"] = "cuso4*5h2o",
+            ["绿矾"] = "feso4*7h2o", ["七水硫酸亚铁"] = "feso4*7h2o",
+            ["明矾"] = "kal(so4)2*12h2o", ["白矾"] = "kal(so4)2*12h2o", ["十二水合硫酸铝钾"] = "kal(so4)2*12h2o",
+            ["熟石膏"] = "2caso4*h2o", ["半水硫酸钙"] = "2caso4*h2o", ["(caso4)2*h2o"] = "2caso4*h2o",
+            ["生石膏"] = "caso4*2h2o", ["二水硫酸钙"] = "caso4*2h2o",
             ["皓矾"] = "znso4*7h2o",
-            ["芒硝"] = "na2so4*10h2o",
-            ["大苏打"] = "na2s2o3", ["海波"] = "na2s2o3",
+            ["芒硝"] = "na2so4*10h2o", ["十水合硫酸钠"] = "na2so4*10h2o",
+            ["大苏打"] = "na2s2o3", ["海波"] = "na2s2o3", ["硫代硫酸钠"] = "na2s2o3",
             ["重晶石"] = "baso4",
             ["石英"] = "sio2", ["硅石"] = "sio2",
             ["金刚砂"] = "sic"
@@ -2908,9 +2909,6 @@ namespace Northtropic.Services
             var normB = b.Trim().ToLowerInvariant();
             if (normA == normB) return true;
 
-            var formulaA = ChemicalSynonymMap.TryGetValue(normA, out var fA) ? fA : normA;
-            var formulaB = ChemicalSynonymMap.TryGetValue(normB, out var fB) ? fB : normB;
-
             static string CleanChem(string s)
             {
                 s = s.Replace("↑", "").Replace("↓", "").Replace("\\uparrow", "").Replace("\\downarrow", "");
@@ -2918,8 +2916,16 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"_\{?(\d+)\}?", "$1");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\^\{?(\d*[+-])\}?", "$1");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\^([0-9]*[+-])", "$1");
+                s = s.Replace("·", "*").Replace("×", "*").Replace("•", "*");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=[a-zA-Z0-9\)])\.(?=\d+[a-zA-Z])", "*");
                 return s.ToLowerInvariant().Trim();
             }
+
+            var cleanNormA = CleanChem(normA);
+            var cleanNormB = CleanChem(normB);
+
+            var formulaA = ChemicalSynonymMap.TryGetValue(normA, out var fA) ? fA : (ChemicalSynonymMap.TryGetValue(cleanNormA, out var fA2) ? fA2 : cleanNormA);
+            var formulaB = ChemicalSynonymMap.TryGetValue(normB, out var fB) ? fB : (ChemicalSynonymMap.TryGetValue(cleanNormB, out var fB2) ? fB2 : cleanNormB);
 
             return CleanChem(formulaA) == CleanChem(formulaB);
         }
@@ -3595,6 +3601,7 @@ namespace Northtropic.Services
                 if (sLower == "空集" || sLower == "无解" || sLower == "不存在" || 
                     sLower == "无实数解" || sLower == "无实数根" || sLower == "无实根" ||
                     sLower == "\\emptyset" || sLower == "\\varnothing" || sLower == "\\empty" || 
+                    sLower == "\\phi" || sLower == "phi" || sLower == "empty" || sLower == "empty_set" ||
                     sLower == "{}" || sLower == "∅" || sLower == "ø")
                 {
                     return "∅";
@@ -3754,6 +3761,76 @@ namespace Northtropic.Services
             static string NormalizeIntervalOrInequality(string s)
             {
                 s = s.Trim();
+
+                // 空集及无解归一
+                var sEmptyCheck = s.ToLowerInvariant().Trim();
+                if (sEmptyCheck == "∅" || sEmptyCheck == "ø" || sEmptyCheck == "\\emptyset" || sEmptyCheck == "\\varnothing" ||
+                    sEmptyCheck == "\\empty" || sEmptyCheck == "\\phi" || sEmptyCheck == "phi" ||
+                    sEmptyCheck == "empty" || sEmptyCheck == "empty_set" || sEmptyCheck == "{}" ||
+                    sEmptyCheck == "空集" || sEmptyCheck == "无解" || sEmptyCheck == "无实数解" || sEmptyCheck == "无实数根")
+                {
+                    return "∅";
+                }
+
+                // 二次因式分解不等式规范化: (x - a)(x - b) < 0, (x - a)(x - b) <= 0, (x - a)(x - b) > 0, (x - a)(x - b) >= 0
+                var factorMatch = System.Text.RegularExpressions.Regex.Match(s, @"^\(\s*([a-zA-Z])\s*([+-])\s*(\d+(?:\.\d+)?)\s*\)\s*(?:\*|·)?\s*\(\s*\1\s*([+-])\s*(\d+(?:\.\d+)?)\s*\)\s*(<=|<|>=|>)\s*0$");
+                if (factorMatch.Success)
+                {
+                    string sign1 = factorMatch.Groups[2].Value;
+                    double num1 = double.Parse(factorMatch.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture);
+                    double root1 = sign1 == "-" ? num1 : -num1;
+
+                    string sign2 = factorMatch.Groups[4].Value;
+                    double num2 = double.Parse(factorMatch.Groups[5].Value, System.Globalization.CultureInfo.InvariantCulture);
+                    double root2 = sign2 == "-" ? num2 : -num2;
+
+                    string op = factorMatch.Groups[6].Value;
+
+                    if (root1 > root2)
+                    {
+                        var temp = root1; root1 = root2; root2 = temp;
+                    }
+
+                    string r1Str = (root1 % 1 == 0) ? ((long)root1).ToString() : root1.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    string r2Str = (root2 % 1 == 0) ? ((long)root2).ToString() : root2.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+                    return op switch
+                    {
+                        "<" => $"({r1Str},{r2Str})",
+                        "<=" => $"[{r1Str},{r2Str}]",
+                        ">" => $"(-inf,{r1Str})u({r2Str},+inf)",
+                        ">=" => $"(-inf,{r1Str}]u[{r2Str},+inf)",
+                        _ => s
+                    };
+                }
+
+                // 包含单个自变量因式的二次分解: x(x-a) < 0, (x)(x-a) <= 0 等
+                var factorMatch2 = System.Text.RegularExpressions.Regex.Match(s, @"^(?:\(\s*([a-zA-Z])\s*\)|([a-zA-Z]))\s*(?:\*|·)?\s*\(\s*(?:\1|\2)\s*([+-])\s*(\d+(?:\.\d+)?)\s*\)\s*(<=|<|>=|>)\s*0$");
+                if (factorMatch2.Success)
+                {
+                    double root1 = 0;
+                    string sign2 = factorMatch2.Groups[3].Value;
+                    double num2 = double.Parse(factorMatch2.Groups[4].Value, System.Globalization.CultureInfo.InvariantCulture);
+                    double root2 = sign2 == "-" ? num2 : -num2;
+                    string op = factorMatch2.Groups[5].Value;
+
+                    if (root1 > root2)
+                    {
+                        var temp = root1; root1 = root2; root2 = temp;
+                    }
+
+                    string r1Str = (root1 % 1 == 0) ? ((long)root1).ToString() : root1.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    string r2Str = (root2 % 1 == 0) ? ((long)root2).ToString() : root2.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+                    return op switch
+                    {
+                        "<" => $"({r1Str},{r2Str})",
+                        "<=" => $"[{r1Str},{r2Str}]",
+                        ">" => $"(-inf,{r1Str})u({r2Str},+inf)",
+                        ">=" => $"(-inf,{r1Str}]u[{r2Str},+inf)",
+                        _ => s
+                    };
+                }
 
                 // 剥离集合描述法外壳: 如 {x | x > 2} 或 {x \in R | x <= 5} -> x > 2 / x <= 5
                 var setBuilderMatch = System.Text.RegularExpressions.Regex.Match(s, @"^\{\s*[a-zA-Z](?:\s*(?:\\in|∈)\s*[a-zA-Z\\]+)?\s*\|\s*(.+)\s*\}$");
@@ -5461,7 +5538,7 @@ namespace Northtropic.Services
 
                     // 电能与功实用单位 (1 kWh = 1 度 = 3.6e6 J)
                     (@"mwh|mw·h|mw\*h|兆瓦时", 3.6e9, "energy"),
-                    (@"kwh|kw·h|kw\*h|kw\s*h|千瓦时|度", 3.6e6, "energy"),
+                    (@"kwh|kw·h|kw\*h|kw\s*h|千瓦·时|千瓦\*时|千瓦时|度", 3.6e6, "energy"),
                     (@"wh|w·h|w\*h|瓦时", 3600.0, "energy"),
                     (@"ws|w·s|w\*s|瓦秒", 1.0, "energy"),
                     ("gj|吉焦", 1e9, "energy"),
@@ -5512,19 +5589,24 @@ namespace Northtropic.Services
                     ("ms|毫秒", 1e-3, "time"),
                     ("s|秒|sec|secs", 1.0, "time"),
 
-                    // 压强
+                    // 压强 (1 atm = 101325 Pa, 1 bar = 1e5 Pa, 1 mmHg ≈ 133.322 Pa)
+                    (@"atm|标准大气压", 101325.0, "press"),
+                    (@"bar|巴", 1e5, "press"),
+                    (@"mmhg|毫米汞柱", 133.322368, "press"),
                     ("mpa|兆帕", 1e6, "press"),
                     ("kpa|千帕", 1e3, "press"),
+                    ("hpa|百帕|mbar|毫巴", 100.0, "press"),
                     ("pa|帕斯卡|帕", 1.0, "press"),
 
                     // 力学
                     ("kn|千牛", 1e3, "force"),
                     ("n|牛顿|牛", 1.0, "force"),
 
-                    // 功率
+                    // 功率 (1 hp ≈ 735 W)
                     ("gw|吉瓦", 1e9, "power"),
                     ("mw|兆瓦", 1e6, "power"),
                     ("kw|千瓦", 1e3, "power"),
+                    ("hp|马力", 735.0, "power"),
                     ("w|瓦特|瓦", 1.0, "power"),
 
                     // 长度
@@ -5562,7 +5644,7 @@ namespace Northtropic.Services
                 return false;
             }
 
-            static bool AreValuesClose(double a, double b)
+            static bool AreValuesClose(double a, double b, string fam = "")
             {
                 if (double.IsNaN(a) || double.IsNaN(b)) return false;
                 if (double.IsInfinity(a) || double.IsInfinity(b)) return a == b;
@@ -5570,13 +5652,18 @@ namespace Northtropic.Services
                 double diff = Math.Abs(a - b);
                 double maxVal = Math.Max(Math.Abs(a), Math.Abs(b));
                 if (maxVal < 1e-9) return diff < 1e-9;
-                return (diff / maxVal) < 1e-4;
+                double relTol = fam switch
+                {
+                    "press" => 0.015, // 压强允许 1.5% 相对容差 (兼容 1.01x10^5 Pa / 101.3 kPa 与 101325 Pa)
+                    _ => 2e-3         // 通用单位允许 0.2% 相对容差
+                };
+                return (diff / maxVal) <= relTol;
             }
 
             if (TryParsePrefixedQuantity(u, out var uBase, out var uFam) &&
                 TryParsePrefixedQuantity(c, out var cBase, out var cFam))
             {
-                if (uFam == cFam && AreValuesClose(uBase, cBase))
+                if (uFam == cFam && AreValuesClose(uBase, cBase, uFam))
                 {
                     return true;
                 }

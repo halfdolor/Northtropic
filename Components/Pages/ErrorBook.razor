@@ -496,6 +496,9 @@
                                     <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Psychology" OnClick="() => ToggleAiHelpAsync(item)">
                                         @(_expandedAiHelpIds.Contains(item.Id) ? "收起导师诊断" : "AI 导师错因剖析")
                                     </MudButton>
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="() => CopyQuestionCardAsync(item)">
+                                        复制题干与解析
+                                    </MudButton>
                                     <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.CheckCircleOutline" OnClick="() => MarkAsMasteredDirectAsync(item.Id)">
                                         标记已掌握
                                     </MudButton>
@@ -1430,6 +1433,42 @@
         catch (Exception ex)
         {
             Snackbar.Add($"复制到剪贴板失败: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private async Task CopyQuestionCardAsync(ErrorItem item)
+    {
+        if (item.Question == null) return;
+        var q = item.Question;
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"【题型】{q.TypeDisplayName} | 【科目】{q.Subject} | 【模块】{q.Category}");
+        sb.AppendLine($"【题干】{q.Stem}");
+        if (q.Options != null && q.Options.Count > 0)
+        {
+            sb.AppendLine("【选项】");
+            foreach (var opt in q.Options)
+            {
+                sb.AppendLine($"  {opt}");
+            }
+        }
+        sb.AppendLine($"【参考答案】{q.CorrectAnswer}");
+        if (!string.IsNullOrWhiteSpace(item.UserWrongAnswer))
+        {
+            sb.AppendLine($"【历史错误答案】{item.UserWrongAnswer}");
+        }
+        if (!string.IsNullOrWhiteSpace(q.StandardAnalysis))
+        {
+            sb.AppendLine($"【详细解析】{q.StandardAnalysis}");
+        }
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
+            Snackbar.Add("📋 已成功复制该题题干、答案与解析到剪贴板！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"复制失败: {ex.Message}", Severity.Warning);
         }
     }
 
