@@ -350,6 +350,7 @@ namespace Northtropic.Services
         Task<DataIntegrityDeduplicateResultDto> DeduplicateQuestionsAsync();
         Task<int> HealGamificationInvariantsAsync();
         Task<int> HealHomeworkAssignmentInvariantsAsync();
+        Task<int> HealErrorBookInvariantsAsync();
         IReadOnlyList<SystemArchitectureEvent> GetRecentArchitectureEvents(string? category = null, string? level = null, int? maxCount = null);
         ArchitectureTelemetrySummaryDto GetArchitectureTelemetrySummary();
         Task<AdaptiveMaintenancePlanDto> EvaluateAdaptiveMaintenancePlanAsync();

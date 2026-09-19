@@ -1535,10 +1535,21 @@ namespace Northtropic.Services
             return (true, student, $"成功开通学生账号【{student.Username}】，默认密码为 123456，专属绑定码为：{bindingCode}");
         }
 
-        public async Task<(bool Success, string Message)> UnbindStudentAsync(Guid parentId, Guid studentId)
+        public async Task<(bool Success, string Message)> UnbindStudentAsync(Guid parentId, Guid studentId, Guid? callerUserId = null)
         {
             await using var dbScope = await CreateDbScopeAsync();
             var context = dbScope.Context;
+
+            var callerId = callerUserId ?? _activeUserId;
+            if (callerId.HasValue)
+            {
+                var caller = await context.Users.FindAsync(callerId.Value);
+                if (caller != null && caller.Role != UserRole.SuperAdmin && caller.Id != parentId)
+                {
+                    return (false, "越权拦截：无权解除非本人的家庭关联绑定！");
+                }
+            }
+
             var rel = await context.StudentParentBindings.FirstOrDefaultAsync(r => r.ParentUserId == parentId && r.StudentUserId == studentId);
             if (rel != null)
             {
@@ -1550,10 +1561,25 @@ namespace Northtropic.Services
             return (false, "未找到关联记录。");
         }
 
-        public async Task<(bool Success, string Message)> UpdateParentEncouragementNoteAsync(Guid studentId, string note)
+        public async Task<(bool Success, string Message)> UpdateParentEncouragementNoteAsync(Guid studentId, string note, Guid? callerUserId = null)
         {
             await using var dbScope = await CreateDbScopeAsync();
             var context = dbScope.Context;
+
+            var callerId = callerUserId ?? _activeUserId;
+            if (callerId.HasValue)
+            {
+                var caller = await context.Users.FindAsync(callerId.Value);
+                if (caller != null && caller.Role != UserRole.SuperAdmin)
+                {
+                    bool isBound = await context.StudentParentBindings.AnyAsync(b => b.ParentUserId == caller.Id && b.StudentUserId == studentId);
+                    if (!isBound)
+                    {
+                        return (false, "越权拦截：您只能为已绑定的子女发送关怀寄语！");
+                    }
+                }
+            }
+
             var student = await context.Users.FirstOrDefaultAsync(u => u.Id == studentId);
             if (student == null)
             {
@@ -1567,20 +1593,37 @@ namespace Northtropic.Services
             return (true, "💌 家长关怀寄语已成功发布，孩子登录首页即可看到！");
         }
 
-        public async Task<(bool Success, string Message, int? NewCoins, int? NewExp, string? Note, DateTime? NoteTime)> AwardParentPraiseRewardAsync(Guid studentId, string badge, string comment, int rewardCoins)
+        public async Task<(bool Success, string Message, int? NewCoins, int? NewExp, string? Note, DateTime? NoteTime)> AwardParentPraiseRewardAsync(Guid studentId, string badge, string comment, int rewardCoins, Guid? callerUserId = null)
         {
             await using var dbScope = await CreateDbScopeAsync();
             var context = dbScope.Context;
+
+            var callerId = callerUserId ?? _activeUserId;
+            if (callerId.HasValue)
+            {
+                var caller = await context.Users.FindAsync(callerId.Value);
+                if (caller != null && caller.Role != UserRole.SuperAdmin)
+                {
+                    bool isBound = await context.StudentParentBindings.AnyAsync(b => b.ParentUserId == caller.Id && b.StudentUserId == studentId);
+                    if (!isBound)
+                    {
+                        return (false, "越权拦截：您只能为已绑定的子女颁发赞赏与激励！", null, null, null, null);
+                    }
+                }
+            }
+
             var student = await context.Users.FirstOrDefaultAsync(u => u.Id == studentId);
             if (student == null)
             {
                 return (false, "未找到指定学生账号！", null, null, null, null);
             }
 
+            rewardCoins = Math.Clamp(rewardCoins, 0, 500);
             if (rewardCoins > 0)
             {
                 student.Coins += rewardCoins;
                 student.Exp += rewardCoins;
+                GamificationService.CheckAndProcessLevelUp(student);
             }
 
             student.ParentEncouragementNote = $"【家长颁发 {badge}】{comment}".Trim();

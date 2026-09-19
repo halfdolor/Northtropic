@@ -192,6 +192,9 @@
                     <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Public" OnClick="BatchPublishAsync">
                         批量发布至全网公共库
                     </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" StartIcon="@Icons.Material.Filled.Lock" OnClick="BatchRetractAsync">
+                        批量撤回为私有
+                    </MudButton>
                     <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.DeleteSweep" OnClick="BatchDeleteAsync">
                         批量彻底删除
                     </MudButton>
@@ -541,6 +544,21 @@
             int count = await QuestionManagementService.BatchDirectPublishAsync(idsToPublish, _currentUser.Id);
             _selectedQuestionIds.Clear();
             Snackbar.Add($"🎉 批量发布成功！共将 {count} 道试题加入全网公共题库！", Severity.Success);
+            await LoadQuestionsAsync();
+        }
+    }
+
+    private async Task BatchRetractAsync()
+    {
+        if (_currentUser == null || !_selectedQuestionIds.Any()) return;
+
+        bool? confirm = await DialogService.ShowMessageBox("批量撤回确认", $"确定要将选中的 {_selectedQuestionIds.Count} 道试题批量撤回为私有题库吗？撤回后普通学生将无法公开查看此题。", yesText: "确认批量撤回", cancelText: "取消");
+        if (confirm == true)
+        {
+            var idsToRetract = _selectedQuestionIds.ToList();
+            int count = await QuestionManagementService.BatchRetractToPrivateAsync(idsToRetract, _currentUser.Id);
+            _selectedQuestionIds.Clear();
+            Snackbar.Add($"已成功将 {count} 道试题批量撤回为私有状态！", Severity.Success);
             await LoadQuestionsAsync();
         }
     }

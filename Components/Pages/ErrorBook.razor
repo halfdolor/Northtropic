@@ -1222,7 +1222,7 @@
                     }
                 }
 
-                await ErrorBookService.UpdateErrorReasonAsync(item.Id, reason);
+                await ErrorBookService.UpdateErrorReasonAsync(item.Id, reason, _currentUser?.Id);
             }
 
             await LoadErrorBookAsync();

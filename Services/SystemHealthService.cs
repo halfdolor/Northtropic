@@ -2389,5 +2389,73 @@ namespace Northtropic.Services
 
             return healedCount;
         }
+
+        public async Task<int> HealErrorBookInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            var errorItems = await db.ErrorItems.ToListAsync();
+            int healedCount = 0;
+
+            // 1. 单项属性领域不变量纠偏
+            foreach (var item in errorItems)
+            {
+                bool changed = false;
+
+                // A. 改错复习次数不能为负数
+                if (item.RevisionCount < 0)
+                {
+                    item.RevisionCount = 0;
+                    changed = true;
+                }
+
+                // B. 已彻底掌握的题目，LastRevisedAt 不能为空
+                if (item.IsMastered && !item.LastRevisedAt.HasValue)
+                {
+                    item.LastRevisedAt = item.CreatedAt != default ? item.CreatedAt : DateTime.Now;
+                    changed = true;
+                }
+
+                // C. 错因归类清洗
+                if (string.IsNullOrWhiteSpace(item.ErrorReasonCategory))
+                {
+                    item.ErrorReasonCategory = "未分类";
+                    changed = true;
+                }
+
+                if (changed) healedCount++;
+            }
+
+            // 2. 相同用户针对同一试题的重复记录去重自愈 (保留最佳掌握度与最高复习次数)
+            var duplicateGroups = errorItems
+                .GroupBy(e => new { e.UserId, e.QuestionId })
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            foreach (var group in duplicateGroups)
+            {
+                var canonical = group
+                    .OrderByDescending(e => e.IsMastered)
+                    .ThenByDescending(e => e.RevisionCount)
+                    .ThenByDescending(e => e.LastRevisedAt ?? DateTime.MinValue)
+                    .First();
+
+                var duplicatesToRemove = group.Where(e => e.Id != canonical.Id).ToList();
+                if (duplicatesToRemove.Count > 0)
+                {
+                    db.ErrorItems.RemoveRange(duplicatesToRemove);
+                    healedCount += duplicatesToRemove.Count;
+                }
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("ErrorBookInvariants", "Success", $"校准并自愈了 {healedCount} 项错题副本领域不变量与重复数据");
+            }
+
+            return healedCount;
+        }
     }
 }

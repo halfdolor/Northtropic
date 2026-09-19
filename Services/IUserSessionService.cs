@@ -59,9 +59,9 @@ namespace Northtropic.Services
         Task<List<User>> GetBoundStudentsAsync(Guid parentId);
         Task<(bool Success, string Message)> BindStudentByCodeAsync(Guid parentId, string bindingCode, string relation = "监护人");
         Task<(bool Success, User? Student, string Message)> CreateChildStudentAsync(Guid parentId, string username, string grade, string relation = "监护人");
-        Task<(bool Success, string Message)> UnbindStudentAsync(Guid parentId, Guid studentId);
-        Task<(bool Success, string Message)> UpdateParentEncouragementNoteAsync(Guid studentId, string note);
-        Task<(bool Success, string Message, int? NewCoins, int? NewExp, string? Note, DateTime? NoteTime)> AwardParentPraiseRewardAsync(Guid studentId, string badge, string comment, int rewardCoins);
+        Task<(bool Success, string Message)> UnbindStudentAsync(Guid parentId, Guid studentId, Guid? callerUserId = null);
+        Task<(bool Success, string Message)> UpdateParentEncouragementNoteAsync(Guid studentId, string note, Guid? callerUserId = null);
+        Task<(bool Success, string Message, int? NewCoins, int? NewExp, string? Note, DateTime? NoteTime)> AwardParentPraiseRewardAsync(Guid studentId, string badge, string comment, int rewardCoins, Guid? callerUserId = null);
         Task<(int TotalUsers, int PendingUsers)> GetUserStatisticsAsync();
 
         // 架构安全：短时一次性安全下载票据 (OTAC)，解决跨上下文/无状态 HTTP 文件导出与热备份下载鉴权

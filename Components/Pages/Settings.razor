@@ -1010,6 +1010,9 @@
                                             @(_isHealingBalances ? "校准中..." : "⚖️ 校准资产与等级")
                                         </MudButton>
                                     }
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick="HealErrorBookInvariantsAsync" Disabled="@_isHealingErrorBook" Class="font-weight-bold">
+                                        @(_isHealingErrorBook ? "自愈中..." : "🩺 自愈错题副本不变量")
+                                    </MudButton>
                                 </div>
                             </div>
 
@@ -1339,6 +1342,7 @@
     private bool _isPurgingOrphans = false;
     private bool _isDeduplicatingQuestions = false;
     private bool _isHealingBalances = false;
+    private bool _isHealingErrorBook = false;
 
     private void FilterTelemetryEvents()
     {
@@ -1897,6 +1901,28 @@
         finally
         {
             _isHealingBalances = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HealErrorBookInvariantsAsync()
+    {
+        _isHealingErrorBook = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealErrorBookInvariantsAsync();
+            Snackbar.Add($"🩺 错题副本领域不变量自愈完成：成功修正/去重 {healedCount} 条记录！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"错题副本自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingErrorBook = false;
             StateHasChanged();
         }
     }

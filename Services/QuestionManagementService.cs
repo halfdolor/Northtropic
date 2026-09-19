@@ -601,6 +601,41 @@ namespace Northtropic.Services
             return questionsToPublish.Count;
         }
 
+        public async Task<int> BatchRetractToPrivateAsync(IEnumerable<Guid> ids, Guid userId)
+        {
+            if (ids == null) return 0;
+            var idList = ids.Distinct().ToList();
+            if (idList.Count == 0) return 0;
+
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            if (user == null || !user.CanManageQuestionBank)
+            {
+                return 0;
+            }
+
+            bool isSuperAdmin = user.Role == UserRole.SuperAdmin;
+            var query = db.Questions.Where(q => idList.Contains(q.Id) && q.IsPublic);
+            if (!isSuperAdmin)
+            {
+                query = query.Where(q => q.CreatedByUserId == userId);
+            }
+
+            var questionsToRetract = await query.ToListAsync();
+            if (questionsToRetract.Count == 0) return 0;
+
+            foreach (var q in questionsToRetract)
+            {
+                q.IsPublic = false;
+                q.PublishStatus = PublishStatusEnum.Private;
+            }
+
+            await db.SaveChangesAsync();
+            return questionsToRetract.Count;
+        }
+
         public async Task<(int TotalQuestions, int PublicQuestions, int MyQuestions)> GetQuestionStatisticsAsync(Guid? userId = null)
         {
             await using var dbScope = await CreateDbScopeAsync();

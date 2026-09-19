@@ -2609,7 +2609,7 @@ namespace Northtropic.Services
             ["氧化铁"] = "fe2o3", ["三氧化二铁"] = "fe2o3", ["铁锈"] = "fe2o3", ["赤铁矿"] = "fe2o3",
             ["四氧化三铁"] = "fe3o4", ["磁性氧化铁"] = "fe3o4", ["磁铁矿"] = "fe3o4",
             ["氧化镁"] = "mgo", ["氧化铝"] = "al2o3", ["氧化锌"] = "zno",
-            ["二氧化锰"] = "mno2",
+            ["二氧化锰"] = "mno2", ["二氧化硅"] = "sio2",
             ["过氧化氢"] = "h2o2", ["双氧水"] = "h2o2",
             ["过氧化钠"] = "na2o2",
 
@@ -2635,7 +2635,7 @@ namespace Northtropic.Services
             // 常见盐
             ["氯化钠"] = "nacl", ["食盐"] = "nacl",
             ["次氯酸钠"] = "naclo",
-            ["碳酸钙"] = "caco3", ["石灰石"] = "caco3", ["大理石"] = "caco3",
+            ["碳酸钙"] = "caco3", ["石灰石"] = "caco3", ["大理石"] = "caco3", ["方解石"] = "caco3",
             ["碳酸钠"] = "na2co3", ["纯碱"] = "na2co3", ["苏打"] = "na2co3",
             ["碳酸氢钠"] = "nahco3", ["小苏打"] = "nahco3",
             ["硫酸氢钠"] = "nahso4",
@@ -2697,7 +2697,7 @@ namespace Northtropic.Services
             ["磷"] = "p", ["红磷"] = "p", ["白磷"] = "p",
 
             // 常见有机物
-            ["甲烷"] = "ch4", ["天然气"] = "ch4",
+            ["甲烷"] = "ch4", ["天然气"] = "ch4", ["沼气"] = "ch4", ["瓦斯"] = "ch4",
             ["乙烷"] = "c2h6",
             ["乙烯"] = "c2h4",
             ["乙炔"] = "c2h2",
@@ -2728,8 +2728,12 @@ namespace Northtropic.Services
             ["芒硝"] = "na2so4*10h2o", ["十水合硫酸钠"] = "na2so4*10h2o",
             ["大苏打"] = "na2s2o3", ["海波"] = "na2s2o3", ["硫代硫酸钠"] = "na2s2o3",
             ["重晶石"] = "baso4",
-            ["石英"] = "sio2", ["硅石"] = "sio2",
-            ["金刚砂"] = "sic"
+            ["石英"] = "sio2", ["硅石"] = "sio2", ["水晶"] = "sio2",
+            ["金刚砂"] = "sic",
+            ["萤石"] = "caf2", ["荧石"] = "caf2", ["氟化钙"] = "caf2",
+            ["孔雀石"] = "cu2(oh)2co3", ["碱式碳酸铜"] = "cu2(oh)2co3",
+            ["菱铁矿"] = "feco3", ["碳酸亚铁"] = "feco3",
+            ["黄铁矿"] = "fes2", ["二硫化亚铁"] = "fes2"
         };
 
         public static readonly Dictionary<string, string> OrganicCondensedMap = new(StringComparer.OrdinalIgnoreCase)
@@ -4761,6 +4765,119 @@ namespace Northtropic.Services
                 if (TryExtractDensity(s1, out double rho1) && TryExtractDensity(s2, out double rho2))
                 {
                     return Math.Abs(rho1 - rho2) < 1e-3 || Math.Abs(rho1 - rho2) / Math.Max(Math.Abs(rho1), Math.Abs(rho2)) < 1e-4;
+                }
+
+                // H. 能量与功 (以 J 为基底, 1 kJ = 1000 J, 1 MJ = 10^6 J, 1 kW·h = 3.6×10^6 J, 1 eV = 1.602×10^-19 J)
+                static bool TryExtractJoule(string s, out double joule)
+                {
+                    joule = 0;
+                    s = s.Replace("kw·h", "kwh").Replace("kw*h", "kwh").Replace("kw·时", "kwh")
+                         .Replace("千瓦·时", "kwh").Replace("千瓦时", "kwh").Replace("千瓦*时", "kwh")
+                         .Replace("w·s", "ws").Replace("w*s", "ws")
+                         .Replace("度", "kwh");
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?(?:(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+|\*10\^[+-]?\d+)?|10\^[+-]?\d+))\s*(j|kj|mj|gj|焦耳?|千焦|兆焦|吉焦|kwh|ws|ev|kev|mev|电子伏特?|千电子伏|兆电子伏)$");
+                    if (m.Success && TryParseScientificOrNumber(m.Groups[1].Value, out double val))
+                    {
+                        string unit = m.Groups[2].Value;
+                        joule = unit switch
+                        {
+                            "kwh" => val * 3.6e6,
+                            "gj" or "吉焦" => val * 1e9,
+                            "mj" or "兆焦" => val * 1e6,
+                            "kj" or "千焦" => val * 1e3,
+                            "ev" or "电子伏" or "电子伏特" => val * 1.602e-19,
+                            "kev" or "千电子伏" => val * 1.602e-16,
+                            "mev" or "兆电子伏" => val * 1.602e-13,
+                            _ => val
+                        };
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (TryExtractJoule(s1, out double j1) && TryExtractJoule(s2, out double j2))
+                {
+                    return Math.Abs(j1 - j2) < 1e-3 || Math.Abs(j1 - j2) / Math.Max(Math.Abs(j1), Math.Abs(j2)) < 1e-4;
+                }
+
+                // I. 电压与电势差 (以 V 为基底, 1 kV = 1000 V, 1 mV = 10^-3 V, 1 μV = 10^-6 V)
+                static bool TryExtractVolt(string s, out double volt)
+                {
+                    volt = 0;
+                    s = s.Replace("μ", "u").Replace("\\mu", "u");
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?(?:(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+|\*10\^[+-]?\d+)?|10\^[+-]?\d+))\s*(v|kv|mv|uv|伏特?|千伏|毫伏|微伏)$");
+                    if (m.Success && TryParseScientificOrNumber(m.Groups[1].Value, out double val))
+                    {
+                        string unit = m.Groups[2].Value;
+                        volt = unit switch
+                        {
+                            "kv" or "千伏" => val * 1e3,
+                            "mv" or "毫伏" => val * 1e-3,
+                            "uv" or "微伏" => val * 1e-6,
+                            _ => val
+                        };
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (TryExtractVolt(s1, out double volt1) && TryExtractVolt(s2, out double volt2))
+                {
+                    return Math.Abs(volt1 - volt2) < 1e-4 || Math.Abs(volt1 - volt2) / Math.Max(Math.Abs(volt1), Math.Abs(volt2)) < 1e-4;
+                }
+
+                // J. 电阻 (以 Ω 为基底, 1 kΩ = 1000 Ω, 1 MΩ = 10^6 Ω)
+                static bool TryExtractOhm(string s, out double ohm)
+                {
+                    ohm = 0;
+                    s = s.Replace("komega", "kω").Replace("momega", "mω").Replace("gomega", "gω").Replace("omega", "ω")
+                         .Replace("kohm", "kω").Replace("mohm", "mω").Replace("ohm", "ω")
+                         .Replace("千欧", "kω").Replace("兆欧", "mω").Replace("欧姆", "ω").Replace("欧", "ω");
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?(?:(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+|\*10\^[+-]?\d+)?|10\^[+-]?\d+))\s*(ω|kω|mω|gω)$");
+                    if (m.Success && TryParseScientificOrNumber(m.Groups[1].Value, out double val))
+                    {
+                        string unit = m.Groups[2].Value;
+                        ohm = unit switch
+                        {
+                            "gω" => val * 1e9,
+                            "mω" => val * 1e6,
+                            "kω" => val * 1e3,
+                            _ => val
+                        };
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (TryExtractOhm(s1, out double r1) && TryExtractOhm(s2, out double r2))
+                {
+                    return Math.Abs(r1 - r2) < 1e-3 || Math.Abs(r1 - r2) / Math.Max(Math.Abs(r1), Math.Abs(r2)) < 1e-4;
+                }
+
+                // K. 电流 (以 A 为基底, 1 kA = 1000 A, 1 mA = 10^-3 A, 1 μA = 10^-6 A)
+                static bool TryExtractAmpere(string s, out double amp)
+                {
+                    amp = 0;
+                    s = s.Replace("μ", "u").Replace("\\mu", "u");
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?(?:(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+|\*10\^[+-]?\d+)?|10\^[+-]?\d+))\s*(a|ka|ma|ua|安培?|千安|毫安|微安)$");
+                    if (m.Success && TryParseScientificOrNumber(m.Groups[1].Value, out double val))
+                    {
+                        string unit = m.Groups[2].Value;
+                        amp = unit switch
+                        {
+                            "ka" or "千安" => val * 1e3,
+                            "ma" or "毫安" => val * 1e-3,
+                            "ua" or "微安" => val * 1e-6,
+                            _ => val
+                        };
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (TryExtractAmpere(s1, out double i1) && TryExtractAmpere(s2, out double i2))
+                {
+                    return Math.Abs(i1 - i2) < 1e-5 || Math.Abs(i1 - i2) / Math.Max(Math.Abs(i1), Math.Abs(i2)) < 1e-4;
                 }
 
                 return false;

@@ -49,9 +49,9 @@ namespace Northtropic.Tests
         public Task<List<User>> GetBoundStudentsAsync(Guid parentId) => Task.FromResult(new List<User>());
         public Task<(bool Success, string Message)> BindStudentByCodeAsync(Guid parentId, string bindingCode, string relation = "监护人") => Task.FromResult((true, "OK"));
         public Task<(bool Success, User? Student, string Message)> CreateChildStudentAsync(Guid parentId, string username, string grade, string relation = "监护人") => Task.FromResult<(bool, User?, string)>((true, new User(), "OK"));
-        public Task<(bool Success, string Message)> UnbindStudentAsync(Guid parentId, Guid studentId) => Task.FromResult((true, "OK"));
-        public Task<(bool Success, string Message)> UpdateParentEncouragementNoteAsync(Guid studentId, string note) => Task.FromResult((true, "OK"));
-        public Task<(bool Success, string Message, int? NewCoins, int? NewExp, string? Note, DateTime? NoteTime)> AwardParentPraiseRewardAsync(Guid studentId, string badge, string comment, int rewardCoins) => Task.FromResult<(bool, string, int?, int?, string?, DateTime?)>((true, "OK", 10, 10, "Nice!", DateTime.UtcNow));
+        public Task<(bool Success, string Message)> UnbindStudentAsync(Guid parentId, Guid studentId, Guid? callerUserId = null) => Task.FromResult((true, "OK"));
+        public Task<(bool Success, string Message)> UpdateParentEncouragementNoteAsync(Guid studentId, string note, Guid? callerUserId = null) => Task.FromResult((true, "OK"));
+        public Task<(bool Success, string Message, int? NewCoins, int? NewExp, string? Note, DateTime? NoteTime)> AwardParentPraiseRewardAsync(Guid studentId, string badge, string comment, int rewardCoins, Guid? callerUserId = null) => Task.FromResult<(bool, string, int?, int?, string?, DateTime?)>((true, "OK", 10, 10, "Nice!", DateTime.UtcNow));
         public Task<(int TotalUsers, int PendingUsers)> GetUserStatisticsAsync() => Task.FromResult((10, 2));
         public Task<string> GenerateDownloadTicketAsync(Guid userId, string purpose, string? resource = null) => Task.FromResult(Guid.NewGuid().ToString("N"));
         public Task<(bool Valid, Guid UserId, string Purpose, string? Resource)> ValidateAndConsumeDownloadTicketAsync(string ticket) => Task.FromResult<(bool, Guid, string, string?)>((true, ActiveUser?.Id ?? Guid.NewGuid(), "backup_download", null));

@@ -22,6 +22,7 @@ namespace Northtropic.Services
         Task<byte[]> ExportQuestionsXlsxAsync(Guid currentUserId, string? subject = null, string? category = null, bool? isPublic = null, PublishStatusEnum? status = null, IEnumerable<Guid>? specificQuestionIds = null);
         Task<int> BatchDeleteQuestionsAsync(IEnumerable<Guid> ids, Guid userId);
         Task<int> BatchDirectPublishAsync(IEnumerable<Guid> ids, Guid userId);
+        Task<int> BatchRetractToPrivateAsync(IEnumerable<Guid> ids, Guid userId);
         Task<(int TotalQuestions, int PublicQuestions, int MyQuestions)> GetQuestionStatisticsAsync(Guid? userId = null);
     }
 }
