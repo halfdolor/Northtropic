@@ -522,7 +522,9 @@ namespace Northtropic.Services
             var currentUserId = targetUserId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id ?? Guid.Empty;
 
             // 1. 结算动态金币与经验奖励/惩罚
-            bool isHistoryWrong = currentUserId != Guid.Empty && await ctx.ErrorItems.AnyAsync(e => e.UserId == currentUserId && e.QuestionId == questionId && !e.IsMastered);
+            bool isHistoryWrong = currentUserId != Guid.Empty && (
+                ctx.ErrorItems.Local.Any(e => e.UserId == currentUserId && e.QuestionId == questionId && !e.IsMastered) ||
+                await ctx.ErrorItems.AnyAsync(e => e.UserId == currentUserId && e.QuestionId == questionId && !e.IsMastered, cancellationToken));
             var rewardResult = await _gamificationService.ProcessAnswerRewardAsync(isCorrect, activeQuestion.BaseExpReward, currentCombo, activeQuestion.Difficulty, timeTakenSeconds, isHistoryWrong, currentUserId, ctx);
 
             string? planFeedback = null;
@@ -553,7 +555,7 @@ namespace Northtropic.Services
                     }
 
                     var existingError = ctx.ErrorItems.Local.FirstOrDefault(e => e.UserId == currentUserId && e.QuestionId == questionId)
-                        ?? await ctx.ErrorItems.FirstOrDefaultAsync(e => e.UserId == currentUserId && e.QuestionId == questionId);
+                        ?? await ctx.ErrorItems.FirstOrDefaultAsync(e => e.UserId == currentUserId && e.QuestionId == questionId, cancellationToken);
                     if (existingError == null)
                     {
                         ctx.ErrorItems.Add(new ErrorItem
@@ -580,7 +582,8 @@ namespace Northtropic.Services
                 else if (isHistoryWrong)
                 {
                     // 核心联动：若答对历史未掌握错题，自动同步艾宾浩斯复练记忆曲线与掌握度
-                    var existingError = await ctx.ErrorItems.FirstOrDefaultAsync(e => e.UserId == currentUserId && e.QuestionId == questionId && !e.IsMastered);
+                    var existingError = ctx.ErrorItems.Local.FirstOrDefault(e => e.UserId == currentUserId && e.QuestionId == questionId && !e.IsMastered)
+                        ?? await ctx.ErrorItems.FirstOrDefaultAsync(e => e.UserId == currentUserId && e.QuestionId == questionId && !e.IsMastered, cancellationToken);
                     if (existingError != null)
                     {
                         existingError.LastRevisedAt = DateTime.Now;
@@ -588,7 +591,8 @@ namespace Northtropic.Services
                         if (existingError.RevisionCount >= 3)
                         {
                             existingError.IsMastered = true;
-                            var user = await ctx.Users.FirstOrDefaultAsync(u => u.Id == currentUserId);
+                            var user = ctx.Users.Local.FirstOrDefault(u => u.Id == currentUserId)
+                                ?? await ctx.Users.FirstOrDefaultAsync(u => u.Id == currentUserId, cancellationToken);
                             if (user != null)
                             {
                                 user.ResolvedErrorsCount++;
@@ -604,11 +608,12 @@ namespace Northtropic.Services
                 // 4. 智能学习计划任务同步推进与自适应闭环联动
                 try
                 {
-                    var activePlan = await ctx.StudyPlans
-                        .Include(p => p.Tasks)
-                        .Where(p => p.UserId == currentUserId && p.Status == StudyPlanStatus.Active)
-                        .OrderByDescending(p => p.CreatedAt)
-                        .FirstOrDefaultAsync(cancellationToken);
+                    var activePlan = ctx.StudyPlans.Local.FirstOrDefault(p => p.UserId == currentUserId && p.Status == StudyPlanStatus.Active)
+                        ?? await ctx.StudyPlans
+                            .Include(p => p.Tasks)
+                            .Where(p => p.UserId == currentUserId && p.Status == StudyPlanStatus.Active)
+                            .OrderByDescending(p => p.CreatedAt)
+                            .FirstOrDefaultAsync(cancellationToken);
 
                     if (activePlan != null && activePlan.Tasks != null && activePlan.Tasks.Count > 0)
                     {
@@ -702,6 +707,27 @@ namespace Northtropic.Services
 
                 var normU = user.Replace(" ", "").ToLowerInvariant();
                 var normC = correct.Replace(" ", "").ToLowerInvariant();
+
+                // 代数因式分解因子乘积交换律等价
+                if (CheckPolynomialFactorProductCommutativeMatch(user, correct) ||
+                    CheckPolynomialFactorProductCommutativeMatch(normU, normC))
+                {
+                    return $"因式分解因子交换律等价：已自动识别多项式因式乘积因子的交换律无序性，对应标准因式分解 [{correct}]";
+                }
+
+                // 向量范数与模长记号等价
+                if (user.Contains("\\|") || user.Contains("\\Vert") || user.Contains("\\lVert") || user.Contains("‖") ||
+                    correct.Contains("\\|") || correct.Contains("\\Vert") || correct.Contains("\\lVert") || correct.Contains("‖"))
+                {
+                    return $"向量范数与模长记号等价：已自动识别向量/复数模长符号（\\|...\\| 与 |...|）数学等价性，对应标准答案 [{correct}]";
+                }
+
+                // 化学可逆反应与反应式等价
+                if (user.Contains("⇌") || correct.Contains("⇌") || user.Contains("\\rightleftharpoons") || correct.Contains("\\rightleftharpoons") ||
+                    user.Contains("<=>") || correct.Contains("<=>") || user.Contains("<->") || correct.Contains("<->"))
+                {
+                    return $"化学反应方程式/可逆平衡等价：已自动识别化学反应方程式与可逆符号（⇌/<=>）等价性，对应标准反应式 [{correct}]";
+                }
 
                 // 理化复合单位等价 (摩尔质量/摩尔体积等)
                 if (user.Contains("/mol") || correct.Contains("/mol") || user.Contains("mol^-1") || correct.Contains("mol^-1") || user.Contains("摩尔") || correct.Contains("摩尔"))
@@ -2678,7 +2704,20 @@ namespace Northtropic.Services
         public static string NormalizeElectrochemicalReaction(string eq)
         {
             if (string.IsNullOrWhiteSpace(eq)) return string.Empty;
-            string s = eq.Replace("->", "=").Replace("<=>", "=");
+            string s = eq;
+            // 剥离上标反应条件: \stackrel{...}{=} / \overset{...}{=} / \xlongequal{...} / \xrightleftharpoons{...}
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:stackrel|overset)\s*\{[^}]*\}\s*\{?=?\}?", "=");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:xlongequal|xrightleftharpoons|xrightarrow)(?:\[[^\]]*\]|\{[^}]*\})*", "=");
+            s = s.Replace("\\rightleftharpoons", "=")
+                 .Replace("\\longrightarrow", "=")
+                 .Replace("\\rightarrow", "=")
+                 .Replace("⇌", "=")
+                 .Replace("⇄", "=")
+                 .Replace("<->", "=")
+                 .Replace("↔", "=")
+                 .Replace("==", "=")
+                 .Replace("->", "=")
+                 .Replace("<=>", "=");
             var parts = s.Split('=', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length != 2) return s;
 
@@ -2749,6 +2788,243 @@ namespace Northtropic.Services
             return CleanChem(formulaA) == CleanChem(formulaB);
         }
 
+        // 初高中代数因式分解乘积因子交换律等价匹配 (如 (x+1)(x-1) 与 (x-1)(x+1), 2(x+3)(x-4) 与 2(x-4)(x+3), -(x-1)(x-2) 与 -(x-2)(x-1), x(x-2) 与 (x-2)x)
+        public static bool CheckPolynomialFactorProductCommutativeMatch(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            if (u.Equals(c, StringComparison.OrdinalIgnoreCase)) return true;
+
+            if (!TryParsePolynomialFactorProduct(u, out var uScalar, out var uFactors) ||
+                !TryParsePolynomialFactorProduct(c, out var cScalar, out var cFactors))
+            {
+                return false;
+            }
+
+            if (Math.Abs(uScalar - cScalar) > 1e-6) return false;
+            if (uFactors.Count != cFactors.Count) return false;
+
+            var remainingC = new List<string>(cFactors);
+            foreach (var uf in uFactors)
+            {
+                int matchedIdx = remainingC.FindIndex(cf => ArePolynomialFactorsEquivalent(uf, cf));
+                if (matchedIdx >= 0)
+                {
+                    remainingC.RemoveAt(matchedIdx);
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            return remainingC.Count == 0;
+        }
+
+        public static bool TryParsePolynomialFactorProduct(string s, out double scalarCoeff, out List<string> factors)
+        {
+            scalarCoeff = 1.0;
+            factors = new List<string>();
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            s = s.Trim().Replace(" ", "");
+
+            // 排除方程、不等式、区间与集合
+            if (s.Contains('=') || s.Contains('<') || s.Contains('>') || s.Contains(',') || s.Contains(';') ||
+                s.StartsWith("[") || s.StartsWith("{"))
+            {
+                return false;
+            }
+
+            int idx = 0;
+            // 提取可选前导符号或纯数标量系数 (如 "-", "+", "2", "-3", "1/2", "0.5")
+            var scalarMatch = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?(?:(?:\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?)|\d+))\s*\*?\s*(?=[a-zA-Z\(])");
+            if (scalarMatch.Success)
+            {
+                string rawScalar = scalarMatch.Groups[1].Value.Trim();
+                if (rawScalar == "+" || string.IsNullOrEmpty(rawScalar)) scalarCoeff = 1.0;
+                else if (rawScalar == "-") scalarCoeff = -1.0;
+                else
+                {
+                    if (rawScalar.Contains('/'))
+                    {
+                        var fParts = rawScalar.Split('/');
+                        if (double.TryParse(fParts[0], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var n) &&
+                            double.TryParse(fParts[1], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) && Math.Abs(d) > 1e-9)
+                        {
+                            scalarCoeff = n / d;
+                        }
+                        else return false;
+                    }
+                    else if (double.TryParse(rawScalar, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedScalar))
+                    {
+                        scalarCoeff = parsedScalar;
+                    }
+                    else return false;
+                }
+                idx = scalarMatch.Length;
+            }
+            else if (s.StartsWith("-") && s.Length > 1 && (s[1] == '(' || char.IsLetter(s[1])))
+            {
+                scalarCoeff = -1.0;
+                idx = 1;
+            }
+            else if (s.StartsWith("+") && s.Length > 1 && (s[1] == '(' || char.IsLetter(s[1])))
+            {
+                scalarCoeff = 1.0;
+                idx = 1;
+            }
+
+            string remainder = s.Substring(idx).Trim();
+            if (string.IsNullOrWhiteSpace(remainder)) return false;
+
+            int pos = 0;
+            while (pos < remainder.Length)
+            {
+                while (pos < remainder.Length && (remainder[pos] == '*' || char.IsWhiteSpace(remainder[pos]))) pos++;
+                if (pos >= remainder.Length) break;
+
+                if (remainder[pos] == '(')
+                {
+                    int depth = 0;
+                    int startP = pos;
+                    bool closed = false;
+                    while (pos < remainder.Length)
+                    {
+                        if (remainder[pos] == '(') depth++;
+                        else if (remainder[pos] == ')')
+                        {
+                            depth--;
+                            if (depth == 0)
+                            {
+                                pos++;
+                                closed = true;
+                                break;
+                            }
+                        }
+                        pos++;
+                    }
+                    if (!closed) return false;
+
+                    // 检查指数幂次: 如 ^2, ^{2}, ^(2)
+                    if (pos < remainder.Length && remainder[pos] == '^')
+                    {
+                        pos++;
+                        if (pos < remainder.Length && (remainder[pos] == '{' || remainder[pos] == '('))
+                        {
+                            char closeChar = remainder[pos] == '{' ? '}' : ')';
+                            pos++;
+                            while (pos < remainder.Length && remainder[pos] != closeChar) pos++;
+                            if (pos < remainder.Length) pos++;
+                        }
+                        else
+                        {
+                            while (pos < remainder.Length && char.IsDigit(remainder[pos])) pos++;
+                        }
+                    }
+                    string factorStr = remainder.Substring(startP, pos - startP).Trim();
+                    factors.Add(factorStr);
+                }
+                else if (char.IsLetter(remainder[pos]))
+                {
+                    int startV = pos;
+                    while (pos < remainder.Length && (char.IsLetterOrDigit(remainder[pos]) || remainder[pos] == '_')) pos++;
+                    if (pos < remainder.Length && remainder[pos] == '^')
+                    {
+                        pos++;
+                        if (pos < remainder.Length && (remainder[pos] == '{' || remainder[pos] == '('))
+                        {
+                            char closeChar = remainder[pos] == '{' ? '}' : ')';
+                            pos++;
+                            while (pos < remainder.Length && remainder[pos] != closeChar) pos++;
+                            if (pos < remainder.Length) pos++;
+                        }
+                        else
+                        {
+                            while (pos < remainder.Length && char.IsDigit(remainder[pos])) pos++;
+                        }
+                    }
+                    string varFactor = remainder.Substring(startV, pos - startV).Trim();
+                    factors.Add(varFactor);
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            return factors.Count >= 2 || (factors.Count == 1 && (Math.Abs(scalarCoeff - 1.0) > 1e-9 || s.StartsWith("-") || s.StartsWith("+")));
+        }
+
+        public static bool ArePolynomialFactorsEquivalent(string f1, string f2)
+        {
+            if (string.Equals(f1, f2, StringComparison.OrdinalIgnoreCase)) return true;
+
+            // 检查幂次是否相同: 如 (x+1)^2 vs (1+x)^2
+            string base1 = f1;
+            string base2 = f2;
+            string exp1 = "1";
+            string exp2 = "1";
+
+            var m1 = System.Text.RegularExpressions.Regex.Match(f1, @"^(.+?)\^[\{\(]?([0-9]+)[\}\)]?$");
+            if (m1.Success)
+            {
+                base1 = m1.Groups[1].Value;
+                exp1 = m1.Groups[2].Value;
+            }
+            var m2 = System.Text.RegularExpressions.Regex.Match(f2, @"^(.+?)\^[\{\(]?([0-9]+)[\}\)]?$");
+            if (m2.Success)
+            {
+                base2 = m2.Groups[1].Value;
+                exp2 = m2.Groups[2].Value;
+            }
+
+            if (exp1 != exp2) return false;
+
+            // 剥离外层括号
+            if (base1.StartsWith("(") && base1.EndsWith(")")) base1 = base1.Substring(1, base1.Length - 2);
+            if (base2.StartsWith("(") && base2.EndsWith(")")) base2 = base2.Substring(1, base2.Length - 2);
+
+            if (string.Equals(base1, base2, StringComparison.OrdinalIgnoreCase)) return true;
+
+            // 检查加法项交换律: 如 x+1 vs 1+x, 2x-3 vs -3+2x
+            return CheckPolynomialAdditiveTermsEquivalent(base1, base2);
+        }
+
+        public static bool CheckPolynomialAdditiveTermsEquivalent(string expr1, string expr2)
+        {
+            static List<string> SplitAdditiveTerms(string expr)
+            {
+                var terms = new List<string>();
+                expr = expr.Trim().Replace(" ", "");
+                if (string.IsNullOrEmpty(expr)) return terms;
+
+                int start = 0;
+                int depth = 0;
+                for (int i = 0; i < expr.Length; i++)
+                {
+                    if (expr[i] == '(') depth++;
+                    else if (expr[i] == ')') depth--;
+                    else if (depth == 0 && (expr[i] == '+' || expr[i] == '-') && i > start)
+                    {
+                        var t = expr.Substring(start, i - start).Trim();
+                        if (!string.IsNullOrEmpty(t)) terms.Add(t.StartsWith("+") ? t.Substring(1) : t);
+                        start = i;
+                    }
+                }
+                if (start < expr.Length)
+                {
+                    var t = expr.Substring(start).Trim();
+                    if (!string.IsNullOrEmpty(t)) terms.Add(t.StartsWith("+") ? t.Substring(1) : t);
+                }
+                return terms.OrderBy(t => t, StringComparer.OrdinalIgnoreCase).ToList();
+            }
+
+            var terms1 = SplitAdditiveTerms(expr1);
+            var terms2 = SplitAdditiveTerms(expr2);
+            if (terms1.Count == 0 || terms2.Count == 0 || terms1.Count != terms2.Count) return false;
+
+            return terms1.SequenceEqual(terms2, StringComparer.OrdinalIgnoreCase);
+        }
+
         public static bool CheckFillInBlankMatch(string user, string correct)
         {
             if (string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(correct)) return false;
@@ -2798,13 +3074,15 @@ namespace Northtropic.Services
                 s = s.Replace("\\%", "%");
                 // LaTeX 空白与间距符消除
                 s = s.Replace("\\,", " ").Replace("\\;", " ").Replace("\\:", " ").Replace("\\quad", " ").Replace("\\qquad", " ").Replace("\\enspace", " ").Replace("~", " ");
-                // LaTeX 常用定界符解构 (\left[, \right], \left|, \right|, \left\{, \right\})
+                // LaTeX 常用定界符与范数/模长解构 (\left[, \right], \left|, \right|, \left\{, \right\}, \|, \Vert, \lVert, \rVert, ‖)
                 s = s.Replace("\\left(", "(").Replace("\\right)", ")")
                      .Replace("\\left[", "[").Replace("\\right]", "]")
                      .Replace("\\left\\{", "{").Replace("\\right\\}", "}")
+                     .Replace("\\left\\|", "|").Replace("\\right\\|", "|")
                      .Replace("\\left|", "|").Replace("\\right|", "|")
                      .Replace("\\left.", "").Replace("\\right.", "")
                      .Replace("\\vert", "|")
+                     .Replace("\\|", "|").Replace("\\Vert", "|").Replace("\\lVert", "|").Replace("\\rVert", "|").Replace("‖", "|")
                      .Replace("$", "");
                 // LaTeX 矩阵列向量解构 (支持 \begin{pmatrix} a \\ b \end{pmatrix}, \begin{bmatrix} a \\ b \end{bmatrix}, 3维列向量等映射为标准坐标 (a, b) / (a, b, c))
                 s = System.Text.RegularExpressions.Regex.Replace(s,
@@ -2820,8 +3098,10 @@ namespace Northtropic.Services
                         }
                         return $"({v1},{v2})";
                     }, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                // 化学反应扩展箭头优先解构 (支持 \xrightarrow[\Delta]{MnO2}, \xrightarrow{加热}, \xlongequal 等)
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:xrightarrow|xlongequal)(?:\[[^\]]*\]|\{[^}]*\})*", "->");
+                // 化学反应扩展箭头与反应条件优先解构 (支持 \xrightarrow[\Delta]{MnO2}, \xrightarrow{加热}, \xlongequal, \xrightleftharpoons, \stackrel{点燃}{=}, \overset{...}{=} 等)
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:stackrel|overset)\s*\{[^}]*\}\s*\{?=?\}?", "=");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:xrightarrow|xlongequal|xrightleftharpoons)(?:\[[^\]]*\]|\{[^}]*\})*", "->");
+                s = s.Replace("\\rightleftharpoons", "=").Replace("\\longrightarrow", "->").Replace("⇌", "=").Replace("⇄", "=");
                 // 剥离气体与沉淀箭头 (支持 ↑, ↓, \uparrow, \downarrow)
                 s = s.Replace("↑", "").Replace("↓", "").Replace("\\uparrow", "").Replace("\\downarrow", "");
                 // 剥离化学物态标注: (s), (l), (g), (aq), (固), (液), (气), (水)
@@ -2876,11 +3156,11 @@ namespace Northtropic.Services
                 // 1. 特殊对数底数映射: \log_e -> ln, \log_{10} -> lg
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?e\}?\s*", "ln ");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?10\}?\s*", "lg ");
-                // 2. 通用对数: \log_{2}{x} / \log_2{x} / \log_2(x) / \log_2 x -> log(2,x)
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?([a-zA-Z0-9]+(?:\.[0-9]+)?)\}?\s*\{([a-zA-Z0-9\+\-\*\/\^]+)\}", "log($1,$2)");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?([a-zA-Z0-9]+(?:\.[0-9]+)?)\}?\s*\(\s*([a-zA-Z0-9\+\-\*\/\^]+)\s*\)", "log($1,$2)");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?([a-zA-Z0-9]+(?:\.[0-9]+)?)\}?\s+([a-zA-Z0-9]+)\b", "log($1,$2)");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\blog\s*\(\s*([a-zA-Z0-9]+(?:\.[0-9]+)?)\s*,\s*([a-zA-Z0-9\+\-\*\/\^]+)\s*\)", "log($1,$2)");
+                // 2. 通用对数: \log_{2}{x} / \log_2{x} / \log_2(x) / \log_2 x / \log_2 1/4 / \log_2 sqrt(2) -> log(2,x)
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?([a-zA-Z0-9\.\/]+)\}?\s*\{([^}]+)\}", "log($1,$2)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?([a-zA-Z0-9\.\/]+)\}?\s*\(\s*(.+?)\s*\)", "log($1,$2)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?log_\{?([a-zA-Z0-9\.\/]+)\}?\s+(sqrt\([^)]+\)|[a-zA-Z0-9\.\/]+)", "log($1,$2)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\blog\s*\(\s*([a-zA-Z0-9\.\/]+)\s*,\s*(.+?)\s*\)", "log($1,$2)");
                 // 3. lg 与 ln 花括号规范化
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?lg\s*\{([a-zA-Z0-9\+\-\*\/\^]+)\}", "lg($1)");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?ln\s*\{([a-zA-Z0-9\+\-\*\/\^]+)\}", "ln($1)");
@@ -3804,6 +4084,13 @@ namespace Northtropic.Services
                 }
             }
 
+            // 初高中代数因式分解乘积因子交换律等价匹配: 如 (x+1)(x-1) 与 (x-1)(x+1), 2(x+3)(x-4) 与 2(x-4)(x+3), -(x-1)(x-2) 与 -(x-2)(x-1), x(x-2) 与 (x-2)x
+            if (CheckPolynomialFactorProductCommutativeMatch(normUser, normCorrect) ||
+                CheckPolynomialFactorProductCommutativeMatch(user, correct))
+            {
+                return true;
+            }
+
             // 物理电功/能量单位换算等价: 1 kW*h = 3.6*10^6 J = 1 度
             static bool CheckEnergyWorkEquivalence(string s1, string s2)
             {
@@ -4283,6 +4570,20 @@ namespace Northtropic.Services
                     }
                     if (double.TryParse(t, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out termVal)) return true;
 
+                    // 简易带符号分数与根式分式求值 (如 1/4, -1/2, 3/4, sqrt(2)/2)
+                    if (t.Contains('/') && !t.Contains("log") && !t.Contains("ln") && !t.Contains("lg") && !t.Contains("sin") && !t.Contains("cos") && !t.Contains("tan"))
+                    {
+                        var fracParts = t.Split('/');
+                        if (fracParts.Length == 2 &&
+                            TryParseSingleTerm(fracParts[0].Trim(), out var numVal) &&
+                            TryParseSingleTerm(fracParts[1].Trim(), out var denVal) &&
+                            Math.Abs(denVal) > 1e-9)
+                        {
+                            termVal = numVal / denVal;
+                            return true;
+                        }
+                    }
+
                     // 匹配单项根号与带系数根号 (如 sqrt(2), 2*sqrt(3), -sqrt(2), 3sqrt(5), +sqrt(3))
                     var sqrtMatch = System.Text.RegularExpressions.Regex.Match(t, @"^([+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)?)\s*\*?\s*sqrt\(([0-9]+(?:\.[0-9]+)?|\.[0-9]+)\)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                     if (sqrtMatch.Success)
@@ -4368,51 +4669,99 @@ namespace Northtropic.Services
                         }
                     }
 
-                    // 任意底对数 log_b(x) / log(b, x) / log2(8) / log_2 8 / log(10)
-                    var logMatch = System.Text.RegularExpressions.Regex.Match(t, @"^([+-]?)\s*log(?:_?([0-9]+(?:\.[0-9]+)?))?\s*(?:\(\s*([0-9]+(?:\.[0-9]+)?)(?:\s*,\s*([0-9]+(?:\.[0-9]+)?))?\s*\)|(?:\s+([0-9]+(?:\.[0-9]+)?)))$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (logMatch.Success)
+                    // 任意底对数 log_b(x) / log(b, x) / log2(8) / log_2 8 / log(10) / log(2, 1/4) / log(1/2, 4) / log(2, sqrt(2))
+                    string logTarget = t;
+                    double logSign = 1.0;
+                    if (logTarget.StartsWith("-"))
                     {
-                        double sign = logMatch.Groups[1].Value == "-" ? -1.0 : 1.0;
-                        double b = 10.0;
-                        double arg = 0.0;
-                        if (logMatch.Groups[4].Success) // log(b, x)
+                        logSign = -1.0;
+                        logTarget = logTarget.Substring(1).Trim();
+                    }
+                    else if (logTarget.StartsWith("+"))
+                    {
+                        logTarget = logTarget.Substring(1).Trim();
+                    }
+
+                    if (logTarget.StartsWith("log", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var afterLog = logTarget.Substring(3).Trim();
+                        double? explicitBase = null;
+
+                        if (!afterLog.StartsWith("("))
                         {
-                            if (double.TryParse(logMatch.Groups[3].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out b) &&
-                                double.TryParse(logMatch.Groups[4].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out arg))
+                            var bPrefixMatch = System.Text.RegularExpressions.Regex.Match(afterLog, @"^_{?([0-9]+(?:\.[0-9]+)?|\d+\/\d+)}?(.*)$");
+                            if (bPrefixMatch.Success)
                             {
-                                if (b > 0 && Math.Abs(b - 1.0) > 1e-6 && arg > 0)
+                                if (TryParseSingleTerm(bPrefixMatch.Groups[1].Value, out var parsedB))
                                 {
-                                    termVal = sign * (Math.Log(arg) / Math.Log(b));
-                                    return true;
+                                    explicitBase = parsedB;
+                                }
+                                afterLog = bPrefixMatch.Groups[2].Value.Trim();
+                            }
+                            else
+                            {
+                                var digitPrefixMatch = System.Text.RegularExpressions.Regex.Match(afterLog, @"^([0-9]+(?:\.[0-9]+)?)(.*)$");
+                                if (digitPrefixMatch.Success)
+                                {
+                                    if (TryParseSingleTerm(digitPrefixMatch.Groups[1].Value, out var parsedB))
+                                    {
+                                        explicitBase = parsedB;
+                                    }
+                                    afterLog = digitPrefixMatch.Groups[2].Value.Trim();
                                 }
                             }
                         }
-                        else if (logMatch.Groups[5].Success) // log_b x
+
+                        if (afterLog.StartsWith("(") && afterLog.EndsWith(")"))
                         {
-                            if (logMatch.Groups[2].Success && double.TryParse(logMatch.Groups[2].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedB))
+                            string inner = afterLog.Substring(1, afterLog.Length - 2).Trim();
+                            int depth = 0;
+                            int commaIdx = -1;
+                            for (int ci = 0; ci < inner.Length; ci++)
                             {
-                                b = parsedB;
-                            }
-                            if (double.TryParse(logMatch.Groups[5].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out arg))
-                            {
-                                if (b > 0 && Math.Abs(b - 1.0) > 1e-6 && arg > 0)
+                                if (inner[ci] == '(') depth++;
+                                else if (inner[ci] == ')') depth--;
+                                else if (inner[ci] == ',' && depth == 0)
                                 {
-                                    termVal = sign * (Math.Log(arg) / Math.Log(b));
-                                    return true;
+                                    commaIdx = ci;
+                                    break;
+                                }
+                            }
+
+                            if (commaIdx >= 0)
+                            {
+                                string bStr = inner.Substring(0, commaIdx).Trim();
+                                string argStr = inner.Substring(commaIdx + 1).Trim();
+                                if (TryParseSingleTerm(bStr, out var bVal) && TryParseSingleTerm(argStr, out var argVal))
+                                {
+                                    if (bVal > 0 && Math.Abs(bVal - 1.0) > 1e-6 && argVal > 0)
+                                    {
+                                        termVal = logSign * (Math.Log(argVal) / Math.Log(bVal));
+                                        return true;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                double bVal = explicitBase ?? 10.0;
+                                if (TryParseSingleTerm(inner, out var argVal))
+                                {
+                                    if (bVal > 0 && Math.Abs(bVal - 1.0) > 1e-6 && argVal > 0)
+                                    {
+                                        termVal = logSign * (Math.Log(argVal) / Math.Log(bVal));
+                                        return true;
+                                    }
                                 }
                             }
                         }
-                        else
+                        else if (!string.IsNullOrWhiteSpace(afterLog))
                         {
-                            if (logMatch.Groups[2].Success && double.TryParse(logMatch.Groups[2].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedB))
+                            double bVal = explicitBase ?? 10.0;
+                            if (TryParseSingleTerm(afterLog, out var argVal))
                             {
-                                b = parsedB;
-                            }
-                            if (double.TryParse(logMatch.Groups[3].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out arg))
-                            {
-                                if (b > 0 && Math.Abs(b - 1.0) > 1e-6 && arg > 0)
+                                if (bVal > 0 && Math.Abs(bVal - 1.0) > 1e-6 && argVal > 0)
                                 {
-                                    termVal = sign * (Math.Log(arg) / Math.Log(b));
+                                    termVal = logSign * (Math.Log(argVal) / Math.Log(bVal));
                                     return true;
                                 }
                             }
