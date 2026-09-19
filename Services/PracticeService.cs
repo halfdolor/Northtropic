@@ -3464,15 +3464,15 @@ namespace Northtropic.Services
                 // 区间与集合并集连词解构 (如 (-inf, 1] U [3, +inf), (-inf, 1]并[3, +inf), (-inf, 1]或[3, +inf))
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=[\]\)\}])\s*(?:\\cup|∪|U|并集?|或者?)\s*(?=[\[\(\{])", "u");
                 // 数学集合隶属度符号归一: \in, ∈, 属于 -> in; \notin, ∉, 不属于 -> !in
-                s = s.Replace("\\notin", "!in").Replace("∉", "!in").Replace("不属于", "!in");
-                s = s.Replace("\\in", "in").Replace("∈", "in").Replace("属于", "in");
+                s = s.Replace("\\notin", " !in ").Replace("∉", " !in ").Replace("不属于", " !in ");
+                s = s.Replace("\\in", " in ").Replace("∈", " in ").Replace("属于", " in ");
                 // 常见数集专有名词中文与正负号归一 (全体实数/实数集 -> R, 全体整数/整数集 -> Z, 自然数集 -> N, 正整数集 -> N*, 有理数集 -> Q, 复数集 -> C)
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b全体实数\b|\b实数集\b", "R");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b全体整数\b|\b整数集\b", "Z");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b自然数集\b", "N");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b正整数集\b", "N*");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b有理数集\b", "Q");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b复数集\b", "C");
+                s = s.Replace("全体实数集", "R").Replace("全体实数", "R").Replace("实数集", "R");
+                s = s.Replace("全体整数集", "Z").Replace("全体整数", "Z").Replace("整数集", "Z");
+                s = s.Replace("自然数集", "N");
+                s = s.Replace("正整数集", "N*");
+                s = s.Replace("有理数集", "Q");
+                s = s.Replace("复数集", "C");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\b([RNZQC])\^[\*\+]", "$1*");
                 // 汉字指数幂解构 (如 10的8次方 -> 10^8, 10的-3次方 -> 10^-3)
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=^|[^\d])10的([+-]?\d+)次(?:方)?", "10^$1");
@@ -3706,7 +3706,9 @@ namespace Northtropic.Services
                 if (sLower == "全体实数" || sLower == "实数集" || sLower == "全体实数集" || 
                     sLower == "(-inf,+inf)" || sLower == "(-inf,inf)" || sLower == "(-inf, +inf)" || 
                     sLower == "\\mathbb{r}" || sLower == "\\mathbf{r}" || sLower == "r" ||
-                    sLower == "x属于r" || sLower == "x∈r" || sLower == "x\\in\\mathbb{r}" || sLower == "x\\in r")
+                    sLower == "x属于r" || sLower == "x∈r" || sLower == "x\\in\\mathbb{r}" || sLower == "x\\in r" ||
+                    sLower == "x in r" || sLower == "xinr" ||
+                    System.Text.RegularExpressions.Regex.IsMatch(sLower, @"^[a-z]\s*(?:in|属于|∈|\\in)\s*r$"))
                 {
                     return "r";
                 }
@@ -3946,12 +3948,12 @@ namespace Northtropic.Services
                 }
 
                 // 剥离集合描述法外壳: 如 {x | x > 2} 或 {x \in R | x <= 5} -> x > 2 / x <= 5
-                var setBuilderMatch = System.Text.RegularExpressions.Regex.Match(s, @"^\{\s*[a-zA-Z](?:\s*(?:\\in|∈)\s*[a-zA-Z\\]+)?\s*\|\s*(.+)\s*\}$");
+                var setBuilderMatch = System.Text.RegularExpressions.Regex.Match(s, @"^\{\s*[a-zA-Z](?:\s*(?:\\in|∈|\bin\b|in|属于)\s*[a-zA-Z\\]+)?\s*\|\s*(.+)\s*\}$");
                 if (setBuilderMatch.Success)
                 {
                     s = setBuilderMatch.Groups[1].Value.Trim();
                 }
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"^[a-zA-Z]\s*(?:\\in|∈)\s*", "");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"^[a-zA-Z]\s*(?:\\in|∈|\bin\b|in|属于)\s*", "");
 
                 // 中文闭区间规范化: "2到5" / "2至5" / "2~5" -> "[2,5]"
                 var rangeMatch = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?\d+(?:\.\d+)?)\s*(?:到|至|~)\s*([+-]?\d+(?:\.\d+)?)$");
