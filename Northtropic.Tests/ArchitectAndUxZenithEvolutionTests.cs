@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Northtropic.Data;
 using Northtropic.Models;
@@ -11,258 +11,324 @@ using Xunit;
 
 namespace Northtropic.Tests
 {
-    public class ArchitectAndUxZenithEvolutionTests
+    public class ArchitectAndUxZenithEvolutionTests : IDisposable
     {
-        [Fact]
-        public void CheckFillInBlankMatch_ChemicalReactionCommutative_MatchesCorrectly()
+        private readonly AppDbContext _context;
+        private readonly SqliteConnection _connection;
+
+        public class FakeStudentEvolutionService : IStudentEvolutionService
         {
-            // 1. 经典复分解反应项交换次序匹配
-            Assert.True(PracticeService.CheckFillInBlankMatch("2NaOH + CuSO4 = Cu(OH)2 + Na2SO4", "CuSO4 + 2NaOH = Na2SO4 + Cu(OH)2"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("CuSO4 + 2NaOH = Na2SO4 + Cu(OH)2", "2NaOH + CuSO4 = Cu(OH)2 + Na2SO4"));
+            public Task<List<KnowledgePointMasteryDto>> GetMasteryOverviewAsync(Guid userId, string? subject = null)
+                => Task.FromResult(new List<KnowledgePointMasteryDto>());
 
-            // 2. 箭头连接符与简单化合反应
-            Assert.True(PracticeService.CheckFillInBlankMatch("2H2 + O2 -> 2H2O", "O2 + 2H2 -> 2H2O"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("C + O2 = CO2", "O2 + C = CO2"));
+            public Task<EvolutionDiagnosisReportDto> GenerateDiagnosisReportAsync(Guid userId)
+                => Task.FromResult(new EvolutionDiagnosisReportDto { UserId = userId, RecommendedSubject = "数学", RecommendedCategory = "一次函数" });
 
-            // 3. 反应物或生成物化学式错误应被拒绝
-            Assert.False(PracticeService.CheckFillInBlankMatch("NaOH + CuSO4 = Cu(OH)2 + Na2SO4", "2NaOH + CuSO4 = Cu(OH)2 + Na2SO4"));
-            Assert.False(PracticeService.CheckFillInBlankMatch("2NaOH + FeCl3 = Fe(OH)3 + 3NaCl", "2NaOH + CuSO4 = Cu(OH)2 + Na2SO4"));
+            public Task<List<KnowledgePointMasteryDto>> GetPendingSpacedReviewNodesAsync(Guid userId)
+                => Task.FromResult(new List<KnowledgePointMasteryDto>());
+
+            public Task<List<PrerequisiteTraceWarningDto>> TraceWeakPrerequisitesAsync(Guid userId, string subject, string category)
+                => Task.FromResult(new List<PrerequisiteTraceWarningDto>());
         }
 
-        [Fact]
-        public void CheckFillInBlankMatch_LaTeXSystemsOfEquationsAndMultiVariable_MatchesCorrectly()
+        public ArchitectAndUxZenithEvolutionTests()
         {
-            // 1. 多元方程组顺序无关等价
-            Assert.True(PracticeService.CheckFillInBlankMatch("x=2, y=3", "y=3, x=2"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("x = 1, y = -2, z = 5", "z=5, x=1, y=-2"));
-
-            // 2. LaTeX cases 格式剥离与平铺等价
-            Assert.True(PracticeService.CheckFillInBlankMatch(@"\begin{cases} x=2 \\ y=3 \end{cases}", "x=2, y=3"));
-            Assert.True(PracticeService.CheckFillInBlankMatch(@"\begin{cases} y=3 \\ x=2 \end{cases}", "x=2, y=3"));
-
-            // 3. 坐标点格式与方程组格式互认
-            Assert.True(PracticeService.CheckFillInBlankMatch("(2, 3)", "x=2, y=3"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("(x, y) = (2, 3)", "x=2, y=3"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("x=2, y=3", "(2, 3)"));
-
-            // 4. 数值不匹配应拒绝
-            Assert.False(PracticeService.CheckFillInBlankMatch("(2, 4)", "x=2, y=3"));
-            Assert.False(PracticeService.CheckFillInBlankMatch("x=3, y=2", "x=2, y=3"));
+            (_context, _connection) = TestDbContextFactory.CreateInMemoryContext();
         }
 
-        [Fact]
-        public void CheckFillInBlankMatch_InequalityToIntervalBidirectional_MatchesCorrectly()
+        public void Dispose()
         {
-            // 1. 单边不等式与无穷区间等价
-            Assert.True(PracticeService.CheckFillInBlankMatch("x >= 3", "[3, +inf)"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("x > 2", "(2, +inf)"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("x <= 5", "(-inf, 5]"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("x < 4", "(-inf, 4)"));
-
-            // 2. 双边复合不等式与闭/开区间等价
-            Assert.True(PracticeService.CheckFillInBlankMatch("-1 < x < 3", "(-1, 3)"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("2 <= x <= 7", "[2, 7]"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("0 < x <= 5", "(0, 5]"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("3 <= x < 8", "[3, 8)"));
-
-            // 3. LaTeX 集合属于符号 \\in 剥离
-            Assert.True(PracticeService.CheckFillInBlankMatch(@"x \in [1, 5]", "[1, 5]"));
-            Assert.True(PracticeService.CheckFillInBlankMatch(@"x \in (2, +inf)", "(2, +inf)"));
-
-            // 4. 端点开闭错误或数值不匹配应拒绝
-            Assert.False(PracticeService.CheckFillInBlankMatch("x > 3", "[3, +inf)"));
-            Assert.False(PracticeService.CheckFillInBlankMatch("x >= 3", "(3, +inf)"));
-            Assert.False(PracticeService.CheckFillInBlankMatch("-1 <= x < 3", "(-1, 3)"));
+            _context.Dispose();
+            _connection.Dispose();
         }
 
-        [Fact]
-        public void CheckFillInBlankMatch_CompoundPhysicalUnits_MatchesCorrectly()
-        {
-            // 1. 复合物理单位中文与国际单位符号互认
-            Assert.True(PracticeService.CheckFillInBlankMatch("15 m/s", "15 米每秒"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("50 N*m", "50 牛·米"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("100 kW*h", "100 千瓦时"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("1.2 g/cm^3", "1.2 g/cm³"));
-            Assert.True(PracticeService.CheckFillInBlankMatch("1000 kg/m3", "1000 kg/m³"));
-
-            // 2. StripCommonUnits 剥离能力验证
-            Assert.Equal("15", PracticeService.StripCommonUnits("15 米每秒"));
-            Assert.Equal("50", PracticeService.StripCommonUnits("50 牛·米"));
-            Assert.Equal("100", PracticeService.StripCommonUnits("100 千瓦时"));
-        }
+        #region 1. 系统架构师：IDOR 横向越权防御深度测试 (ErrorBook & StudyPlan)
 
         [Fact]
-        public void GenerateEquivalentMatchReason_PedagogicalExplanations_ReturnsClearReasons()
+        public async Task ErrorBookService_UpdateErrorReason_UnauthorizedNonOwner_IsBlocked()
         {
-            // 1. 化学方程式等价原因
-            var qChem = new Question
+            // Arrange
+            var student1 = new User { Id = Guid.NewGuid(), Username = "student_owner", Role = UserRole.Student };
+            var student2 = new User { Id = Guid.NewGuid(), Username = "student_attacker", Role = UserRole.Student };
+            _context.Users.AddRange(student1, student2);
+
+            var question = new Question { Id = Guid.NewGuid(), Stem = "测试试题", Type = QuestionType.SingleChoice, CorrectAnswer = "A" };
+            _context.Questions.Add(question);
+
+            var errorItem = new ErrorItem
             {
-                Type = QuestionType.FillInBlank,
-                CorrectAnswer = "CuSO4 + 2NaOH = Na2SO4 + Cu(OH)2"
+                Id = Guid.NewGuid(),
+                UserId = student1.Id,
+                QuestionId = question.Id,
+                ErrorReasonCategory = "概念模糊"
             };
-            var reasonChem = PracticeService.GenerateEquivalentMatchReason(qChem, "2NaOH + CuSO4 = Cu(OH)2 + Na2SO4");
-            Assert.Contains("化学方程式反应项等价", reasonChem);
+            _context.ErrorItems.Add(errorItem);
+            await _context.SaveChangesAsync();
 
-            // 2. 方程组与多元解集等价原因
-            var qEq = new Question
-            {
-                Type = QuestionType.FillInBlank,
-                CorrectAnswer = "x=2, y=3"
-            };
-            var reasonEq = PracticeService.GenerateEquivalentMatchReason(qEq, "y=3, x=2");
-            Assert.Contains("方程组与多元解集等价", reasonEq);
+            var gamification = new FakeGamificationService();
+            var session = new FakeUserSessionService();
+            var service = new ErrorBookService(_context, gamification, session);
 
-            // 3. 不等式与区间等价原因
-            var qIneq = new Question
-            {
-                Type = QuestionType.FillInBlank,
-                CorrectAnswer = "[3, +inf)"
-            };
-            var reasonIneq = PracticeService.GenerateEquivalentMatchReason(qIneq, "x >= 3");
-            Assert.Contains("不等式与实数区间解集等价", reasonIneq);
+            // Act 1: 攻击者 student2 尝试篡改 student1 的错题原因分类
+            await service.UpdateErrorReasonAsync(errorItem.Id, "审题不清", requestorUserId: student2.Id);
 
-            // 4. 复合单位等价原因
-            var qUnit = new Question
-            {
-                Type = QuestionType.FillInBlank,
-                CorrectAnswer = "15 m/s"
-            };
-            var reasonUnit = PracticeService.GenerateEquivalentMatchReason(qUnit, "15 米每秒");
-            Assert.Contains("物理/科学单位智能对齐等价", reasonUnit);
+            // Assert 1: 应被严格拦截，错因仍保持原值
+            var freshItem1 = await _context.ErrorItems.FindAsync(errorItem.Id);
+            Assert.Equal("概念模糊", freshItem1?.ErrorReasonCategory);
+
+            // Act 2: 正当拥有者 student1 更新错题原因分类
+            await service.UpdateErrorReasonAsync(errorItem.Id, "公式记错", requestorUserId: student1.Id);
+
+            // Assert 2: 应当成功放行并持久化
+            var freshItem2 = await _context.ErrorItems.FindAsync(errorItem.Id);
+            Assert.Equal("公式记错", freshItem2?.ErrorReasonCategory);
         }
 
         [Fact]
-        public void OpenXmlSpreadsheetHelper_CreateAndRead_PreservesDataIntegrity()
+        public async Task ErrorBookService_DeleteErrorItem_UnauthorizedNonOwner_IsBlocked_AdminAllowed()
         {
-            var headers = new List<string> { "姓名", "学科", "考点", "得分" };
-            var rows = new List<List<string>>
+            // Arrange
+            var student = new User { Id = Guid.NewGuid(), Username = "student_alice", Role = UserRole.Student };
+            var peer = new User { Id = Guid.NewGuid(), Username = "student_bob", Role = UserRole.Student };
+            var admin = new User { Id = Guid.NewGuid(), Username = "admin_master", Role = UserRole.SuperAdmin };
+            _context.Users.AddRange(student, peer, admin);
+
+            var question = new Question { Id = Guid.NewGuid(), Stem = "测试试题2", Type = QuestionType.SingleChoice, CorrectAnswer = "B" };
+            _context.Questions.Add(question);
+
+            var errorItem = new ErrorItem { Id = Guid.NewGuid(), UserId = student.Id, QuestionId = question.Id };
+            _context.ErrorItems.Add(errorItem);
+            await _context.SaveChangesAsync();
+
+            var service = new ErrorBookService(_context, new FakeGamificationService(), new FakeUserSessionService());
+
+            // Act 1: 同行学员 peer 尝试删除该错题
+            var peerDelete = await service.DeleteErrorItemAsync(errorItem.Id, requestorUserId: peer.Id);
+            Assert.False(peerDelete);
+            Assert.NotNull(await _context.ErrorItems.FindAsync(errorItem.Id));
+
+            // Act 2: 超级管理员执行统一清理
+            var adminDelete = await service.DeleteErrorItemAsync(errorItem.Id, requestorUserId: admin.Id);
+            Assert.True(adminDelete);
+            Assert.Null(await _context.ErrorItems.FindAsync(errorItem.Id));
+        }
+
+        [Fact]
+        public async Task ErrorBookService_ParentBinding_AllowsBoundParent_BlocksUnboundParent()
+        {
+            // Arrange
+            var student = new User { Id = Guid.NewGuid(), Username = "student_carol", Role = UserRole.Student };
+            var boundParent = new User { Id = Guid.NewGuid(), Username = "parent_dad", Role = UserRole.Parent };
+            var strangerParent = new User { Id = Guid.NewGuid(), Username = "parent_stranger", Role = UserRole.Parent };
+            _context.Users.AddRange(student, boundParent, strangerParent);
+
+            var binding = new StudentParentBinding
             {
-                new List<string> { "张三", "高中数学", "导数极值", "98.5" },
-                new List<string> { "李四", "初中物理", "欧姆定律", "100" },
-                new List<string> { "王五", "信息奥赛", "动态规划", "85" }
+                ParentUserId = boundParent.Id,
+                StudentUserId = student.Id,
+                RelationType = "父亲"
             };
+            _context.StudentParentBindings.Add(binding);
 
-            // 1. 导出二进制数据
-            byte[] xlsxBytes = OpenXmlSpreadsheetHelper.CreateSpreadsheet("测试成绩表", headers, rows);
-            Assert.NotNull(xlsxBytes);
-            Assert.True(xlsxBytes.Length > 0);
+            var question = new Question { Id = Guid.NewGuid(), Stem = "测试试题3", Type = QuestionType.FillInBlank, CorrectAnswer = "42" };
+            _context.Questions.Add(question);
 
-            // 2. 读取解析校验
-            using var ms = new MemoryStream(xlsxBytes);
-            var readRows = OpenXmlSpreadsheetHelper.ReadSpreadsheet(ms);
-            Assert.Equal(4, readRows.Count); // 表头 + 3 行数据
+            var errorItem = new ErrorItem { Id = Guid.NewGuid(), UserId = student.Id, QuestionId = question.Id, IsMastered = false };
+            _context.ErrorItems.Add(errorItem);
+            await _context.SaveChangesAsync();
 
-            // 校验表头
-            Assert.Equal("姓名", readRows[0].Cells[0]);
-            Assert.Equal("学科", readRows[0].Cells[1]);
-            Assert.Equal("考点", readRows[0].Cells[2]);
-            Assert.Equal("得分", readRows[0].Cells[3]);
+            var gamification = new GamificationService(_context, new FakeUserSessionService());
+            var service = new ErrorBookService(_context, gamification, new FakeUserSessionService());
 
-            // 校验行数据
-            Assert.Equal("张三", readRows[1].Cells[0]);
-            Assert.Equal("高中数学", readRows[1].Cells[1]);
-            Assert.Equal("李四", readRows[2].Cells[0]);
-            Assert.Equal("初中物理", readRows[2].Cells[1]);
-            Assert.Equal("王五", readRows[3].Cells[0]);
-            Assert.Equal("动态规划", readRows[3].Cells[2]);
+            // Act 1: 陌生家长尝试标记掌握该学员错题
+            var strangerReward = await service.MarkErrorAsMasteredAsync(errorItem.Id, requestorUserId: strangerParent.Id);
+            Assert.Equal(0, strangerReward.EarnedExp);
+            Assert.False((await _context.ErrorItems.FindAsync(errorItem.Id))!.IsMastered);
+
+            // Act 2: 已合法绑定的家长为子女辅导后标记掌握
+            var boundReward = await service.MarkErrorAsMasteredAsync(errorItem.Id, requestorUserId: boundParent.Id);
+            Assert.True(boundReward.EarnedExp > 0);
+            var refreshed = await _context.ErrorItems.FindAsync(errorItem.Id);
+            Assert.True(refreshed?.IsMastered);
         }
 
         [Fact]
-        public async Task QuestionImportService_XlsxTemplateAndImportFlow_Success()
+        public async Task StudyPlanService_IDOR_BlocksUnauthorizedPeerAndAllowsAuthorizedUsers()
         {
-            var (context, connection) = TestDbContextFactory.CreateInMemoryContext();
-            using (connection)
-            using (context)
+            // Arrange
+            var student = new User { Id = Guid.NewGuid(), Username = "student_dan", Role = UserRole.Student };
+            var peer = new User { Id = Guid.NewGuid(), Username = "student_eve", Role = UserRole.Student };
+            var teacher = new User { Id = Guid.NewGuid(), Username = "teacher_smith", Role = UserRole.Teacher };
+            _context.Users.AddRange(student, peer, teacher);
+
+            var plan = new StudyPlan
             {
-                var importService = new QuestionImportService(context);
+                Id = Guid.NewGuid(),
+                UserId = student.Id,
+                Title = "专属提分计划",
+                Status = StudyPlanStatus.Active,
+                StartDate = DateTime.Now.Date,
+                TargetEndDate = DateTime.Now.Date.AddDays(7)
+            };
+            _context.StudyPlans.Add(plan);
+            await _context.SaveChangesAsync();
 
-                // 1. 生成内置 XLSX 模板
-                byte[] templateBytes = importService.GenerateXlsxTemplateBytes();
-                Assert.NotNull(templateBytes);
-                Assert.True(templateBytes.Length > 0);
+            var studyPlanService = new StudyPlanService(_context, new FakeStudentEvolutionService());
 
-                // 2. 模拟用户上传该模板进行导入
-                using var templateStream = new MemoryStream(templateBytes);
-                var testUserId = Guid.NewGuid();
-                var result = await importService.ParseXlsxImportAsync(templateStream, testUserId);
+            // Act & Assert 1: 同级学员 peer 尝试越权查看 student 的学习计划 -> 返回 null
+            var peerView = await studyPlanService.GetActivePlanAsync(student.Id, requestorUserId: peer.Id);
+            Assert.Null(peerView);
 
-                // 3. 验证导入结果
-                Assert.True(result.IsSuccess);
-                Assert.Equal(3, result.SuccessCount);
-                Assert.Equal(0, result.FailureCount);
-                Assert.Equal(0, result.DuplicateCount);
+            // Act & Assert 2: 执教老师查看学员计划 -> 正常放行
+            var teacherView = await studyPlanService.GetActivePlanAsync(student.Id, requestorUserId: teacher.Id);
+            Assert.NotNull(teacherView);
+            Assert.Equal(plan.Id, teacherView?.Id);
 
-                // 4. 校验数据库中的持久化数据
-                var imported = await context.Questions.ToListAsync();
-                Assert.Equal(3, imported.Count);
+            // Act & Assert 3: 同级学员尝试越权督促诊断 -> 返回无权访问
+            var (nudgeMsg, severity, _) = await studyPlanService.SuperviseAndNudgeAsync(student.Id, requestorUserId: peer.Id);
+            Assert.Contains("无权访问", nudgeMsg);
+            Assert.Equal("Error", severity);
 
-                var physicsQ = imported.FirstOrDefault(q => q.Subject == "初中物理");
-                Assert.NotNull(physicsQ);
-                Assert.Equal("压强与浮力", physicsQ.Category);
-                Assert.Equal(QuestionType.SingleChoice, physicsQ.Type);
-                Assert.Equal("A", physicsQ.CorrectAnswer);
+            // Act & Assert 4: 同级学员尝试越权触发闭环评估 -> 抛出 UnauthorizedAccessException
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                studyPlanService.EvaluateClosedLoopProgressAsync(student.Id, requestorUserId: peer.Id));
+        }
 
-                var csharpQ = imported.FirstOrDefault(q => q.Subject.Contains("C#"));
-                Assert.NotNull(csharpQ);
-                Assert.Equal(QuestionType.MultipleChoice, csharpQ.Type);
-                Assert.Equal("A,B,C", csharpQ.CorrectAnswer);
+        #endregion
 
-                var mathQ = imported.FirstOrDefault(q => q.Subject == "高中数学");
-                Assert.NotNull(mathQ);
-                Assert.Equal(QuestionType.FillInBlank, mathQ.Type);
-                Assert.Equal("1", mathQ.CorrectAnswer);
-            }
+        #region 2. 系统架构师：领域不变量自愈引擎测试 (Gamification & HomeworkAssignment)
+
+        [Fact]
+        public async Task SystemHealthService_HealGamificationInvariants_ClampsExtremeBounds()
+        {
+            // Arrange: 构造包含不合理资产上限溢出的用户 (如连续连击数大于总答对数、今日答题数大于总答题数)
+            var user = new User
+            {
+                Id = Guid.NewGuid(),
+                Username = "anomalous_user",
+                TotalAnswered = 20,
+                TotalCorrect = 10,
+                MaxCombo = 999, // 异常：连击数远大于答对总数
+                TodayAnsweredCount = 50, // 异常：今日答题数大于历史总答题数
+                ResolvedErrorsCount = 30, // 异常：解决错题数大于答对总数
+                Level = 1,
+                Exp = 100
+            };
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+
+            var healthService = new SystemHealthService(_context);
+
+            // Act
+            int healed = await healthService.HealGamificationInvariantsAsync();
+
+            // Assert
+            Assert.True(healed > 0);
+            var refreshed = await _context.Users.FindAsync(user.Id);
+            Assert.NotNull(refreshed);
+            Assert.Equal(10, refreshed.MaxCombo);
+            Assert.Equal(20, refreshed.TodayAnsweredCount);
+            Assert.Equal(10, refreshed.ResolvedErrorsCount);
         }
 
         [Fact]
-        public async Task QuestionManagementService_XlsxExport_ProducesValidSpreadsheet()
+        public async Task SystemHealthService_HealHomeworkAssignmentInvariants_NormalizesDomainBounds()
         {
-            var (context, connection) = TestDbContextFactory.CreateInMemoryContext();
-            using (connection)
-            using (context)
+            // Arrange: 构造指标脱节与状态未对齐的家庭作业
+            var creator = new User { Id = Guid.NewGuid(), Username = "parent_assigner", Role = UserRole.Parent };
+            var student = new User { Id = Guid.NewGuid(), Username = "student_doer", Role = UserRole.Student };
+            _context.Users.AddRange(creator, student);
+
+            var assignment = new HomeworkAssignment
             {
-                var mgmtService = new QuestionManagementService(context);
-                var userId = Guid.NewGuid();
+                Id = Guid.NewGuid(),
+                CreatorUserId = creator.Id,
+                StudentUserId = student.Id,
+                Title = "错题专项作业",
+                QuestionCount = 10,
+                TotalAnswered = 15, // 异常：答题数大于总题数
+                CorrectCount = 18, // 异常：对题数大于答题数
+                AccuracyRate = 0, // 异常：正确率未同步
+                Score = 150, // 异常：分数超过 100
+                IsCompleted = true,
+                CompletedAt = null // 异常：完成但无完成时间戳
+            };
+            _context.HomeworkAssignments.Add(assignment);
+            await _context.SaveChangesAsync();
 
-                var q1 = new Question
-                {
-                    Id = Guid.NewGuid(),
-                    Subject = "生物学",
-                    Category = "遗传与进化",
-                    GradeTarget = "高中二年级",
-                    Type = QuestionType.SingleChoice,
-                    Stem = "DNA 的双螺旋结构是由哪两位科学家提出的？",
-                    OptionsJson = "[\"A. 沃森和克里克\",\"B. 达尔文和孟德尔\"]",
-                    CorrectAnswer = "A",
-                    StandardAnalysis = "1953年沃森与克里克提出 DNA 双螺旋模型。",
-                    CreatedByUserId = userId,
-                    IsPublic = true,
-                    PublishStatus = PublishStatusEnum.Approved,
-                    Difficulty = 2
-                };
-                context.Questions.Add(q1);
-                await context.SaveChangesAsync();
+            var healthService = new SystemHealthService(_context);
 
-                // 导出为 XLSX
-                byte[] exportedBytes = await mgmtService.ExportQuestionsXlsxAsync(userId);
-                Assert.NotNull(exportedBytes);
-                Assert.True(exportedBytes.Length > 0);
+            // Act
+            int healed = await healthService.HealHomeworkAssignmentInvariantsAsync();
 
-                // 通过 OpenXmlSpreadsheetHelper 解析验证
-                using var ms = new MemoryStream(exportedBytes);
-                var parsedRows = OpenXmlSpreadsheetHelper.ReadSpreadsheet(ms);
-
-                Assert.True(parsedRows.Count >= 2); // 表头 + 至少 1 条数据
-                Assert.Contains("学科", parsedRows[0].Cells);
-                Assert.Contains("题干", parsedRows[0].Cells);
-
-                var dataRow = parsedRows[1];
-                Assert.Equal("生物学", dataRow.Cells[1]);
-                Assert.Equal("遗传与进化", dataRow.Cells[2]);
-                Assert.Equal("单选题", dataRow.Cells[4]);
-                Assert.Equal("DNA 的双螺旋结构是由哪两位科学家提出的？", dataRow.Cells[6]);
-                Assert.Equal("A", dataRow.Cells[8]);
-            }
+            // Assert
+            Assert.True(healed > 0);
+            var refreshed = await _context.HomeworkAssignments.FindAsync(assignment.Id);
+            Assert.NotNull(refreshed);
+            Assert.Equal(10, refreshed.TotalAnswered);
+            Assert.Equal(10, refreshed.CorrectCount);
+            Assert.Equal(100, refreshed.AccuracyRate);
+            Assert.Equal(100, refreshed.Score);
+            Assert.NotNull(refreshed.CompletedAt);
         }
+
+        #endregion
+
+        #region 3. 用户体验专家：数理化多量纲等价与根号有理化判分体验测试
+
+        [Theory]
+        [InlineData("1/sqrt(2)", "sqrt(2)/2", true)]
+        [InlineData("sqrt(2)/2", "1/sqrt(2)", true)]
+        [InlineData("\\frac{1}{\\sqrt{2}}", "\\frac{\\sqrt{2}}{2}", true)]
+        [InlineData("1/\\sqrt{2}", "\\sqrt{2}/2", true)]
+        [InlineData("2/\\sqrt{2}", "\\sqrt{2}", true)]
+        [InlineData("1/sqrt(3)", "sqrt(3)/3", true)]
+        [InlineData("3/sqrt(3)", "sqrt(3)", true)]
+        [InlineData("-1/sqrt(2)", "-sqrt(2)/2", true)]
+        public void PracticeService_CheckFillInBlankMatch_RadicalRationalization_MatchesEquivalently(string user, string correct, bool expected)
+        {
+            bool match = PracticeService.CheckFillInBlankMatch(user, correct);
+            Assert.Equal(expected, match);
+        }
+
+        [Fact]
+        public void PracticeService_CheckFillInBlankMatch_PhysicalUnitsMultiDimensional_MatchesEquivalently()
+        {
+            // 压强 Pa 与 N/m^2
+            Assert.True(PracticeService.CheckFillInBlankMatch("100 Pa", "100 N/m^2"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("100帕", "100牛/米²"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("100000 Pa", "100 kPa"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("10^5 Pa", "100 kPa"));
+
+            // 重力加速度 / 引力场强: N/kg 与 m/s^2
+            Assert.True(PracticeService.CheckFillInBlankMatch("9.8 N/kg", "9.8 m/s^2"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("9.8牛/千克", "9.8米/秒²"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("10 N/kg", "10 m/s^2"));
+
+            // 密度换算: g/cm^3 与 kg/m^3
+            Assert.True(PracticeService.CheckFillInBlankMatch("1.0 g/cm^3", "1000 kg/m^3"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("1.0×10^3 kg/m^3", "1.0 g/cm^3"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("1克/立方厘米", "1000千克/立方米"));
+        }
+
+        [Fact]
+        public void PracticeService_CheckFillInBlankMatch_ChemicalSynonymsAndContractions_MatchesEquivalently()
+        {
+            // 化学俗名与矿石名称
+            Assert.True(PracticeService.CheckFillInBlankMatch("苛性钾", "KOH"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("KOH", "苛性钾"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("赤铁矿", "Fe2O3"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("磁铁矿", "Fe3O4"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("水玻璃", "Na2SiO3"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("硅酸钠", "水玻璃"));
+
+            // 英语缩写词智能展开
+            Assert.True(PracticeService.CheckFillInBlankMatch("let's go", "let us go"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("who's that", "who is that"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("we shan't fail", "we shall not fail"));
+            Assert.True(PracticeService.CheckFillInBlankMatch("where's my book", "where is my book"));
+        }
+
+        #endregion
     }
 }

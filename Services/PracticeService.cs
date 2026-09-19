@@ -2606,8 +2606,8 @@ namespace Northtropic.Services
             ["一氧化氮"] = "no", ["二氧化氮"] = "no2",
             ["氧化钙"] = "cao", ["生石灰"] = "cao",
             ["氧化铜"] = "cuo", ["氧化亚铜"] = "cu2o",
-            ["氧化铁"] = "fe2o3", ["三氧化二铁"] = "fe2o3", ["铁锈"] = "fe2o3",
-            ["四氧化三铁"] = "fe3o4", ["磁性氧化铁"] = "fe3o4",
+            ["氧化铁"] = "fe2o3", ["三氧化二铁"] = "fe2o3", ["铁锈"] = "fe2o3", ["赤铁矿"] = "fe2o3",
+            ["四氧化三铁"] = "fe3o4", ["磁性氧化铁"] = "fe3o4", ["磁铁矿"] = "fe3o4",
             ["氧化镁"] = "mgo", ["氧化铝"] = "al2o3", ["氧化锌"] = "zno",
             ["二氧化锰"] = "mno2",
             ["过氧化氢"] = "h2o2", ["双氧水"] = "h2o2",
@@ -2625,7 +2625,7 @@ namespace Northtropic.Services
             ["氨气"] = "nh3",
             ["氢氧化钠"] = "naoh", ["烧碱"] = "naoh", ["火碱"] = "naoh", ["苛性钠"] = "naoh",
             ["氢氧化钙"] = "ca(oh)2", ["熟石灰"] = "ca(oh)2", ["消石灰"] = "ca(oh)2", ["石灰水"] = "ca(oh)2",
-            ["氢氧化钾"] = "koh",
+            ["氢氧化钾"] = "koh", ["苛性钾"] = "koh",
             ["氢氧化钡"] = "ba(oh)2",
             ["氢氧化铜"] = "cu(oh)2",
             ["氢氧化铁"] = "fe(oh)3",
@@ -2668,6 +2668,7 @@ namespace Northtropic.Services
             ["溴化银"] = "agbr",
             ["碘化银"] = "agi",
             ["氯化钡"] = "bacl2",
+            ["硅酸钠"] = "na2sio3", ["水玻璃"] = "na2sio3",
             ["葡萄糖"] = "c6h12o6",
             ["蔗糖"] = "c12h22o11",
             ["苯"] = "c6h6",
@@ -3271,6 +3272,13 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\byou've\b", "you have", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwe've\b", "we have", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bthey've\b", "they have", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\blet's\b", "let us", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwho's\b", "who is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwhere's\b", "where is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bhow's\b", "how is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwhen's\b", "when is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwhy's\b", "why is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bshan't\b", "shall not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
                 // 省略前导零的小数补齐: 如 .5 -> 0.5, -.75 -> -0.75, +.25 -> +0.25, x = .5 -> x = 0.5
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=^|[^\d\.])\.(\d+)", "0.$1");
@@ -3336,6 +3344,12 @@ namespace Northtropic.Services
                 s = s.Replace("↑", "").Replace("↓", "").Replace("\\uparrow", "").Replace("\\downarrow", "");
                 // 剥离化学物态标注: (s), (l), (g), (aq), (固), (液), (气), (水)
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"[\(（](?:s|l|g|aq|固|液|气|水)[\)）]", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                // LaTeX 根号解构 (支持 \sqrt{x} 与无大括号 \sqrt2 映射为 sqrt(x), 三次方根与任意次方根 \sqrt[n]{x} 映射为 root(n,x))
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\cbrt\{\s*([^}]+?)\s*\}", "root(3,$1)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\sqrt\[(\d+)\]\{\s*([^}]+?)\s*\}", "root($1,$2)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\sqrt\{\s*([^}]+?)\s*\}", "sqrt($1)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\sqrt\s*(\d)", "sqrt($1)");
+
                 // LaTeX 分数全面解构 (支持标准 \frac 以及中高考极常用的 \dfrac, \tfrac；若分子/分母含加减复合项，自动外包圆括号保持代数结构一致)
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:frac|dfrac|tfrac)\s*\{([^}]+)\}\s*\{([^}]+)\}", m =>
                 {
@@ -3351,14 +3365,15 @@ namespace Northtropic.Services
                     }
                     return $"{num}/{den}";
                 });
-                // LaTeX 根号解构 (支持 \sqrt{x} 与无大括号 \sqrt2 映射为 sqrt(x), 三次方根与任意次方根 \sqrt[n]{x} 映射为 root(n,x))
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\cbrt\{\s*([^}]+?)\s*\}", "root(3,$1)");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\sqrt\[(\d+)\]\{\s*([^}]+?)\s*\}", "root($1,$2)");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\sqrt\{\s*([^}]+?)\s*\}", "sqrt($1)");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\sqrt\s*(\d)", "sqrt($1)");
+
                 // 隐式乘法补全：系数紧跟根号或 pi (如 2sqrt(3) -> 2*sqrt(3), 2\pi -> 2*pi)
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=\d)\s*sqrt\(", "*sqrt(");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=\d)\s*(\\pi|π|pi)\b", "*pi");
+                // 根号有理化与等价分母规范化: 1/sqrt(2) -> sqrt(2)/2, 1/sqrt(3) -> sqrt(3)/3, 2/sqrt(2) -> sqrt(2), 3/sqrt(3) -> sqrt(3)
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<![a-zA-Z0-9])1\s*/\s*sqrt\((\d+)\)", "sqrt($1)/$1");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<![a-zA-Z0-9])(\d+)\s*/\s*sqrt\(\1\)", "sqrt($1)");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<![a-zA-Z0-9])-\s*1\s*/\s*sqrt\((\d+)\)", "-sqrt($1)/$1");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<![a-zA-Z0-9])-\s*(\d+)\s*/\s*sqrt\(\1\)", "-sqrt($1)");
                 // 复数共轭解构: \overline{a+bi} / \bar{a+bi} -> a-bi, \overline{a-bi} -> a+bi
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:overline|bar)\s*\{([^}]+)\}", m =>
                 {
@@ -4682,11 +4697,12 @@ namespace Northtropic.Services
                     return Math.Abs(w1 - w2) < 1e-3 || Math.Abs(w1 - w2) / Math.Max(Math.Abs(w1), Math.Abs(w2)) < 1e-4;
                 }
 
-                // E. 压强 (以 Pa 为基底)
+                // E. 压强 (以 Pa 为基底, 1 Pa = 1 N/m^2)
                 static bool TryExtractPascal(string s, out double pa)
                 {
                     pa = 0;
-                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?\d+(?:\.\d+)?(?:e[+-]?\d+|\*10\^[+-]?\d+)?)\s*(pa|kpa|mpa|帕斯卡?|千帕|兆帕)$");
+                    s = s.Replace("n/m²", "n/m^2").Replace("牛/米^2", "n/m^2").Replace("牛/米²", "n/m^2").Replace("牛/平方米", "n/m^2").Replace("牛每平方米", "n/m^2");
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?(?:(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+|\*10\^[+-]?\d+)?|10\^[+-]?\d+))\s*(pa|kpa|mpa|帕(?:斯卡)?|千帕|兆帕|n/m\^2)$");
                     if (m.Success && TryParseScientificOrNumber(m.Groups[1].Value, out double val))
                     {
                         string unit = m.Groups[2].Value;
@@ -4704,6 +4720,47 @@ namespace Northtropic.Services
                 if (TryExtractPascal(s1, out double pa1) && TryExtractPascal(s2, out double pa2))
                 {
                     return Math.Abs(pa1 - pa2) < 1e-3 || Math.Abs(pa1 - pa2) / Math.Max(Math.Abs(pa1), Math.Abs(pa2)) < 1e-4;
+                }
+
+                // F. 重力加速度/引力场强 (以 N/kg 为基底, 1 N/kg = 1 m/s^2)
+                static bool TryExtractGravitationalFieldOrAcc(string s, out double g)
+                {
+                    g = 0;
+                    s = s.Replace("m/s²", "m/s^2").Replace("牛/千克", "n/kg").Replace("牛每千克", "n/kg").Replace("米/秒^2", "m/s^2").Replace("米每二次方秒", "m/s^2");
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?(?:(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+|\*10\^[+-]?\d+)?|10\^[+-]?\d+))\s*(n/kg|m/s\^2)$");
+                    if (m.Success && TryParseScientificOrNumber(m.Groups[1].Value, out double val))
+                    {
+                        g = val;
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (TryExtractGravitationalFieldOrAcc(s1, out double g1) && TryExtractGravitationalFieldOrAcc(s2, out double g2))
+                {
+                    return Math.Abs(g1 - g2) < 1e-3 || Math.Abs(g1 - g2) / Math.Max(Math.Abs(g1), Math.Abs(g2)) < 1e-4;
+                }
+
+                // G. 密度 (以 kg/m^3 为基底, 1 g/cm^3 = 1000 kg/m^3)
+                static bool TryExtractDensity(string s, out double density)
+                {
+                    density = 0;
+                    s = s.Replace("kg/m³", "kg/m^3").Replace("g/cm³", "g/cm^3")
+                         .Replace("千克/立方米", "kg/m^3").Replace("千克每立方米", "kg/m^3")
+                         .Replace("克/立方厘米", "g/cm^3").Replace("克每立方厘米", "g/cm^3");
+                    var m = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?(?:(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+|\*10\^[+-]?\d+)?|10\^[+-]?\d+))\s*(kg/m\^3|g/cm\^3)$");
+                    if (m.Success && TryParseScientificOrNumber(m.Groups[1].Value, out double val))
+                    {
+                        string unit = m.Groups[2].Value;
+                        density = unit == "g/cm^3" ? (val * 1000.0) : val;
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (TryExtractDensity(s1, out double rho1) && TryExtractDensity(s2, out double rho2))
+                {
+                    return Math.Abs(rho1 - rho2) < 1e-3 || Math.Abs(rho1 - rho2) / Math.Max(Math.Abs(rho1), Math.Abs(rho2)) < 1e-4;
                 }
 
                 return false;

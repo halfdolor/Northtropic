@@ -29,8 +29,49 @@ namespace Northtropic.Services
             return AsyncDbScope.CreateAsync(_dbContextFactory, _dbContext);
         }
 
-        public async Task<StudyPlan?> GetActivePlanAsync(Guid userId)
+        private async Task<bool> IsAuthorizedToAccessStudentAsync(Guid callerUserId, Guid studentUserId, AppDbContext? db = null)
         {
+            if (callerUserId == studentUserId) return true;
+
+            if (db != null)
+            {
+                var caller = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == callerUserId);
+                if (caller == null) return false;
+                if (caller.Role == UserRole.SuperAdmin || caller.Role == UserRole.Teacher) return true;
+
+                if (caller.Role == UserRole.Parent)
+                {
+                    return await db.StudentParentBindings.AsNoTracking()
+                        .AnyAsync(b => b.ParentUserId == callerUserId && b.StudentUserId == studentUserId);
+                }
+                return false;
+            }
+
+            await using var scope = await CreateDbScopeAsync();
+            var ctx = scope.Context;
+            var cUser = await ctx.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == callerUserId);
+            if (cUser == null) return false;
+            if (cUser.Role == UserRole.SuperAdmin || cUser.Role == UserRole.Teacher) return true;
+
+            if (cUser.Role == UserRole.Parent)
+            {
+                return await ctx.StudentParentBindings.AsNoTracking()
+                    .AnyAsync(b => b.ParentUserId == callerUserId && b.StudentUserId == studentUserId);
+            }
+
+            return false;
+        }
+
+        public async Task<StudyPlan?> GetActivePlanAsync(Guid userId, Guid? requestorUserId = null)
+        {
+            if (requestorUserId.HasValue && requestorUserId.Value != Guid.Empty && requestorUserId.Value != userId)
+            {
+                if (!await IsAuthorizedToAccessStudentAsync(requestorUserId.Value, userId))
+                {
+                    return null;
+                }
+            }
+
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
@@ -41,9 +82,17 @@ namespace Northtropic.Services
                 .FirstOrDefaultAsync();
         }
 
-        public async Task<StudyPlan> EnsureActivePlanAsync(Guid userId, string? preferredSubject = null)
+        public async Task<StudyPlan> EnsureActivePlanAsync(Guid userId, string? preferredSubject = null, Guid? requestorUserId = null)
         {
-            var activePlan = await GetActivePlanAsync(userId);
+            if (requestorUserId.HasValue && requestorUserId.Value != Guid.Empty && requestorUserId.Value != userId)
+            {
+                if (!await IsAuthorizedToAccessStudentAsync(requestorUserId.Value, userId))
+                {
+                    throw new UnauthorizedAccessException("无权访问或生成该学员的学习计划");
+                }
+            }
+
+            var activePlan = await GetActivePlanAsync(userId, requestorUserId);
             if (activePlan != null)
             {
                 // 检查是否逾期，若逾期超过 3 天自动转为 Expired 并重新生成
@@ -65,11 +114,19 @@ namespace Northtropic.Services
                 }
             }
 
-            return await GenerateAdaptivePlanAsync(userId, preferredSubject);
+            return await GenerateAdaptivePlanAsync(userId, preferredSubject, requestorUserId);
         }
 
-        public async Task<StudyPlan> GenerateAdaptivePlanAsync(Guid userId, string? preferredSubject = null)
+        public async Task<StudyPlan> GenerateAdaptivePlanAsync(Guid userId, string? preferredSubject = null, Guid? requestorUserId = null)
         {
+            if (requestorUserId.HasValue && requestorUserId.Value != Guid.Empty && requestorUserId.Value != userId)
+            {
+                if (!await IsAuthorizedToAccessStudentAsync(requestorUserId.Value, userId))
+                {
+                    throw new UnauthorizedAccessException("无权生成该学员的学习计划");
+                }
+            }
+
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
@@ -307,8 +364,16 @@ namespace Northtropic.Services
             return (true, feedback);
         }
 
-        public async Task<(string NudgeMessage, string Severity, Guid? UrgentTaskId)> SuperviseAndNudgeAsync(Guid userId)
+        public async Task<(string NudgeMessage, string Severity, Guid? UrgentTaskId)> SuperviseAndNudgeAsync(Guid userId, Guid? requestorUserId = null)
         {
+            if (requestorUserId.HasValue && requestorUserId.Value != Guid.Empty && requestorUserId.Value != userId)
+            {
+                if (!await IsAuthorizedToAccessStudentAsync(requestorUserId.Value, userId))
+                {
+                    return ("无权访问该学员的学习计划", "Error", null);
+                }
+            }
+
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
@@ -379,8 +444,16 @@ namespace Northtropic.Services
             return (message, severity, urgentTask?.Id);
         }
 
-        public async Task<ClosedLoopDiagnosisResultDto> EvaluateClosedLoopProgressAsync(Guid userId)
+        public async Task<ClosedLoopDiagnosisResultDto> EvaluateClosedLoopProgressAsync(Guid userId, Guid? requestorUserId = null)
         {
+            if (requestorUserId.HasValue && requestorUserId.Value != Guid.Empty && requestorUserId.Value != userId)
+            {
+                if (!await IsAuthorizedToAccessStudentAsync(requestorUserId.Value, userId))
+                {
+                    throw new UnauthorizedAccessException("无权查看或评估该学员的学习闭环进展");
+                }
+            }
+
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
@@ -669,8 +742,16 @@ namespace Northtropic.Services
             return result;
         }
 
-        public async Task<ClosedLoopDiagnosisResultDto?> GetLatestClosedLoopInsightAsync(Guid userId)
+        public async Task<ClosedLoopDiagnosisResultDto?> GetLatestClosedLoopInsightAsync(Guid userId, Guid? requestorUserId = null)
         {
+            if (requestorUserId.HasValue && requestorUserId.Value != Guid.Empty && requestorUserId.Value != userId)
+            {
+                if (!await IsAuthorizedToAccessStudentAsync(requestorUserId.Value, userId))
+                {
+                    return null;
+                }
+            }
+
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 

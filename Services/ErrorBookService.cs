@@ -92,19 +92,29 @@ namespace Northtropic.Services
                 .ToListAsync();
         }
 
-        public async Task UpdateErrorReasonAsync(Guid errorItemId, string category, Guid? userId = null)
+        public async Task UpdateErrorReasonAsync(Guid errorItemId, string category, Guid? userId = null, Guid? requestorUserId = null)
         {
-            var targetUserId = userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            var callerId = requestorUserId ?? userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
             var item = await ctx.ErrorItems.FirstOrDefaultAsync(e => e.Id == errorItemId);
             if (item != null)
             {
-                // 横向越权防御：若指定了当前用户身份，仅所有者允许修改该错题的错因
-                if (targetUserId.HasValue && targetUserId.Value != Guid.Empty && item.UserId != targetUserId.Value)
+                // 横向越权防御：若指定了目标用户，仅归属该用户的错题允许修改
+                if (userId.HasValue && userId.Value != Guid.Empty && item.UserId != userId.Value)
                 {
                     return;
+                }
+
+                // 若指定了操作发起者且并非本人，校验越权鉴权
+                if (callerId.HasValue && callerId.Value != Guid.Empty && item.UserId != callerId.Value)
+                {
+                    bool isAuthorized = await IsAuthorizedToAccessErrorsAsync(callerId.Value, item.UserId, ctx);
+                    if (!isAuthorized)
+                    {
+                        return;
+                    }
                 }
 
                 item.ErrorReasonCategory = category;
@@ -112,9 +122,9 @@ namespace Northtropic.Services
             }
         }
 
-        public async Task<RewardResult> MarkErrorAsMasteredAsync(Guid errorItemId, Guid? userId = null)
+        public async Task<RewardResult> MarkErrorAsMasteredAsync(Guid errorItemId, Guid? userId = null, Guid? requestorUserId = null)
         {
-            var callerId = userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            var callerId = requestorUserId ?? userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
@@ -134,12 +144,12 @@ namespace Northtropic.Services
             return await _gamificationService.ProcessErrorRevisionRewardAsync(errorItemId, item.UserId);
         }
 
-        public async Task<BatchMarkMasteredResult> BatchMarkErrorsAsMasteredAsync(IEnumerable<Guid> errorItemIds, Guid? userId = null)
+        public async Task<BatchMarkMasteredResult> BatchMarkErrorsAsMasteredAsync(IEnumerable<Guid> errorItemIds, Guid? userId = null, Guid? requestorUserId = null)
         {
             var idList = errorItemIds?.Distinct().ToList() ?? new List<Guid>();
             if (idList.Count == 0) return new BatchMarkMasteredResult();
 
-            var callerId = userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            var callerId = requestorUserId ?? userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
             if (!callerId.HasValue || callerId.Value == Guid.Empty)
             {
                 return new BatchMarkMasteredResult();
@@ -215,10 +225,10 @@ namespace Northtropic.Services
             };
         }
 
-        public async Task<bool> DeleteErrorItemAsync(Guid errorItemId, Guid? userId = null)
+        public async Task<bool> DeleteErrorItemAsync(Guid errorItemId, Guid? userId = null, Guid? requestorUserId = null)
         {
-            var targetUserId = userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
-            if (!targetUserId.HasValue || targetUserId.Value == Guid.Empty)
+            var callerId = requestorUserId ?? userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (!callerId.HasValue || callerId.Value == Guid.Empty)
             {
                 return false;
             }
@@ -226,31 +236,63 @@ namespace Northtropic.Services
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
-            var item = await ctx.ErrorItems.FirstOrDefaultAsync(e => e.Id == errorItemId && e.UserId == targetUserId.Value);
+            var item = await ctx.ErrorItems.FirstOrDefaultAsync(e => e.Id == errorItemId);
             if (item == null) return false;
+
+            if (userId.HasValue && userId.Value != Guid.Empty && item.UserId != userId.Value)
+            {
+                return false;
+            }
+
+            if (item.UserId != callerId.Value)
+            {
+                bool isAuthorized = await IsAuthorizedToAccessErrorsAsync(callerId.Value, item.UserId, ctx);
+                if (!isAuthorized)
+                {
+                    return false;
+                }
+            }
 
             ctx.ErrorItems.Remove(item);
             await ctx.SaveChangesAsync();
             return true;
         }
 
-        public async Task<int> BatchDeleteErrorItemsAsync(IEnumerable<Guid> errorItemIds, Guid? userId = null)
+        public async Task<int> BatchDeleteErrorItemsAsync(IEnumerable<Guid> errorItemIds, Guid? userId = null, Guid? requestorUserId = null)
         {
-            var targetUserId = userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
-            if (!targetUserId.HasValue || targetUserId.Value == Guid.Empty)
+            var callerId = requestorUserId ?? userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (!callerId.HasValue || callerId.Value == Guid.Empty)
             {
                 return 0;
             }
 
-            var idList = errorItemIds.ToList();
+            var idList = errorItemIds?.Distinct().ToList() ?? new List<Guid>();
             if (idList.Count == 0) return 0;
 
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
-            var itemsToDelete = await ctx.ErrorItems
-                .Where(e => idList.Contains(e.Id) && e.UserId == targetUserId.Value)
-                .ToListAsync();
+            var query = ctx.ErrorItems.Where(e => idList.Contains(e.Id));
+            if (userId.HasValue && userId.Value != Guid.Empty)
+            {
+                query = query.Where(e => e.UserId == userId.Value);
+            }
+
+            var items = await query.ToListAsync();
+            if (items.Count == 0) return 0;
+
+            var itemsToDelete = new List<ErrorItem>();
+            foreach (var item in items)
+            {
+                if (item.UserId == callerId.Value)
+                {
+                    itemsToDelete.Add(item);
+                }
+                else if (await IsAuthorizedToAccessErrorsAsync(callerId.Value, item.UserId, ctx))
+                {
+                    itemsToDelete.Add(item);
+                }
+            }
 
             if (itemsToDelete.Count == 0) return 0;
 
@@ -259,9 +301,9 @@ namespace Northtropic.Services
             return itemsToDelete.Count;
         }
 
-        public async Task<int> ClearMasteredErrorsAsync(Guid? userId = null)
+        public async Task<int> ClearMasteredErrorsAsync(Guid? userId = null, Guid? requestorUserId = null)
         {
-            var callerId = _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            var callerId = requestorUserId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
             var targetUserId = userId ?? callerId;
             if (!targetUserId.HasValue || targetUserId.Value == Guid.Empty)
             {
@@ -291,9 +333,9 @@ namespace Northtropic.Services
             return masteredItems.Count;
         }
 
-        public async Task<int> GetUnmasteredCountAsync(Guid? userId = null)
+        public async Task<int> GetUnmasteredCountAsync(Guid? userId = null, Guid? requestorUserId = null)
         {
-            var callerId = _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            var callerId = requestorUserId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
             var targetUserId = userId ?? callerId;
             if (!targetUserId.HasValue || targetUserId.Value == Guid.Empty) return 0;
 
@@ -406,9 +448,9 @@ namespace Northtropic.Services
             return queue;
         }
 
-        public async Task<RewardResult> ReviseErrorAsync(Guid errorItemId, bool isCorrect, Guid? userId = null, bool debounce = false)
+        public async Task<RewardResult> ReviseErrorAsync(Guid errorItemId, bool isCorrect, Guid? userId = null, bool debounce = false, Guid? requestorUserId = null)
         {
-            var callerId = userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            var callerId = requestorUserId ?? userId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
@@ -420,7 +462,11 @@ namespace Northtropic.Services
 
             if (callerId.HasValue && callerId.Value != Guid.Empty && item.UserId != callerId.Value)
             {
-                return new RewardResult();
+                bool isAuthorized = await IsAuthorizedToAccessErrorsAsync(callerId.Value, item.UserId, ctx);
+                if (!isAuthorized)
+                {
+                    return new RewardResult();
+                }
             }
 
             var studentUser = await ctx.Users.FirstOrDefaultAsync(u => u.Id == item.UserId);

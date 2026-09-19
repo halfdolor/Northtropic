@@ -2265,6 +2265,21 @@ namespace Northtropic.Services
                     user.MaxCombo = 0;
                     changed = true;
                 }
+                if (user.MaxCombo > user.TotalCorrect)
+                {
+                    user.MaxCombo = user.TotalCorrect;
+                    changed = true;
+                }
+                if (user.TodayAnsweredCount > user.TotalAnswered)
+                {
+                    user.TodayAnsweredCount = user.TotalAnswered;
+                    changed = true;
+                }
+                if (user.ResolvedErrorsCount > user.TotalCorrect)
+                {
+                    user.ResolvedErrorsCount = user.TotalCorrect;
+                    changed = true;
+                }
 
                 int expNeeded = GamificationService.CalculateExpNeeded(user.Level);
                 while (user.Exp >= expNeeded)
@@ -2282,6 +2297,94 @@ namespace Northtropic.Services
             {
                 await db.SaveChangesAsync();
                 RecordArchitectureEvent("GamificationInvariants", "Success", $"校准了 {healedCount} 个异常用户游戏化资产与等级");
+            }
+
+            return healedCount;
+        }
+
+        public async Task<int> HealHomeworkAssignmentInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            var assignments = await db.HomeworkAssignments.ToListAsync();
+            int healedCount = 0;
+
+            foreach (var h in assignments)
+            {
+                bool changed = false;
+
+                if (h.QuestionCount < 1)
+                {
+                    h.QuestionCount = 1;
+                    changed = true;
+                }
+
+                if (h.TotalAnswered < 0)
+                {
+                    h.TotalAnswered = 0;
+                    changed = true;
+                }
+                else if (h.TotalAnswered > h.QuestionCount)
+                {
+                    h.TotalAnswered = h.QuestionCount;
+                    changed = true;
+                }
+
+                if (h.CorrectCount < 0)
+                {
+                    h.CorrectCount = 0;
+                    changed = true;
+                }
+                else if (h.CorrectCount > h.TotalAnswered)
+                {
+                    h.CorrectCount = h.TotalAnswered;
+                    changed = true;
+                }
+
+                int expectedAccuracy = h.TotalAnswered > 0
+                    ? (int)Math.Round((double)h.CorrectCount / h.TotalAnswered * 100.0)
+                    : 0;
+                expectedAccuracy = Math.Clamp(expectedAccuracy, 0, 100);
+
+                if (h.AccuracyRate != expectedAccuracy)
+                {
+                    h.AccuracyRate = expectedAccuracy;
+                    changed = true;
+                }
+
+                if (h.Score < 0 || h.Score > 100)
+                {
+                    h.Score = Math.Clamp(h.Score, 0, 100);
+                    changed = true;
+                }
+
+                if (h.IsCompleted && !h.CompletedAt.HasValue)
+                {
+                    h.CompletedAt = DateTime.Now;
+                    changed = true;
+                }
+                else if (!h.IsCompleted && h.CompletedAt.HasValue)
+                {
+                    if (h.TotalAnswered >= h.QuestionCount && h.QuestionCount > 0)
+                    {
+                        h.IsCompleted = true;
+                        changed = true;
+                    }
+                    else
+                    {
+                        h.CompletedAt = null;
+                        changed = true;
+                    }
+                }
+
+                if (changed) healedCount++;
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("HomeworkInvariants", "Success", $"校准了 {healedCount} 个异常家庭作业记录领域不变量");
             }
 
             return healedCount;
