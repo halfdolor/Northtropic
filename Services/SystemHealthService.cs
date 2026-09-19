@@ -2225,6 +2225,47 @@ namespace Northtropic.Services
                     changed = true;
                 }
 
+                if (user.TotalAnswered < 0)
+                {
+                    user.TotalAnswered = 0;
+                    changed = true;
+                }
+                if (user.TotalCorrect < 0)
+                {
+                    user.TotalCorrect = 0;
+                    changed = true;
+                }
+                if (user.TotalCorrect > user.TotalAnswered)
+                {
+                    user.TotalCorrect = user.TotalAnswered;
+                    changed = true;
+                }
+                if (user.TodayAnsweredCount < 0)
+                {
+                    user.TodayAnsweredCount = 0;
+                    changed = true;
+                }
+                if (user.ResolvedErrorsCount < 0)
+                {
+                    user.ResolvedErrorsCount = 0;
+                    changed = true;
+                }
+                if (user.ComboShieldCount < 0)
+                {
+                    user.ComboShieldCount = 0;
+                    changed = true;
+                }
+                if (user.CurrentStreak < 0)
+                {
+                    user.CurrentStreak = 0;
+                    changed = true;
+                }
+                if (user.MaxCombo < 0)
+                {
+                    user.MaxCombo = 0;
+                    changed = true;
+                }
+
                 int expNeeded = GamificationService.CalculateExpNeeded(user.Level);
                 while (user.Exp >= expNeeded)
                 {

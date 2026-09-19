@@ -3235,7 +3235,7 @@ namespace Northtropic.Services
                 }
                 // Unicode 负号与减号归一
                 s = s.Replace("−", "-").Replace("－", "-");
-                // 英语常用缩略语归一 (如 don't -> do not, doesn't -> does not, can't -> cannot 等)
+                // 英语常用缩略语归一 (人称代词、助动词、否定式等)
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bcan't\b", "cannot", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwon't\b", "will not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bdon't\b", "do not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -3245,7 +3245,32 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\baren't\b", "are not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwasn't\b", "was not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bweren't\b", "were not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bcouldn't\b", "could not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bshouldn't\b", "should not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwouldn't\b", "would not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bmustn't\b", "must not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bhaven't\b", "have not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bhasn't\b", "has not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bhadn't\b", "had not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bI'm\b", "I am", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\byou're\b", "you are", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwe're\b", "we are", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bthey're\b", "they are", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bthat's\b", "that is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwhat's\b", "what is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bthere's\b", "there is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bhere's\b", "here is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bit's\b", "it is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bI'll\b", "I will", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\byou'll\b", "you will", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwe'll\b", "we will", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bthey'll\b", "they will", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bhe'll\b", "he will", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bshe'll\b", "she will", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bI've\b", "I have", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\byou've\b", "you have", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwe've\b", "we have", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bthey've\b", "they have", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
                 // 省略前导零的小数补齐: 如 .5 -> 0.5, -.75 -> -0.75, +.25 -> +0.25, x = .5 -> x = 0.5
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=^|[^\d\.])\.(\d+)", "0.$1");
@@ -3355,6 +3380,9 @@ namespace Northtropic.Services
                 // 向量与线段标记解构: \vec{a} -> a, \overrightarrow{AB} -> AB, \overline{AB} -> AB, \vec a -> a
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:vec|overrightarrow|overline)\s*\{([^}]+)\}", "$1");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:vec|overrightarrow|overline)\s+([a-zA-Z])\b", "$1");
+                // 粗体/黑板粗体数学符号解构: \mathbb{R} -> R, \mathbf{a} -> a, \boldsymbol{a} -> a, \bm{a} -> a
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:mathbb|mathbf|boldsymbol|bm|mathrm|mathit)\s*\{([^}]+)\}", "$1");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:mathbb|mathbf|boldsymbol|bm|mathrm|mathit)\s+([a-zA-Z])\b", "$1");
 
                 // LaTeX 指数花括号规范化: x^{2} -> x^2, 10^{-3} -> 10^-3
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\^\{([^}]+)\}", "^$1");
@@ -3435,6 +3463,17 @@ namespace Northtropic.Services
                 s = s.Replace("\\cup", "u").Replace("∪", "u").Replace("\\cap", "∩");
                 // 区间与集合并集连词解构 (如 (-inf, 1] U [3, +inf), (-inf, 1]并[3, +inf), (-inf, 1]或[3, +inf))
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=[\]\)\}])\s*(?:\\cup|∪|U|并集?|或者?)\s*(?=[\[\(\{])", "u");
+                // 数学集合隶属度符号归一: \in, ∈, 属于 -> in; \notin, ∉, 不属于 -> !in
+                s = s.Replace("\\notin", "!in").Replace("∉", "!in").Replace("不属于", "!in");
+                s = s.Replace("\\in", "in").Replace("∈", "in").Replace("属于", "in");
+                // 常见数集专有名词中文与正负号归一 (全体实数/实数集 -> R, 全体整数/整数集 -> Z, 自然数集 -> N, 正整数集 -> N*, 有理数集 -> Q, 复数集 -> C)
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b全体实数\b|\b实数集\b", "R");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b全体整数\b|\b整数集\b", "Z");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b自然数集\b", "N");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b正整数集\b", "N*");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b有理数集\b", "Q");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b复数集\b", "C");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b([RNZQC])\^[\*\+]", "$1*");
                 // 汉字指数幂解构 (如 10的8次方 -> 10^8, 10的-3次方 -> 10^-3)
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=^|[^\d])10的([+-]?\d+)次(?:方)?", "10^$1");
 
@@ -3608,6 +3647,19 @@ namespace Northtropic.Services
                 sLower = sLower.Replace("千欧姆", "komega").Replace("千欧", "komega").Replace("兆欧", "momega").Replace("欧姆", "omega");
                 sLower = sLower.Replace("\\text{k}\\omega", "komega").Replace("\\mathrm{k}\\omega", "komega").Replace("k\\omega", "komega").Replace("m\\omega", "momega");
                 sLower = sLower.Replace("kω", "komega").Replace("mω", "momega").Replace("ω", "omega").Replace("\\omega", "omega");
+                // 物理高频电磁、气压与同位素归一
+                sLower = sLower.Replace("特斯拉", "t").Replace("毫特", "mt").Replace("韦伯", "wb");
+                sLower = sLower.Replace("亨利", "h").Replace("法拉", "f").Replace("微法", "uf").Replace("皮法", "pf");
+                sLower = sLower.Replace("标准大气压", "atm").Replace("毫米汞柱", "mmhg");
+                sLower = sLower.Replace("千瓦时", "kwh").Replace("度电", "kwh");
+                sLower = sLower.Replace("电子伏特", "ev").Replace("电子伏", "ev").Replace("兆电子伏", "mev");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"m\s*[\*·]?\s*s\^?-2\b|m/s²", "m/s^2");
+                // 化学同位素规范化: 如 ^{14}c, ^{14}_{6}c, c-14, 碳-14, 碳14 -> c-14
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\^\{?(\d+)\}?(?:_\{?\d+\}?)?([a-z]+)", "$2-$1");
+                sLower = sLower.Replace("碳-14", "c-14").Replace("碳14", "c-14")
+                               .Replace("铀-235", "u-235").Replace("铀235", "u-235")
+                               .Replace("氢-1", "h-1").Replace("氢-2", "h-2").Replace("氢-3", "h-3")
+                               .Replace("氧-16", "o-16").Replace("氧-18", "o-18");
 
                 // 三角函数幂次规范化: 如 \sin^2(x) / sin^2 x / sin^2(x) -> (sin(x))^2, (\sin x)^2 -> (sin(x))^2
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?:\\)?\b(sin|cos|tan|cot|sec|csc)\^(\d+)\s*(?:\(\s*([a-zA-Z0-9]+)\s*\)|([a-zA-Z0-9]+))", "($1($3$4))^$2");
@@ -6104,50 +6156,40 @@ namespace Northtropic.Services
             }
         }
 
-        public async Task<bool> IsFavoriteAsync(Guid userId, Guid questionId)
+        public async Task<bool> IsFavoriteAsync(Guid userId, Guid questionId, Guid? requestorUserId = null)
         {
             if (userId == Guid.Empty || questionId == Guid.Empty) return false;
 
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
-            var callerId = _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            var callerId = requestorUserId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
             if (callerId.HasValue && callerId.Value != userId)
             {
-                var caller = await ctx.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == callerId.Value);
-                if (caller == null || (caller.Role != UserRole.SuperAdmin && caller.Role != UserRole.Teacher))
+                var isAuthorized = await IsAuthorizedToAccessStudentDataAsync(callerId.Value, userId, ctx);
+                if (!isAuthorized)
                 {
-                    bool isBoundParent = await ctx.StudentParentBindings.AsNoTracking()
-                        .AnyAsync(b => b.ParentUserId == callerId.Value && b.StudentUserId == userId);
-                    if (!isBoundParent)
-                    {
-                        return false;
-                    }
+                    return false;
                 }
             }
 
             return await ctx.UserFavorites.AnyAsync(f => f.UserId == userId && f.QuestionId == questionId);
         }
 
-        public async Task<List<Question>> GetFavoriteQuestionsAsync(Guid userId)
+        public async Task<List<Question>> GetFavoriteQuestionsAsync(Guid userId, Guid? requestorUserId = null)
         {
             if (userId == Guid.Empty) return new List<Question>();
 
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
 
-            var callerId = _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            var callerId = requestorUserId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
             if (callerId.HasValue && callerId.Value != userId)
             {
-                var caller = await ctx.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == callerId.Value);
-                if (caller == null || (caller.Role != UserRole.SuperAdmin && caller.Role != UserRole.Teacher))
+                var isAuthorized = await IsAuthorizedToAccessStudentDataAsync(callerId.Value, userId, ctx);
+                if (!isAuthorized)
                 {
-                    bool isBoundParent = await ctx.StudentParentBindings.AsNoTracking()
-                        .AnyAsync(b => b.ParentUserId == callerId.Value && b.StudentUserId == userId);
-                    if (!isBoundParent)
-                    {
-                        return new List<Question>();
-                    }
+                    return new List<Question>();
                 }
             }
 
@@ -6161,10 +6203,22 @@ namespace Northtropic.Services
             return favs;
         }
 
-        public async Task<List<Question>> GetSprintQuestionsFromErrorsAsync(Guid userId, string? subject = null, int count = 10)
+        public async Task<List<Question>> GetSprintQuestionsFromErrorsAsync(Guid userId, string? subject = null, int count = 10, Guid? requestorUserId = null)
         {
+            if (userId == Guid.Empty) return new List<Question>();
+
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
+
+            var callerId = requestorUserId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (callerId.HasValue && callerId.Value != userId)
+            {
+                var isAuthorized = await IsAuthorizedToAccessStudentDataAsync(callerId.Value, userId, ctx);
+                if (!isAuthorized)
+                {
+                    return new List<Question>();
+                }
+            }
 
             var query = ctx.ErrorItems
                 .Include(e => e.Question)
@@ -6349,10 +6403,12 @@ namespace Northtropic.Services
             var assignment = await ctx.HomeworkAssignments.FindAsync(assignmentId);
             if (assignment == null) return false;
 
-            // 若提供了学生 ID，校验是否为该学生本人的作业，杜绝越权伪造完成
-            if (studentUserId.HasValue && studentUserId.Value != Guid.Empty)
+            // 校验调用者身份：若未显式传 studentUserId，则取会话用户；非作业所属学生且非管理员时予以拦截，杜绝越权伪造完成
+            var callerId = studentUserId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (callerId.HasValue && callerId.Value != Guid.Empty && callerId.Value != assignment.StudentUserId)
             {
-                if (assignment.StudentUserId != studentUserId.Value)
+                var caller = await ctx.Users.FindAsync(callerId.Value);
+                if (caller?.Role != UserRole.SuperAdmin)
                 {
                     return false;
                 }
@@ -6468,10 +6524,22 @@ namespace Northtropic.Services
             return (true, $"已成功向【{student.Username}】发送作业提醒寄语！");
         }
 
-        public async Task<List<PracticeRecord>> GetUserPracticeRecordsAsync(Guid userId, int? take = null)
+        public async Task<List<PracticeRecord>> GetUserPracticeRecordsAsync(Guid userId, int? take = null, Guid? requestorUserId = null)
         {
+            if (userId == Guid.Empty) return new List<PracticeRecord>();
+
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
+
+            var callerId = requestorUserId ?? _userSessionService.CurrentUserId ?? (await _userSessionService.GetActiveUserAsync())?.Id;
+            if (callerId.HasValue && callerId.Value != userId)
+            {
+                var isAuthorized = await IsAuthorizedToAccessStudentDataAsync(callerId.Value, userId, ctx);
+                if (!isAuthorized)
+                {
+                    return new List<PracticeRecord>();
+                }
+            }
 
             var query = ctx.PracticeRecords
                 .AsNoTracking()

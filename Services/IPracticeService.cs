@@ -74,9 +74,9 @@ namespace Northtropic.Services
         Task<List<LlmGenerationLog>> GetLlmGenerationLogsAsync(Guid userId);
         Task<PracticeAnalyticsDto> GetPracticeAnalyticsAsync(Guid userId, string? subject = null, bool? isCorrect = null, Guid? requestorUserId = null);
         Task<bool> ToggleFavoriteAsync(Guid userId, Guid questionId, string? note = null);
-        Task<bool> IsFavoriteAsync(Guid userId, Guid questionId);
-        Task<List<Question>> GetFavoriteQuestionsAsync(Guid userId);
-        Task<List<Question>> GetSprintQuestionsFromErrorsAsync(Guid userId, string? subject = null, int count = 10);
+        Task<bool> IsFavoriteAsync(Guid userId, Guid questionId, Guid? requestorUserId = null);
+        Task<List<Question>> GetFavoriteQuestionsAsync(Guid userId, Guid? requestorUserId = null);
+        Task<List<Question>> GetSprintQuestionsFromErrorsAsync(Guid userId, string? subject = null, int count = 10, Guid? requestorUserId = null);
         Task<List<Question>> GetQuestionsByIdsAsync(List<Guid> questionIds);
         Task<HomeworkAssignment> CreateHomeworkAssignmentAsync(Guid creatorUserId, Guid studentUserId, string title, string subject, string category, int questionCount, int difficulty, DateTime? deadline, string note);
         Task<HomeworkAssignment?> GetHomeworkAssignmentByIdAsync(Guid assignmentId);
@@ -85,7 +85,7 @@ namespace Northtropic.Services
         Task<bool> CompleteHomeworkAssignmentAsync(Guid assignmentId, int correctCount, int totalAnswered, int score, Guid? studentUserId = null);
         Task<bool> DeleteHomeworkAssignmentAsync(Guid assignmentId, Guid? requestorUserId = null);
         Task<(bool Success, string Message)> SendHomeworkReminderNudgeAsync(Guid parentId, Guid assignmentId, string? customNudge = null);
-        Task<List<PracticeRecord>> GetUserPracticeRecordsAsync(Guid userId, int? take = null);
+        Task<List<PracticeRecord>> GetUserPracticeRecordsAsync(Guid userId, int? take = null, Guid? requestorUserId = null);
         Task<List<string>> GetCategoriesBySubjectAsync(string? subject);
     }
 }

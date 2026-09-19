@@ -26,6 +26,12 @@
         </div>
 
         <div class="d-flex align-center gap-3">
+            @if (_selectedSubject != "全部分科" || _resultFilter != null || _timeFilter != "all")
+            {
+                <MudButton Variant="Variant.Text" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.FilterAltOff" OnClick="ResetFiltersAsync">
+                    重置筛选
+                </MudButton>
+            }
             <MudSelect T="string" Value="@_selectedSubject" ValueChanged="OnSubjectFilterChanged" Label="筛选学科" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 140px;">
                 <MudSelectItem Value="@("全部分科")">全部分科</MudSelectItem>
                 @foreach (var sub in _subjects)
@@ -40,6 +46,28 @@
     {
         <div class="d-flex justify-center my-12">
             <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+        </div>
+    }
+    else if (_currentUser == null)
+    {
+        <div class="glass-card pa-8 my-6 text-center" style="border: 2px dashed rgba(var(--mud-palette-primary-rgb), 0.3); border-radius: 16px;">
+            <div class="d-inline-flex align-center justify-center rounded-circle mb-4" style="width: 80px; height: 80px; background: rgba(var(--mud-palette-primary-rgb), 0.12); border: 2px solid var(--mud-palette-primary);">
+                <MudIcon Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Primary" Style="font-size: 2.8rem;" />
+            </div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold mb-2">
+                🔒 请先登录后查看专属闯关分析
+            </MudText>
+            <MudText Typo="Typo.body1" Class="mud-text-secondary mb-6" Style="max-width: 600px; margin: 0 auto; line-height: 1.6;">
+                登录后即可解锁全学科做题流水、艾宾浩斯抗遗忘记忆曲线与答题速度深度拆解分析。
+            </MudText>
+            <div class="d-flex justify-center gap-4 flex-wrap">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Login" Href="/login" Style="font-weight: 700; border-radius: 10px;">
+                    立即登录
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Bolt" Href="/practice" Style="font-weight: 700; border-radius: 10px;">
+                    免登录直接体验闯关
+                </MudButton>
+            </div>
         </div>
     }
     else if (_analytics.TotalAnswered == 0)
@@ -431,26 +459,44 @@
 
     private async Task LoadAnalyticsAsync()
     {
-        if (_currentUser == null) return;
-        _loading = true;
-        _analytics = await PracticeService.GetPracticeAnalyticsAsync(_currentUser.Id, _selectedSubject, _resultFilter);
-        _masteryList = await StudentEvolutionService.GetMasteryOverviewAsync(_currentUser.Id, _selectedSubject);
+        if (_currentUser == null)
+        {
+            _loading = false;
+            return;
+        }
 
+        _loading = true;
         try
         {
-            var ebbinghausQueue = await ErrorBookService.GetEbbinghausReviewQueueAsync(_currentUser.Id, null, 100);
-            _dueEbbinghausCount = ebbinghausQueue.Count;
-            var unmastered = await ErrorBookService.GetUnmasteredErrorsAsync(_currentUser.Id);
-            _unmasteredErrorCount = unmastered.Count;
-            var mastered = await ErrorBookService.GetMasteredErrorsAsync(_currentUser.Id);
-            _masteredErrorCount = mastered.Count;
-        }
-        catch
-        {
-            // 非侵入式容错
-        }
+            _analytics = await PracticeService.GetPracticeAnalyticsAsync(_currentUser.Id, _selectedSubject, _resultFilter);
+            _masteryList = await StudentEvolutionService.GetMasteryOverviewAsync(_currentUser.Id, _selectedSubject);
 
-        _loading = false;
+            try
+            {
+                var ebbinghausQueue = await ErrorBookService.GetEbbinghausReviewQueueAsync(_currentUser.Id, null, 100);
+                _dueEbbinghausCount = ebbinghausQueue.Count;
+                var unmastered = await ErrorBookService.GetUnmasteredErrorsAsync(_currentUser.Id);
+                _unmasteredErrorCount = unmastered.Count;
+                var mastered = await ErrorBookService.GetMasteredErrorsAsync(_currentUser.Id);
+                _masteredErrorCount = mastered.Count;
+            }
+            catch
+            {
+                // 非侵入式容错
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ResetFiltersAsync()
+    {
+        _selectedSubject = "全部分科";
+        _resultFilter = null;
+        _timeFilter = "all";
+        await LoadAnalyticsAsync();
     }
 
     private List<PracticeRecord> FilteredRecords
