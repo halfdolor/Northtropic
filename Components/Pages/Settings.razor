@@ -1031,6 +1031,9 @@
                                     <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.BookmarkRemove" OnClick="HealUserFavoriteInvariantsAsync" Disabled="@_isHealingFavorites" Class="font-weight-bold">
                                         @(_isHealingFavorites ? "自愈中..." : "⭐ 自愈收藏冗余副本")
                                     </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.HistoryEdu" OnClick="HealPracticeRecordsAsync" Disabled="@_isHealingPracticeRecords" Class="font-weight-bold">
+                                        @(_isHealingPracticeRecords ? "自愈中..." : "🩺 自愈答题流水不变量")
+                                    </MudButton>
                                 </div>
                             </div>
 
@@ -1162,6 +1165,14 @@
                                             <div class="mud-text-secondary" style="font-size: 0.72rem;">破损试题/选项</div>
                                             <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalCorruptedQuestions > 0 ? "#ef4444" : "#10b981");">
                                                 @_dataIntegrityAudit.TotalCorruptedQuestions
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">流水领域异常</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalInvalidPracticeRecords > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.TotalInvalidPracticeRecords
                                             </div>
                                         </div>
                                     </MudItem>
@@ -1429,6 +1440,7 @@
     private bool _isHealingHomeworkAssignments = false;
     private bool _isHealingBindings = false;
     private bool _isHealingFavorites = false;
+    private bool _isHealingPracticeRecords = false;
     private bool _isHealingCorruptedQuestions = false;
     private bool _isHealingAllInvariants = false;
     private DataIntegrityHealAllResultDto? _healAllInvariantsResult;
@@ -2104,6 +2116,29 @@
         }
     }
 
+    private async Task HealPracticeRecordsAsync()
+    {
+        _isHealingPracticeRecords = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealPracticeRecordInvariantsAsync();
+            Snackbar.Add($"🩺 答题流水领域不变量自愈完成：成功修正/收敛 {healedCount} 条记录！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+            FilterTelemetryEvents();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"答题流水自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingPracticeRecords = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task HealCorruptedQuestionsAsync()
     {
         _isHealingCorruptedQuestions = true;
@@ -2254,6 +2289,7 @@
                 await SystemHealthService.HealHomeworkAssignmentInvariantsAsync();
                 await SystemHealthService.HealErrorBookInvariantsAsync();
                 await SystemHealthService.HealUserFavoriteInvariantsAsync();
+                await SystemHealthService.HealPracticeRecordInvariantsAsync();
                 _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
             }
             _healthDto = await SystemHealthService.GetSystemHealthAsync();

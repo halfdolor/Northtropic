@@ -1915,6 +1915,22 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalDuplicateFavorites} 条收藏夹冗余副本 (同一题目被相同用户重复收藏)");
                 }
 
+                // 19. PracticeRecord Domain Invariants (异常用时、负数连击与负数奖励)
+                var practiceRecordsToCheck = await db.PracticeRecords
+                    .Select(r => new { r.Id, r.TimeTakenSeconds, r.ComboAtAnswer, r.EarnedExp, r.EarnedCoins })
+                    .ToListAsync();
+                int invalidPracticeRecordsCount = practiceRecordsToCheck.Count(r =>
+                    r.TimeTakenSeconds < 0 || r.TimeTakenSeconds > 86400 ||
+                    r.ComboAtAnswer < 0 ||
+                    r.EarnedExp < 0 ||
+                    r.EarnedCoins < 0
+                );
+                audit.TotalInvalidPracticeRecords = invalidPracticeRecordsCount;
+                if (audit.TotalInvalidPracticeRecords > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidPracticeRecords} 条学生答题流水存在领域不变量异常 (包含负数用时/连击/资产或越界时间跨度)");
+                }
+
                 if (audit.IsHealthy)
                 {
                     audit.AuditDetails.Add("✅ 数据库全库拓扑与业务外键完整性审计通过，未发现任何孤儿或格式损坏记录。");
@@ -2780,6 +2796,62 @@ namespace Northtropic.Services
             return healedCount;
         }
 
+        public async Task<int> HealPracticeRecordInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            var records = await db.PracticeRecords.ToListAsync();
+            int healedCount = 0;
+
+            foreach (var r in records)
+            {
+                bool changed = false;
+
+                // A. 答题用时校准 (不能为负数，超过 24 小时异常挂机限制收敛至 86400 秒)
+                if (r.TimeTakenSeconds < 0)
+                {
+                    r.TimeTakenSeconds = 0;
+                    changed = true;
+                }
+                else if (r.TimeTakenSeconds > 86400)
+                {
+                    r.TimeTakenSeconds = 86400;
+                    changed = true;
+                }
+
+                // B. 答题时连击数校准 (不能为负数)
+                if (r.ComboAtAnswer < 0)
+                {
+                    r.ComboAtAnswer = 0;
+                    changed = true;
+                }
+
+                // C. 经验值与金币校准 (不能为负数)
+                if (r.EarnedExp < 0)
+                {
+                    r.EarnedExp = 0;
+                    changed = true;
+                }
+
+                if (r.EarnedCoins < 0)
+                {
+                    r.EarnedCoins = 0;
+                    changed = true;
+                }
+
+                if (changed) healedCount++;
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("PracticeRecordInvariantSelfHealing", "Success", $"校准并自愈了 {healedCount} 条异常学生答题流水领域不变量");
+            }
+
+            return healedCount;
+        }
+
         public async Task<int> HealCorruptedQuestionsAsync()
         {
             await using var dbScope = await CreateDbScopeAsync();
@@ -2896,6 +2968,11 @@ namespace Northtropic.Services
                 result.HealedFavoritesCount = await HealUserFavoriteInvariantsAsync();
                 if (result.HealedFavoritesCount > 0)
                     result.OperationsExecuted.Add($"收藏夹冗余副本自愈: 清理 {result.HealedFavoritesCount} 条重复记录");
+
+                // 10. 答题流水领域不变量自愈
+                result.HealedPracticeRecordsCount = await HealPracticeRecordInvariantsAsync();
+                if (result.HealedPracticeRecordsCount > 0)
+                    result.OperationsExecuted.Add($"答题流水领域不变量自愈: 修正 {result.HealedPracticeRecordsCount} 条记录");
 
                 sw.Stop();
                 result.ElapsedMilliseconds = sw.Elapsed.TotalMilliseconds;

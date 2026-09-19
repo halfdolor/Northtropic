@@ -3326,6 +3326,8 @@ namespace Northtropic.Services
                      .Replace("\\vert", "|")
                      .Replace("\\|", "|").Replace("\\Vert", "|").Replace("\\lVert", "|").Replace("\\rVert", "|").Replace("‖", "|")
                      .Replace("$", "");
+                // 范数与双竖线模长解构: ||a|| -> |a|
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\|\|\s*([^|]+?)\s*\|\|", "|$1|");
                 // LaTeX 矩阵列向量解构 (支持 \begin{pmatrix} a \\ b \end{pmatrix}, \begin{bmatrix} a \\ b \end{bmatrix}, 3维列向量等映射为标准坐标 (a, b) / (a, b, c))
                 s = System.Text.RegularExpressions.Regex.Replace(s,
                     @"\\begin\{(?:pmatrix|bmatrix|vmatrix|matrix)\}\s*([^\\]+?)\s*\\\\\s*([^\\]+?)(?:\s*\\\\\s*([^\\]+?))?\s*\\end\{(?:pmatrix|bmatrix|vmatrix|matrix)\}",
@@ -3464,6 +3466,10 @@ namespace Northtropic.Services
                 // 几何平行与垂直符号归一
                 s = s.Replace("\\parallel", "//").Replace("平行于", "//").Replace("平行", "//");
                 s = s.Replace("\\perp", "⊥").Replace("\\bot", "⊥").Replace("垂直于", "⊥").Replace("垂直", "⊥");
+                // 几何全等与相似符号归一
+                s = s.Replace("\\triangle", "△").Replace("三角形", "△");
+                s = s.Replace("\\cong", "≌").Replace("全等于", "≌").Replace("全等", "≌");
+                s = s.Replace("\\sim", "∽").Replace("相似于", "∽");
                 // 集合包含关系符号归一 (真包含于必须排在包含于之前以防词缀短截)
                 s = s.Replace("\\subsetneqq", "⫋").Replace("\\subsetneq", "⫋").Replace("真包含于", "⫋");
                 s = s.Replace("\\subseteq", "⊆").Replace("包含于", "⊆");
@@ -3675,6 +3681,9 @@ namespace Northtropic.Services
                 sLower = sLower.Replace("千欧姆", "komega").Replace("千欧", "komega").Replace("兆欧", "momega").Replace("欧姆", "omega");
                 sLower = sLower.Replace("\\text{k}\\omega", "komega").Replace("\\mathrm{k}\\omega", "komega").Replace("k\\omega", "komega").Replace("m\\omega", "momega");
                 sLower = sLower.Replace("kω", "komega").Replace("mω", "momega").Replace("ω", "omega").Replace("\\omega", "omega");
+                // 物理面积与体积中文字符归一
+                sLower = sLower.Replace("平方米", "m^2").Replace("平方分米", "dm^2").Replace("平方厘米", "cm^2");
+                sLower = sLower.Replace("立方米", "m^3").Replace("立方分米", "dm^3").Replace("立方厘米", "cm^3");
                 // 物理高频电磁、气压与同位素归一
                 sLower = sLower.Replace("特斯拉", "t").Replace("毫特", "mt").Replace("韦伯", "wb");
                 sLower = sLower.Replace("亨利", "h").Replace("法拉", "f").Replace("微法", "uf").Replace("皮法", "pf");
@@ -3683,7 +3692,7 @@ namespace Northtropic.Services
                 sLower = sLower.Replace("电子伏特", "ev").Replace("电子伏", "ev").Replace("兆电子伏", "mev");
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bm\s*[\*·]?\s*s\^?-2\b|m/s²|\bm\s+s\^-2\b", "m/s^2");
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bn\s*[\*·]\s*m\b|\bn\s+m\b", "n*m");
-                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bt\s*[\*·]\s*m\^?2\b|\bt\s+m\^?2\b", "wb");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bt\s*[\*·]?\s*m\^?2\b|\bt\s+m\^?2\b|(?:t|特斯拉)[·\*]?(?:m\^?2|平方米)", "wb");
 
                 // 物理动量与冲量单位等价: kg·m/s <=> N·s
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bkg\s*[\*·]?\s*m\s*(?:/\s*s|[\*·]?\s*s\^?-1)\b|\bkg\s+m\s*(?:/\s*s|\s+s\^-1)\b|千克[·\*]?米[每/]?秒", "n*s");
@@ -3707,6 +3716,33 @@ namespace Northtropic.Services
                 // 电能与功单位: kW·h <=> 千瓦时 <=> 度
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bkw\s*[\*·]?\s*h\b|\bkw\s+h\b", "kwh");
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*度\b", "kwh");
+
+                // 物理压强单位等价: Pa <=> N/m^2 <=> N*m^-2 <=> 帕斯卡 <=> 帕
+                sLower = sLower.Replace("帕斯卡", "pa");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*帕\b", "pa");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bn\s*(?:/\s*m\^?2|[\*·]?\s*m\^?-2)\b|\bn\s+m\^-2\b|牛[顿]?[每/]?m\^2|牛[顿]?[每/]?平方米", "pa");
+
+                // 电容单位等价: C/V <=> F <=> 法拉 <=> 库/伏
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bc\s*(?:/\s*v|[\*·]?\s*v\^?-1)\b|\bc\s+v\^-1\b|库[仑]?[每/]?伏[特]?", "f");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*法拉\b", "f");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*法\b", "f");
+
+                // 自感/互感单位等价: H <=> Wb/A <=> \Omega·s <=> 亨利 <=> 韦伯每安培
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bwb\s*(?:/\s*a|[\*·]?\s*a\^?-1|[每/]?\s*安[培]?)\b|韦伯[每/]?安[培]?", "h");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\b(?:omega|komega)\s*[\*·]?\s*s\b", "h");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*亨利\b", "h");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*亨\b", "h");
+
+                // 磁通量单位等价扩展: Wb <=> V·s <=> T·m^2 <=> 韦伯 <=> 伏·秒
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bv\s*[\*·]?\s*s\b|\bv\s+s\b|伏[特]?[·\*]?秒", "wb");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bt\s*[\*·]?\s*m\^?2\b|\bt\s+m\^?2\b|(?:t|特斯拉)[·\*]?(?:m\^?2|平方米)", "wb");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*韦伯\b", "wb");
+
+                // 比热容单位等价: J/(kg·℃) <=> J/(kg·K) <=> J·kg^-1·K^-1 <=> 焦每千克摄氏度
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bj\s*/\s*\(?\s*kg\s*[\*·]?\s*(?:℃|c|k)\s*\)?|\bj\s*[\*·]?\s*kg\^?-1\s*[\*·]?\s*(?:℃|c|k)\^?-1|焦[耳]?[每/]?\(?千克[·\*]?(?:摄氏度|开尔文|℃|k)\)?", "j/(kg*k)");
+
+                // 物质的量浓度单位等价: mol/L <=> mol/dm^3 <=> mol·L^-1 <=> 摩尔每升
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bmol\s*(?:/\s*(?:l|dm\^?3)|[\*·]?\s*(?:l|dm\^3)\^?-1)\b|摩尔[每/]?升|摩[每/]?升", "mol/l");
 
                 // 化学同位素规范化: 如 ^{14}c, ^{14}_{6}c, c-14, 碳-14, 碳14 -> c-14
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\^\{?(\d+)\}?(?:_\{?\d+\}?)?([a-z]+)", "$2-$1");
