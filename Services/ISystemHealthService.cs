@@ -206,6 +206,10 @@ namespace Northtropic.Services
         public int TotalOrphanHomeworkAssignments { get; set; }
         public int TotalOrphanBindings { get; set; }
         public int TotalOrphanStudyPlans { get; set; }
+        public int TotalOrphanStudyPlanTasks { get; set; }
+        public int TotalOrphanUserAchievements { get; set; }
+        public int TotalOrphanInsights { get; set; }
+        public int TotalOrphanLlmLogs { get; set; }
         public int TotalCorruptedQuestions { get; set; }
         public int OrphanErrorItemsCount => TotalOrphanErrorItems;
         public int OrphanPracticeRecordsCount => TotalOrphanPracticeRecords;
@@ -213,7 +217,11 @@ namespace Northtropic.Services
         public int OrphanHomeworkAssignmentsCount => TotalOrphanHomeworkAssignments;
         public int OrphanParentBindingsCount => TotalOrphanBindings;
         public int OrphanStudyPlansCount => TotalOrphanStudyPlans;
-        public int TotalIssuesCount => TotalOrphanErrorItems + TotalOrphanPracticeRecords + TotalOrphanUserFavorites + TotalOrphanHomeworkAssignments + TotalOrphanBindings + TotalOrphanStudyPlans + TotalCorruptedQuestions;
+        public int OrphanStudyPlanTasksCount => TotalOrphanStudyPlanTasks;
+        public int OrphanUserAchievementsCount => TotalOrphanUserAchievements;
+        public int OrphanInsightsCount => TotalOrphanInsights;
+        public int OrphanLlmLogsCount => TotalOrphanLlmLogs;
+        public int TotalIssuesCount => TotalOrphanErrorItems + TotalOrphanPracticeRecords + TotalOrphanUserFavorites + TotalOrphanHomeworkAssignments + TotalOrphanBindings + TotalOrphanStudyPlans + TotalOrphanStudyPlanTasks + TotalOrphanUserAchievements + TotalOrphanInsights + TotalOrphanLlmLogs + TotalCorruptedQuestions;
         public bool IsHealthy => TotalIssuesCount == 0;
         public List<string> AuditDetails { get; set; } = new();
     }
@@ -227,7 +235,11 @@ namespace Northtropic.Services
         public int PurgedHomeworkAssignmentsCount { get; set; }
         public int PurgedBindingsCount { get; set; }
         public int PurgedStudyPlansCount { get; set; }
-        public int TotalPurgedCount => PurgedErrorItemsCount + PurgedPracticeRecordsCount + PurgedUserFavoritesCount + PurgedHomeworkAssignmentsCount + PurgedBindingsCount + PurgedStudyPlansCount;
+        public int PurgedStudyPlanTasksCount { get; set; }
+        public int PurgedUserAchievementsCount { get; set; }
+        public int PurgedInsightsCount { get; set; }
+        public int PurgedLlmLogsCount { get; set; }
+        public int TotalPurgedCount => PurgedErrorItemsCount + PurgedPracticeRecordsCount + PurgedUserFavoritesCount + PurgedHomeworkAssignmentsCount + PurgedBindingsCount + PurgedStudyPlansCount + PurgedStudyPlanTasksCount + PurgedUserAchievementsCount + PurgedInsightsCount + PurgedLlmLogsCount;
         public double ElapsedMilliseconds { get; set; }
         public string Message { get; set; } = string.Empty;
         public DateTime ExecutedAt { get; set; } = DateTime.Now;

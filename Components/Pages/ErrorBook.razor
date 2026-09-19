@@ -179,6 +179,13 @@
                     <MudSelectItem Value="@("完全不会")">完全不会 (@(_unmasteredItems.Count(i => i.ErrorReasonCategory == "完全不会")))</MudSelectItem>
                 </MudSelect>
 
+                <MudSelect T="string" Label="记忆紧迫度" @bind-Value="_filterUrgency" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 155px;" AnchorOrigin="Origin.BottomCenter">
+                    <MudSelectItem Value="@("全部记忆层级")">全部记忆层级</MudSelectItem>
+                    <MudSelectItem Value="@("紧急抢救 (<40分)")">🚨 紧急抢救 (&lt;40分)</MudSelectItem>
+                    <MudSelectItem Value="@("临界巩固 (40-70分)")">⚠️ 临界巩固 (40-70分)</MudSelectItem>
+                    <MudSelectItem Value="@("稳固记忆 (>70分)")">🛡️ 稳固记忆 (&gt;70分)</MudSelectItem>
+                </MudSelect>
+
                 <MudSelect T="string" Label="排序方式" @bind-Value="_sortBy" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 170px;" AnchorOrigin="Origin.BottomCenter">
                     <MudSelectItem Value="@("艾宾浩斯紧迫度优先")">⚡ 艾宾浩斯紧迫度优先</MudSelectItem>
                     <MudSelectItem Value="@("错误频次降序")">🔥 错误频次降序</MudSelectItem>
@@ -203,7 +210,7 @@
                     <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" StartIcon="@Icons.Material.Filled.SwapHoriz" OnClick="ToggleInvertSelection">
                         反选本页
                     </MudButton>
-                    @if (_filterSubject != "全部学科" || _filterReason != "全部错因" || _onlyEbbinghausDue || !string.IsNullOrWhiteSpace(_searchQuery))
+                    @if (_filterSubject != "全部学科" || _filterReason != "全部错因" || _filterUrgency != "全部记忆层级" || _onlyEbbinghausDue || !string.IsNullOrWhiteSpace(_searchQuery))
                     {
                         <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" StartIcon="@Icons.Material.Filled.ClearAll" OnClick="ResetFilters">
                             清除筛选
@@ -213,7 +220,7 @@
             </div>
 
             <!-- 生效中的过滤器 Chip 组 (UX 专家优化：提升过滤状态可见性) -->
-            @if (_filterSubject != "全部学科" || _filterReason != "全部错因" || _onlyEbbinghausDue || !string.IsNullOrWhiteSpace(_searchQuery))
+            @if (_filterSubject != "全部学科" || _filterReason != "全部错因" || _filterUrgency != "全部记忆层级" || _onlyEbbinghausDue || !string.IsNullOrWhiteSpace(_searchQuery))
             {
                 <div class="d-flex align-center gap-2 flex-wrap mb-4 px-2 no-print">
                     <span class="text-caption font-weight-bold mud-text-secondary">当前过滤条件：</span>
@@ -227,6 +234,12 @@
                     {
                         <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Outlined" OnClose="@(() => _filterReason = "全部错因")">
                             错因: @_filterReason
+                        </MudChip>
+                    }
+                    @if (_filterUrgency != "全部记忆层级")
+                    {
+                        <MudChip T="string" Color="Color.Tertiary" Size="Size.Small" Variant="Variant.Outlined" OnClose="@(() => _filterUrgency = "全部记忆层级")">
+                            记忆层级: @_filterUrgency
                         </MudChip>
                     }
                     @if (_onlyEbbinghausDue)
@@ -1003,6 +1016,7 @@
 
     private string _filterSubject = "全部学科";
     private string _filterReason = "全部错因";
+    private string _filterUrgency = "全部记忆层级";
     private string _sortBy = "错误频次降序";
     private string _searchQuery = string.Empty;
     private bool _onlyEbbinghausDue = false;
@@ -1031,6 +1045,7 @@
     {
         _filterSubject = "全部学科";
         _filterReason = "全部错因";
+        _filterUrgency = "全部记忆层级";
         _sortBy = "错误频次降序";
         _searchQuery = string.Empty;
         _onlyEbbinghausDue = false;
@@ -1046,6 +1061,21 @@
             if (_onlyEbbinghausDue)
             {
                 query = query.Where(i => IsEbbinghausReviewDue(i));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_filterUrgency) && _filterUrgency != "全部记忆层级")
+            {
+                query = _filterUrgency switch
+                {
+                    "紧急抢救 (<40分)" => query.Where(i => ErrorBookService.CalculateRetentionHealthScore(i) < 40),
+                    "临界巩固 (40-70分)" => query.Where(i =>
+                    {
+                        var score = ErrorBookService.CalculateRetentionHealthScore(i);
+                        return score >= 40 && score <= 70;
+                    }),
+                    "稳固记忆 (>70分)" => query.Where(i => ErrorBookService.CalculateRetentionHealthScore(i) > 70),
+                    _ => query
+                };
             }
 
             if (!string.IsNullOrWhiteSpace(_filterSubject) && _filterSubject != "全部学科")

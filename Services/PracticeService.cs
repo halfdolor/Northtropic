@@ -2617,6 +2617,17 @@ namespace Northtropic.Services
             ["碳酸铵"] = "(nh4)2co3",
             ["碳酸氢铵"] = "nh4hco3",
             ["硫酸锌"] = "znso4",
+            ["重铬酸钾"] = "k2cr2o7",
+            ["草酸"] = "h2c2o4",
+            ["碘化钾"] = "ki",
+            ["溴化银"] = "agbr",
+            ["碘化银"] = "agi",
+            ["氯化钡"] = "bacl2",
+            ["葡萄糖"] = "c6h12o6",
+            ["蔗糖"] = "c12h22o11",
+            ["苯"] = "c6h6",
+            ["甲苯"] = "c7h8",
+            ["乙酸乙酯"] = "ch3cooc2h5",
 
             // 常见原子团与离子
             ["铵根"] = "nh4+", ["铵根离子"] = "nh4+",
@@ -3776,6 +3787,56 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"^([a-zA-Z])\s*小于等于\s*(.+)$", "$1<=$2");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"^([a-zA-Z])\s*大于\s*(.+)$", "$1>$2");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"^([a-zA-Z])\s*小于\s*(.+)$", "$1<$2");
+
+                // 绝对值不等式解构: |x| <= a, |x| < a, |x| >= a, |x| > a
+                var absIneq = System.Text.RegularExpressions.Regex.Match(s, @"^\|([a-zA-Z])\|\s*(<=|<|>=|>)\s*([^<>=,;，；或]+)$");
+                if (absIneq.Success)
+                {
+                    string op = absIneq.Groups[2].Value;
+                    string val = absIneq.Groups[3].Value.Trim();
+                    string negVal = val.StartsWith("-") ? val.Substring(1) : $"-{val}";
+                    return op switch
+                    {
+                        "<=" => $"[{negVal},{val}]",
+                        "<" => $"({negVal},{val})",
+                        ">=" => $"(-inf,{negVal}]u[{val},+inf)",
+                        ">" => $"(-inf,{negVal})u({val},+inf)",
+                        _ => s
+                    };
+                }
+
+                // 逻辑与连词复合不等式: 如 "x>1 且 x<5", "x>=2 and x<=6", "1<x 且 x<5"
+                var andMatch = System.Text.RegularExpressions.Regex.Match(s, @"^(.+?)\s*(?:且|and|&&)\s*(.+?)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (andMatch.Success)
+                {
+                    string leftPart = andMatch.Groups[1].Value.Trim();
+                    string rightPart = andMatch.Groups[2].Value.Trim();
+                    var p1 = NormalizeIntervalOrInequality(leftPart);
+                    var p2 = NormalizeIntervalOrInequality(rightPart);
+                    var intervalMatch1 = System.Text.RegularExpressions.Regex.Match(p1, @"^([\[\(])([^,]+),([^\]\)]+)([\]\)])$");
+                    var intervalMatch2 = System.Text.RegularExpressions.Regex.Match(p2, @"^([\[\(])([^,]+),([^\]\)]+)([\]\)])$");
+                    if (intervalMatch1.Success && intervalMatch2.Success)
+                    {
+                        string b1Left = intervalMatch1.Groups[1].Value;
+                        string v1Left = intervalMatch1.Groups[2].Value;
+                        string v1Right = intervalMatch1.Groups[3].Value;
+                        string b1Right = intervalMatch1.Groups[4].Value;
+
+                        string b2Left = intervalMatch2.Groups[1].Value;
+                        string v2Left = intervalMatch2.Groups[2].Value;
+                        string v2Right = intervalMatch2.Groups[3].Value;
+                        string b2Right = intervalMatch2.Groups[4].Value;
+
+                        if (v1Right == "+inf" && v2Left == "-inf")
+                        {
+                            return $"{b1Left}{v1Left},{v2Right}{b2Right}";
+                        }
+                        if (v1Left == "-inf" && v2Right == "+inf")
+                        {
+                            return $"{b2Left}{v2Left},{v1Right}{b1Right}";
+                        }
+                    }
+                }
 
                 // 如果包含复合 "或者" / "或" / "并" / "u" / "∪" 连接的多段不等式或区间 (如 x < -1 或 x > 1, (-inf, -1) u (1, +inf))
                 if (System.Text.RegularExpressions.Regex.IsMatch(s, @"\b(?:或者|或|并)\b|(?<=\d|\))\s*(?:或者|或|并)\s*(?=[a-zA-Z\(])") || s.Contains('u') || s.Contains('∪') || s.Contains("\\cup"))
@@ -5432,7 +5493,16 @@ namespace Northtropic.Services
                     ("pf|皮法", 1e-12, "cap"),
                     ("f|法拉|法", 1.0, "cap"),
 
-                    // 磁学磁感应强度 (T, mT)
+                    // 速度 (m/s, km/h)
+                    (@"km/h|千米/小时|公里/小时|千米/时|公里/时|km/hr|km\*h\^\{-1\}|km\*h\^-1|km·h\^-1", 1.0 / 3.6, "speed"),
+                    (@"m/s|米/秒|米每秒|m\*s\^\{-1\}|m\*s\^-1|m·s\^-1", 1.0, "speed"),
+
+                    // 动量与冲量 (N·s, kg·m/s)
+                    (@"n\*s|n·s|n\s*s|牛\*秒|牛·秒|牛\s*秒|牛秒", 1.0, "momentum"),
+                    (@"kg\*m/s|kg·m/s|kg\s*m/s|千克\*米/秒|千克·米/秒|千克\s*米/秒|千克米/秒|公斤\*米/秒|公斤·米/秒|公斤米/秒", 1.0, "momentum"),
+
+                    // 磁学磁感应强度 (T, mT, Wb/m^2)
+                    (@"wb/m\^2|wb/m²|wb/m2|韦伯/平方米|韦伯每平方米", 1.0, "mag"),
                     ("mt|毫特", 1e-3, "mag"),
                     ("特斯拉|特", 1.0, "mag"),
 

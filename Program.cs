@@ -106,6 +106,23 @@ if (app.Configuration["HTTPS_PORT"] != null || app.Configuration["ASPNETCORE_HTT
 app.UseStaticFiles();
 app.UseAntiforgery();
 
+// 架构安全防御标头与 API 敏感端点防缓存策略中间件
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.TryAdd("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.TryAdd("X-Frame-Options", "SAMEORIGIN");
+    context.Response.Headers.TryAdd("Referrer-Policy", "strict-origin-when-cross-origin");
+    context.Response.Headers.TryAdd("X-XSS-Protection", "1; mode=block");
+
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
+        context.Response.Headers["Pragma"] = "no-cache";
+    }
+
+    await next();
+});
+
 // 题库模板下载原生流 API (支持 Excel / CSV / JSON / TXT)
 app.MapGet("/api/questions/download-template", (IQuestionImportService importService, string? format) =>
 {
@@ -444,7 +461,11 @@ app.MapGet("/api/system/maintenance/plan", async (
     }
 });
 
-// 系统自适应维护计划执行 API (一键触发自愈、WAL 截断与存储规整，带并发锁)
+// 系统自适应维护计划执行并发锁与冷却防抖控制器
+var maintenanceExecutionLock = new SemaphoreSlim(1, 1);
+DateTime lastMaintenanceExecutionUtc = DateTime.MinValue;
+
+// 系统自适应维护计划执行 API (一键触发自愈、WAL 截断与存储规整，带并发锁与冷却保护)
 app.MapPost("/api/system/maintenance/execute", async (
     ISystemHealthService healthService,
     IUserSessionService userSession,
@@ -484,9 +505,29 @@ app.MapPost("/api/system/maintenance/execute", async (
             return Results.StatusCode(403);
         }
 
-        healthService.RecordArchitectureEvent("Maintenance", "Info", $"管理员 {authorizedUsername} 通过 REST 接口触发自适应存储维护任务");
-        var result = await healthService.ExecuteAdaptiveMaintenancePlanAsync();
-        return Results.Ok(result);
+        if (!await maintenanceExecutionLock.WaitAsync(0))
+        {
+            healthService.RecordArchitectureEvent("Maintenance", "Warning", $"管理员 {authorizedUsername} 触发维护任务被拦截：前序维保任务执行中");
+            return Results.StatusCode(StatusCodes.Status409Conflict);
+        }
+
+        try
+        {
+            if ((DateTime.UtcNow - lastMaintenanceExecutionUtc).TotalSeconds < 3)
+            {
+                healthService.RecordArchitectureEvent("Maintenance", "Warning", $"管理员 {authorizedUsername} 触发维护任务被拦截：系统处于冷却保护期");
+                return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            }
+            lastMaintenanceExecutionUtc = DateTime.UtcNow;
+
+            healthService.RecordArchitectureEvent("Maintenance", "Info", $"管理员 {authorizedUsername} 通过 REST 接口触发自适应存储维护任务");
+            var result = await healthService.ExecuteAdaptiveMaintenancePlanAsync();
+            return Results.Ok(result);
+        }
+        finally
+        {
+            maintenanceExecutionLock.Release();
+        }
     }
     catch (Exception ex)
     {

@@ -1667,8 +1667,12 @@ namespace Northtropic.Services
 
                 var userIds = await db.Users.Select(u => u.Id).ToListAsync();
                 var questionIds = await db.Questions.Select(q => q.Id).ToListAsync();
+                var studyPlanIds = await db.StudyPlans.Select(s => s.Id).ToListAsync();
+                var achievementIds = await db.Achievements.Select(a => a.Id).ToListAsync();
                 var userIdSet = new HashSet<Guid>(userIds);
                 var questionIdSet = new HashSet<Guid>(questionIds);
+                var studyPlanIdSet = new HashSet<Guid>(studyPlanIds);
+                var achievementIdSet = new HashSet<Guid>(achievementIds);
 
                 // 1. ErrorItems
                 var errors = await db.ErrorItems.Select(e => new { e.Id, e.QuestionId, e.UserId }).ToListAsync();
@@ -1718,7 +1722,39 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalOrphanStudyPlans} 条无主学习计划 (所属学员账号不存在)");
                 }
 
-                // 7. Corrupted Questions (单选/多选且 OptionsJson 格式无效)
+                // 7. StudyPlanTasks
+                var tasks = await db.StudyPlanTasks.Select(t => new { t.Id, t.StudyPlanId }).ToListAsync();
+                audit.TotalOrphanStudyPlanTasks = tasks.Count(t => !studyPlanIdSet.Contains(t.StudyPlanId));
+                if (audit.TotalOrphanStudyPlanTasks > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalOrphanStudyPlanTasks} 条无主学习任务 (所属计划已被清理或不存在)");
+                }
+
+                // 8. UserAchievements
+                var uAchievements = await db.UserAchievements.Select(a => new { a.Id, a.UserId, a.AchievementId }).ToListAsync();
+                audit.TotalOrphanUserAchievements = uAchievements.Count(a => !userIdSet.Contains(a.UserId) || !achievementIdSet.Contains(a.AchievementId));
+                if (audit.TotalOrphanUserAchievements > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalOrphanUserAchievements} 条无主成就关联 (所属用户或成就定义不存在)");
+                }
+
+                // 9. EvolutionClosedLoopInsights
+                var insights = await db.EvolutionClosedLoopInsights.Select(i => new { i.Id, i.UserId }).ToListAsync();
+                audit.TotalOrphanInsights = insights.Count(i => !userIdSet.Contains(i.UserId));
+                if (audit.TotalOrphanInsights > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalOrphanInsights} 条无主学情闭环洞察 (所属学员账号不存在)");
+                }
+
+                // 10. LlmGenerationLogs
+                var llmLogs = await db.LlmGenerationLogs.Select(l => new { l.Id, l.UserId, l.QuestionId }).ToListAsync();
+                audit.TotalOrphanLlmLogs = llmLogs.Count(l => !userIdSet.Contains(l.UserId) || (l.QuestionId.HasValue && !questionIdSet.Contains(l.QuestionId.Value)));
+                if (audit.TotalOrphanLlmLogs > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalOrphanLlmLogs} 条无主大模型推理日志 (所属用户或试题不存在)");
+                }
+
+                // 11. Corrupted Questions (单选/多选且 OptionsJson 格式无效)
                 var choiceQuestions = await db.Questions
                     .Where(q => q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
                     .Select(q => new { q.Id, q.OptionsJson })
@@ -1759,8 +1795,12 @@ namespace Northtropic.Services
             {
                 var userIds = await db.Users.Select(u => u.Id).ToListAsync();
                 var questionIds = await db.Questions.Select(q => q.Id).ToListAsync();
+                var studyPlanIds = await db.StudyPlans.Select(s => s.Id).ToListAsync();
+                var achievementIds = await db.Achievements.Select(a => a.Id).ToListAsync();
                 var userIdSet = new HashSet<Guid>(userIds);
                 var questionIdSet = new HashSet<Guid>(questionIds);
+                var studyPlanIdSet = new HashSet<Guid>(studyPlanIds);
+                var achievementIdSet = new HashSet<Guid>(achievementIds);
 
                 // 1. ErrorItems
                 var orphanErrors = (await db.ErrorItems.ToListAsync())
@@ -1820,6 +1860,48 @@ namespace Northtropic.Services
                 {
                     db.StudyPlans.RemoveRange(orphanPlans);
                     result.PurgedStudyPlansCount = orphanPlans.Count;
+                    var removedPlanIds = orphanPlans.Select(p => p.Id).ToHashSet();
+                    studyPlanIdSet.RemoveWhere(removedPlanIds.Contains);
+                }
+
+                // 7. StudyPlanTasks
+                var orphanTasks = (await db.StudyPlanTasks.ToListAsync())
+                    .Where(t => !studyPlanIdSet.Contains(t.StudyPlanId))
+                    .ToList();
+                if (orphanTasks.Count > 0)
+                {
+                    db.StudyPlanTasks.RemoveRange(orphanTasks);
+                    result.PurgedStudyPlanTasksCount = orphanTasks.Count;
+                }
+
+                // 8. UserAchievements
+                var orphanAchievements = (await db.UserAchievements.ToListAsync())
+                    .Where(a => !userIdSet.Contains(a.UserId) || !achievementIdSet.Contains(a.AchievementId))
+                    .ToList();
+                if (orphanAchievements.Count > 0)
+                {
+                    db.UserAchievements.RemoveRange(orphanAchievements);
+                    result.PurgedUserAchievementsCount = orphanAchievements.Count;
+                }
+
+                // 9. EvolutionClosedLoopInsights
+                var orphanInsights = (await db.EvolutionClosedLoopInsights.ToListAsync())
+                    .Where(i => !userIdSet.Contains(i.UserId))
+                    .ToList();
+                if (orphanInsights.Count > 0)
+                {
+                    db.EvolutionClosedLoopInsights.RemoveRange(orphanInsights);
+                    result.PurgedInsightsCount = orphanInsights.Count;
+                }
+
+                // 10. LlmGenerationLogs
+                var orphanLogs = (await db.LlmGenerationLogs.ToListAsync())
+                    .Where(l => !userIdSet.Contains(l.UserId) || (l.QuestionId.HasValue && !questionIdSet.Contains(l.QuestionId.Value)))
+                    .ToList();
+                if (orphanLogs.Count > 0)
+                {
+                    db.LlmGenerationLogs.RemoveRange(orphanLogs);
+                    result.PurgedLlmLogsCount = orphanLogs.Count;
                 }
 
                 if (result.TotalPurgedCount > 0)
