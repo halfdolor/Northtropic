@@ -147,6 +147,12 @@ namespace Northtropic.Services
                     plan.ActionReasons.Add($"检测到 {integrityAudit.TotalIssuesCount} 项孤儿/异常关联数据，建议执行事务级自愈清理；");
                     if (plan.UrgencyLevel == "Low") plan.UrgencyLevel = "Medium";
                 }
+                if (integrityAudit.TotalOptimizationCandidatesCount > 0)
+                {
+                    plan.RequiresOptimization = true;
+                    plan.ActionReasons.Add($"检测到 {integrityAudit.TotalOptimizationCandidatesCount} 项领域业务模型优化候选项，建议执行领域不变量自愈编排；");
+                    if (plan.UrgencyLevel == "Low") plan.UrgencyLevel = "Medium";
+                }
 
                 // 4. Determine Urgency
                 if (health.WalSizeBytes >= 10 * 1024 * 1024 || (health.FragmentationRatio >= 40.0 && health.FragmentationBytes >= 5 * 1024 * 1024) || !health.IsDatabaseHealthy || !health.IsForeignKeyHealthy || integrityAudit.TotalIssuesCount > 50)
@@ -294,6 +300,16 @@ namespace Northtropic.Services
                     {
                         result.PurgedOrphanCount = purgeRes.TotalPurgedCount;
                         result.ExecutedActions.Add($"业务孤儿数据自愈清理 ({purgeRes.TotalPurgedCount} 条)");
+                    }
+                }
+
+                // 动作 E: 全量领域模型不变量与重复副本统一自愈编排
+                if (plan.RequiresOptimization || plan.UrgencyLevel == "Critical")
+                {
+                    var healAllRes = await HealAllInvariantsAsync();
+                    if (healAllRes.Success && healAllRes.TotalHealedCount > 0)
+                    {
+                        result.ExecutedActions.Add($"全量领域模型不变量自愈 ({healAllRes.TotalHealedCount} 项)");
                     }
                 }
 
@@ -1754,18 +1770,21 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalOrphanLlmLogs} 条无主大模型推理日志 (所属用户或试题不存在)");
                 }
 
-                // 11. Corrupted Questions (单选/多选且 OptionsJson 格式无效，或空题干)
+                // 11. Corrupted Questions (单选/多选且 OptionsJson 格式无效，或空题干/学科，或难度/经验奖励越界)
                 var questionsToCheck = await db.Questions
-                    .Select(q => new { q.Id, q.Stem, q.Type, q.OptionsJson })
+                    .Select(q => new { q.Id, q.Stem, q.Type, q.OptionsJson, q.Difficulty, q.BaseExpReward, q.Subject })
                     .ToListAsync();
                 audit.TotalCorruptedQuestions = questionsToCheck.Count(q =>
                     string.IsNullOrWhiteSpace(q.Stem) ||
+                    q.Difficulty < 1 || q.Difficulty > 5 ||
+                    q.BaseExpReward < 0 || q.BaseExpReward > 100 ||
+                    string.IsNullOrWhiteSpace(q.Subject) ||
                     ((q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice) &&
                      (string.IsNullOrWhiteSpace(q.OptionsJson) || !q.OptionsJson.Trim().StartsWith("[")))
                 );
                 if (audit.TotalCorruptedQuestions > 0)
                 {
-                    audit.AuditDetails.Add($"发现 {audit.TotalCorruptedQuestions} 道试题格式破损 (选项缺失、非数组或空题干)");
+                    audit.AuditDetails.Add($"发现 {audit.TotalCorruptedQuestions} 道试题格式破损或元数据越界 (选项缺失、非数组、空题干/学科或难度奖惩越界)");
                 }
 
                 // 12. Questions Creator Topology (孤儿私有题与悬垂公共题)
@@ -1799,8 +1818,20 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {duplicateGroups.Count} 组共 {audit.TotalDuplicateQuestions} 道题库重复试题冗余副本");
                 }
 
-                // 14. User Gamification & Balance Invariants (负资产与等级脱节)
-                var users = await db.Users.Select(u => new { u.Id, u.Exp, u.Coins, u.Level }).ToListAsync();
+                // 14. User Gamification & Balance Invariants (负资产、等级脱节、连击越界、过期Buff或审核状态不齐)
+                var users = await db.Users.Select(u => new {
+                    u.Id,
+                    u.Exp,
+                    u.Coins,
+                    u.Level,
+                    u.CurrentStreak,
+                    u.TotalCorrect,
+                    u.ExpBoostUntil,
+                    u.GoldBoostUntil,
+                    u.ActiveTitle,
+                    u.AccountStatus,
+                    u.ApprovedAt
+                }).ToListAsync();
                 int invalidUsersCount = 0;
                 foreach (var u in users)
                 {
@@ -1813,7 +1844,12 @@ namespace Northtropic.Services
                         expectedLevel++;
                         needed = GamificationService.CalculateExpNeeded(expectedLevel);
                     }
-                    if (u.Exp < 0 || u.Coins < 0 || u.Level < 1 || (u.Exp >= 0 && u.Level != expectedLevel))
+                    if (u.Exp < 0 || u.Coins < 0 || u.Level < 1 || (u.Exp >= 0 && u.Level != expectedLevel) ||
+                        u.CurrentStreak > u.TotalCorrect ||
+                        (u.ExpBoostUntil.HasValue && u.ExpBoostUntil.Value < DateTime.Now.AddDays(-30)) ||
+                        (u.GoldBoostUntil.HasValue && u.GoldBoostUntil.Value < DateTime.Now.AddDays(-30)) ||
+                        string.IsNullOrWhiteSpace(u.ActiveTitle) ||
+                        (u.AccountStatus == UserAccountStatus.Approved && !u.ApprovedAt.HasValue))
                     {
                         invalidUsersCount++;
                     }
@@ -1821,7 +1857,7 @@ namespace Northtropic.Services
                 audit.TotalUsersWithInvalidBalances = invalidUsersCount;
                 if (audit.TotalUsersWithInvalidBalances > 0)
                 {
-                    audit.AuditDetails.Add($"发现 {audit.TotalUsersWithInvalidBalances} 个用户存在经验/金币异常或等级脱节");
+                    audit.AuditDetails.Add($"发现 {audit.TotalUsersWithInvalidBalances} 个用户存在经验/金币异常、连击越界、过期Buff或审核时间脱节");
                 }
 
                 // 15. StudyPlan Domain Invariants
@@ -1876,11 +1912,14 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalInvalidBindings} 条异常家校监护绑定 (包含自我绑定或冗余副本)");
                 }
 
-                // 17. HomeworkAssignment Domain Invariants (异常答题计数、未对齐的准确率/得分、完成状态脱节)
+                // 17. HomeworkAssignment Domain Invariants (异常答题计数、未对齐的准确率/得分、完成状态脱节、难度越界或元数据缺失)
                 var homeworkInvariants = await db.HomeworkAssignments
                     .Select(h => new {
                         h.Id,
                         h.QuestionCount,
+                        h.TargetDifficulty,
+                        h.Title,
+                        h.Subject,
                         h.TotalAnswered,
                         h.CorrectCount,
                         h.AccuracyRate,
@@ -1891,6 +1930,9 @@ namespace Northtropic.Services
                     .ToListAsync();
                 int invalidHomeworkCount = homeworkInvariants.Count(h =>
                     h.QuestionCount < 1 ||
+                    h.TargetDifficulty < 1 || h.TargetDifficulty > 5 ||
+                    string.IsNullOrWhiteSpace(h.Title) ||
+                    string.IsNullOrWhiteSpace(h.Subject) ||
                     h.TotalAnswered < 0 || h.TotalAnswered > h.QuestionCount ||
                     h.CorrectCount < 0 || h.CorrectCount > h.TotalAnswered ||
                     h.Score < 0 || h.Score > 100 ||
@@ -2478,6 +2520,11 @@ namespace Northtropic.Services
                     user.ResolvedErrorsCount = user.TotalCorrect;
                     changed = true;
                 }
+                if (user.CurrentStreak > user.TotalCorrect)
+                {
+                    user.CurrentStreak = user.TotalCorrect;
+                    changed = true;
+                }
 
                 int expNeeded = GamificationService.CalculateExpNeeded(user.Level);
                 while (user.Exp >= expNeeded)
@@ -2486,6 +2533,37 @@ namespace Northtropic.Services
                     user.Level++;
                     changed = true;
                     expNeeded = GamificationService.CalculateExpNeeded(user.Level);
+                }
+
+                // 清理过期 30 天以上的无效 Buff 时间戳，避免数据库长期残留冗余脏状态
+                if (user.ExpBoostUntil.HasValue && user.ExpBoostUntil.Value < DateTime.Now.AddDays(-30))
+                {
+                    user.ExpBoostUntil = null;
+                    changed = true;
+                }
+                if (user.GoldBoostUntil.HasValue && user.GoldBoostUntil.Value < DateTime.Now.AddDays(-30))
+                {
+                    user.GoldBoostUntil = null;
+                    changed = true;
+                }
+
+                // 规范化纯空白称号为默认青铜学童
+                if (string.IsNullOrWhiteSpace(user.ActiveTitle))
+                {
+                    user.ActiveTitle = "青铜学童";
+                    changed = true;
+                }
+
+                // 同步用户审核状态与时间戳领域闭环
+                if (user.AccountStatus == UserAccountStatus.Approved && !user.ApprovedAt.HasValue)
+                {
+                    user.ApprovedAt = user.RegisteredAt;
+                    changed = true;
+                }
+                if (user.AccountStatus == UserAccountStatus.Rejected && string.IsNullOrWhiteSpace(user.RejectReason))
+                {
+                    user.RejectReason = "未说明具体原因";
+                    changed = true;
                 }
 
                 if (changed) healedCount++;
@@ -2515,6 +2593,30 @@ namespace Northtropic.Services
                 if (h.QuestionCount < 1)
                 {
                     h.QuestionCount = 1;
+                    changed = true;
+                }
+
+                if (h.TargetDifficulty < 1 || h.TargetDifficulty > 5)
+                {
+                    h.TargetDifficulty = Math.Clamp(h.TargetDifficulty, 1, 5);
+                    changed = true;
+                }
+
+                if (string.IsNullOrWhiteSpace(h.Title))
+                {
+                    h.Title = "专属专项强化作业";
+                    changed = true;
+                }
+
+                if (string.IsNullOrWhiteSpace(h.Subject))
+                {
+                    h.Subject = "初中物理";
+                    changed = true;
+                }
+
+                if (h.ParentNote == null)
+                {
+                    h.ParentNote = string.Empty;
                     changed = true;
                 }
 
@@ -2992,6 +3094,53 @@ namespace Northtropic.Services
 
                 db.Questions.RemoveRange(unservableQuestions);
                 healedCount += unservableQuestions.Count;
+            }
+
+            // 3. 修复难度越界、经验奖励异常与关键元数据缺失
+            var allQuestions = await db.Questions.ToListAsync();
+            var unservableSet = unservableQuestions.Select(q => q.Id).ToHashSet();
+            var choiceSet = corruptedChoiceQuestions.Select(q => q.Id).ToHashSet();
+
+            foreach (var q in allQuestions)
+            {
+                if (unservableSet.Contains(q.Id)) continue;
+
+                bool modified = false;
+                if (q.Difficulty < 1 || q.Difficulty > 5)
+                {
+                    q.Difficulty = Math.Clamp(q.Difficulty, 1, 5);
+                    modified = true;
+                }
+                if (q.BaseExpReward < 0 || q.BaseExpReward > 100)
+                {
+                    q.BaseExpReward = Math.Clamp(q.BaseExpReward, 0, 100);
+                    modified = true;
+                }
+                if (string.IsNullOrWhiteSpace(q.Subject))
+                {
+                    q.Subject = "通用知识";
+                    modified = true;
+                }
+                if (string.IsNullOrWhiteSpace(q.Category))
+                {
+                    q.Category = "基础概念";
+                    modified = true;
+                }
+                if (string.IsNullOrWhiteSpace(q.GradeTarget))
+                {
+                    q.GradeTarget = "通用";
+                    modified = true;
+                }
+                if (q.Type == QuestionType.SingleChoice && string.IsNullOrWhiteSpace(q.CorrectAnswer))
+                {
+                    q.CorrectAnswer = "A";
+                    modified = true;
+                }
+
+                if (modified && !choiceSet.Contains(q.Id))
+                {
+                    healedCount++;
+                }
             }
 
             if (healedCount > 0)

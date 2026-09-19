@@ -3306,6 +3306,12 @@ namespace Northtropic.Services
                 s = s.Replace("^^", "^");
 
                 s = s.Replace("（", "(").Replace("）", ")").Replace("，", ",").Replace("：", ":");
+                // 全角方括号、花括号与六角括号归一 (如 【1, 2】 -> [1, 2], ［1, 2］ -> [1, 2], ｛1, 2｝ -> {1, 2})
+                s = s.Replace("【", "[").Replace("】", "]")
+                     .Replace("［", "[").Replace("］", "]")
+                     .Replace("｛", "{").Replace("｝", "}")
+                     .Replace("〖", "[").Replace("〗", "]");
+
                 // 中文教材分号区间与点坐标智能对齐 (如 [-1; 2] -> [-1, 2], (3; 4) -> (3, 4))
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=[\[\(][^\]\)]*?)[;；](?=[^\[\)]*?[\]\)])", ",");
                 // 全角数学运算符与符号归一
@@ -3407,7 +3413,11 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"([a-zA-Z]+)\^\\rightarrow|([a-zA-Z]+)\^\{\\rightarrow\}", "$1$2");
                 // 粗体/黑板粗体数学符号解构: \mathbb{R} -> R, \mathbf{a} -> a, \boldsymbol{a} -> a, \bm{a} -> a
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:mathbb|mathbf|boldsymbol|bm|mathrm|mathit)\s*\{([^}]+)\}", "$1");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:mathbb|mathbf|boldsymbol|bm|mathrm|mathit)\s+([a-zA-Z])\b", "$1");
+                // 反三角函数与高阶三角记法预解构 (在负幂展开前处理，防止 \sin^{-1} 误解构为 1/sin 或 csc)
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?(?:arcsin|asin)\b|\\?sin\^\{\s*-1\s*\}|\\?sin\^-1\b", "arcsin", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?(?:arccos|acos)\b|\\?cos\^\{\s*-1\s*\}|\\?cos\^-1\b", "arccos", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?(?:arctan|atan)\b|\\?tan\^\{\s*-1\s*\}|\\?tan\^-1\b", "arctan", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?(?:arccot|acot)\b|\\?cot\^\{\s*-1\s*\}|\\?cot\^-1\b", "arccot", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
                 // LaTeX 指数花括号规范化: x^{2} -> x^2, 10^{-3} -> 10^-3
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\^\{([^}]+)\}", "^$1");
@@ -3445,8 +3455,8 @@ namespace Northtropic.Services
                 // 3. lg 与 ln 花括号规范化
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?lg\s*\{([a-zA-Z0-9\+\-\*\/\^]+)\}", "lg($1)");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\?ln\s*\{([a-zA-Z0-9\+\-\*\/\^]+)\}", "ln($1)");
-                // 4. 三角与对数函数单项括号等价规范: 如 sin(x) -> sin x, ln(2) -> ln 2, lg(x) -> lg x
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|lg|exp)\s*\(\s*([a-zA-Z0-9]+)\s*\)", "$1 $2");
+                // 4. 三角与对数函数单项括号等价规范: 如 sin(x) -> sin x, ln(2) -> ln 2, lg(x) -> lg x, arcsin(x) -> arcsin x
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|arccot|asin|acos|atan|acot|ln|lg|exp)\s*\(\s*([a-zA-Z0-9]+)\s*\)", "$1 $2");
                 // 常用希腊字母与物理常数反斜杠剥离与统一转录: \theta / θ -> theta, \eta / η -> eta, \nu / ν -> nu, \Delta / Δ -> delta 等
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(theta|alpha|beta|gamma|lambda|mu|rho|omega|phi|sigma|delta|tau|eta|nu|epsilon|Delta|Omega|Phi)\b", "$1", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = s.Replace("θ", "theta").Replace("α", "alpha").Replace("β", "beta").Replace("γ", "gamma")
@@ -3690,8 +3700,12 @@ namespace Northtropic.Services
                 sLower = sLower.Replace("千米/小时", "km/h").Replace("千米每小时", "km/h").Replace("千米/时", "km/h");
                 sLower = sLower.Replace("赫兹", "hz").Replace("千赫", "khz").Replace("兆赫", "mhz").Replace("吉赫", "ghz");
                 sLower = sLower.Replace("千欧姆", "komega").Replace("千欧", "komega").Replace("兆欧", "momega").Replace("欧姆", "omega");
-                sLower = sLower.Replace("\\text{k}\\omega", "komega").Replace("\\mathrm{k}\\omega", "komega").Replace("k\\omega", "komega").Replace("m\\omega", "momega");
-                sLower = sLower.Replace("kω", "komega").Replace("mω", "momega").Replace("ω", "omega").Replace("\\omega", "omega");
+                // 流体动力学动力黏度与运动黏度优先规范化 (在单字“帕”和“平方米”归一前处理，防止词缀被提前拆解)
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bm\^?2\s*(?:/\s*s|[每/]?\s*秒)\b|平方米[每/]?秒", "m^2/s");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\b(?:pa|帕)\s*[\*·•]?\s*(?:s|秒)\b|(?:pa|帕)[·\*•]?(?:s|秒)|帕乘秒", "pa*s");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bn\s*[\*·•]?\s*s\s*/\s*m\^?2\b|\bn\s*[\*·•]?\s*s\s*[\*·•]?\s*m\^?-2\b|牛[顿]?[·\*•]?秒[每/]?平方米", "pa*s");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bkg\s*/\s*\(?\s*m\s*[\*·•]?\s*s\s*\)?|千克[每/]?\(?米[·\*•]?秒\)?", "pa*s");
+
                 // 物理面积与体积中文字符归一
                 sLower = sLower.Replace("平方米", "m^2").Replace("平方分米", "dm^2").Replace("平方厘米", "cm^2");
                 sLower = sLower.Replace("立方米", "m^3").Replace("立方分米", "dm^3").Replace("立方厘米", "cm^3");
@@ -3699,6 +3713,7 @@ namespace Northtropic.Services
                 sLower = sLower.Replace("特斯拉", "t").Replace("毫特", "mt").Replace("韦伯", "wb");
                 sLower = sLower.Replace("亨利", "h").Replace("法拉", "f").Replace("微法", "uf").Replace("皮法", "pf");
                 sLower = sLower.Replace("标准大气压", "atm").Replace("毫米汞柱", "mmhg");
+                sLower = sLower.Replace("千帕", "kpa").Replace("兆帕", "mpa").Replace("百帕", "hpa");
                 sLower = sLower.Replace("千瓦时", "kwh").Replace("度电", "kwh");
                 sLower = sLower.Replace("电子伏特", "ev").Replace("电子伏", "ev").Replace("兆电子伏", "mev");
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bm\s*[\*·]?\s*s\^?-2\b|m/s²|\bm\s+s\^-2\b", "m/s^2");
@@ -3783,6 +3798,45 @@ namespace Northtropic.Services
                 // 光度学照度与光通量单位等价: lx <=> lm/m^2 <=> 勒克斯 <=> 流明每平方米; lm <=> 流明
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\b(?:lm\s*(?:/\s*m\^?2|[\*·]?\s*m\^?-2))\b|流明[每/]?\(?(?:平方米|m\^?2)\)?|(?<=\d)\s*(?:lx|lux|勒克斯)\b", "lx");
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*(?:lm|lumen|流明)\b", "lm");
+
+
+                // 化学反应焓变与摩尔生成热单位等价: kJ/mol <=> 千焦每摩尔 <=> 千焦/摩尔 <=> 10^3 J/mol
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bkj\s*/\s*mol\b|\bkj\s*[\*·]?\s*mol\^?-1\b|千焦[耳]?[每/]?摩[尔]?", "kj/mol");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bj\s*/\s*mol\b|\bj\s*[\*·]?\s*mol\^?-1\b|焦[耳]?[每/]?摩[尔]?", "j/mol");
+
+                // 潜热/比燃烧热单位等价: kJ/kg <=> 千焦每千克; J/kg <=> 焦每千克
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bkj\s*/\s*kg\b|\bkj\s*[\*·]?\s*kg\^?-1\b|千焦[耳]?[每/]?千克", "kj/kg");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bj\s*/\s*kg\b|\bj\s*[\*·]?\s*kg\^?-1\b|焦[耳]?[每/]?千克", "j/kg");
+
+                // 摩尔质量单位等价: g/mol <=> 克每摩尔
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bg\s*/\s*mol\b|\bg\s*[\*·]?\s*mol\^?-1\b|克[每/]?摩[尔]?", "g/mol");
+
+                // 物理密度单位等价: g/cm^3 <=> g/mL <=> 克每立方厘米 <=> 克每毫升
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bg\s*/\s*(?:cm\^?3|ml)\b|\bg\s*[\*·]?\s*(?:cm\^3|ml)\^?-1\b|克[每/]?\(?(?:立方厘米|毫升|cm\^3)\)?", "g/cm^3");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bkg\s*/\s*m\^?3\b|\bkg\s*[\*·]?\s*m\^?-3\b|千克[每/]?\(?(?:立方米|m\^3)\)?", "kg/m^3");
+
+                // 声压级与声音强度: dB <=> 分贝
+                sLower = sLower.Replace("分贝", "db");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*(?:db|分贝)\b", "db");
+
+                // 发光强度: cd <=> 坎德拉 <=> 坎
+                sLower = sLower.Replace("坎德拉", "cd");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*(?:cd|坎德拉|坎)\b", "cd");
+
+                // 微观长度与波长单位: nm <=> 纳米; um <=> 微米; pm <=> 皮米
+                sLower = sLower.Replace("纳米", "nm").Replace("微米", "um").Replace("皮米", "pm").Replace("μm", "um");
+
+                // 放射性核素活度与辐射剂量: Bq <=> 贝克勒尔 <=> 贝克; Gy <=> 戈瑞; Sv <=> 希沃特
+                sLower = sLower.Replace("贝克勒尔", "bq").Replace("贝克", "bq").Replace("戈瑞", "gy").Replace("希沃特", "sv");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*(?:bq|贝克勒尔|贝克)\b", "bq");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*(?:gy|戈瑞)\b", "gy");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*(?:sv|希沃特)\b", "sv");
+
+                // 反三角函数规范化: 如 \arcsin, \sin^{-1}, asin -> arcsin; \arccos, \cos^{-1}, acos -> arccos; \arctan, \tan^{-1}, atan -> arctan
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\\?(?:arcsin|asin)\b|\\?sin\^\{\s*-1\s*\}|\\?sin\^-1\b", "arcsin");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\\?(?:arccos|acos)\b|\\?cos\^\{\s*-1\s*\}|\\?cos\^-1\b", "arccos");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\\?(?:arctan|atan)\b|\\?tan\^\{\s*-1\s*\}|\\?tan\^-1\b", "arctan");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\\?(?:arccot|acot)\b|\\?cot\^\{\s*-1\s*\}|\\?cot\^-1\b", "arccot");
 
                 // 化学同位素规范化: 如 ^{14}c, ^{14}_{6}c, c-14, 碳-14, 碳14 -> c-14
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\^\{?(\d+)\}?(?:_\{?\d+\}?)?([a-z]+)", "$2-$1");
