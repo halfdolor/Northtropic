@@ -3452,12 +3452,21 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\b(theta|alpha|beta|gamma|lambda|mu|rho|omega|phi|sigma|delta|tau|eta|nu|epsilon)\s+(?=[a-zA-Z0-9])", "$1", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 // 摄氏度与热力学温度规范化 (在剥离角度"度"前先行保护归一)
                 s = s.Replace("摄氏度", "℃").Replace("摄氏", "℃");
+                // 弧度单位保护 (防止"度"字被剥离)
+                s = s.Replace("弧度/秒", "rad/s").Replace("弧度每秒", "rad/s").Replace("弧度", "rad");
                 // 角度与度数符号等价规范: ^\circ, °, 度, \circ, \text{°}
                 s = s.Replace("^\\circ", "").Replace("^{\\circ}", "").Replace("\\text{°}", "").Replace("°", "").Replace("度", "").Replace("\\circ", "");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=\d)\s*(?:deg|度|°|\^\{\\circ\}|\^\\circ|\\circ)", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 // 圆周率符号与角度几何符号归一
                 s = s.Replace("\\pi", "pi").Replace("π", "pi");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?:\\angle|∠)\s*", "∠");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=^|[^a-zA-Z0-9\u4e00-\u9fa5])角\s*([A-Za-z0-9]+)", "∠$1");
+                // 几何平行与垂直符号归一
+                s = s.Replace("\\parallel", "//").Replace("平行于", "//").Replace("平行", "//");
+                s = s.Replace("\\perp", "⊥").Replace("\\bot", "⊥").Replace("垂直于", "⊥").Replace("垂直", "⊥");
+                // 集合包含关系符号归一 (真包含于必须排在包含于之前以防词缀短截)
+                s = s.Replace("\\subsetneqq", "⫋").Replace("\\subsetneq", "⫋").Replace("真包含于", "⫋");
+                s = s.Replace("\\subseteq", "⊆").Replace("包含于", "⊆");
                 // LaTeX 运算符与关系符解构
                 s = s.Replace("\\times", "*").Replace("\\cdot", "*").Replace("\\div", "/").Replace("×", "*").Replace("·", "*").Replace("•", "*").Replace("∙", "*");
                 s = s.Replace("\\leq", "<=").Replace("\\le", "<=").Replace("\\geq", ">=").Replace("\\ge", ">=");
@@ -3675,6 +3684,30 @@ namespace Northtropic.Services
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bm\s*[\*·]?\s*s\^?-2\b|m/s²|\bm\s+s\^-2\b", "m/s^2");
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bn\s*[\*·]\s*m\b|\bn\s+m\b", "n*m");
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bt\s*[\*·]\s*m\^?2\b|\bt\s+m\^?2\b", "wb");
+
+                // 物理动量与冲量单位等价: kg·m/s <=> N·s
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bkg\s*[\*·]?\s*m\s*(?:/\s*s|[\*·]?\s*s\^?-1)\b|\bkg\s+m\s*(?:/\s*s|\s+s\^-1)\b|千克[·\*]?米[每/]?秒", "n*s");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bn\s*[\*·]?\s*s\b|\bn\s+s\b|牛[·\*]?秒", "n*s");
+
+                // 物理功率与能率单位等价: J/s <=> W
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bj\s*(?:/\s*s|[\*·]?\s*s\^?-1)\b|\bj\s+s\^-1\b|焦[耳]?[每/]?秒", "w");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*(?:瓦特|瓦)\b", "w");
+
+                // 电场强度单位等价: V/m <=> N/C
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bv\s*(?:/\s*m|[\*·]?\s*m\^?-1)\b|\bv\s+m\^-1\b|伏[特]?[每/]?米", "v/m");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bn\s*(?:/\s*c|[\*·]?\s*c\^?-1)\b|\bn\s+c\^-1\b|牛[顿]?[每/]?库[仑]?", "v/m");
+
+                // 电流强度与电荷流速等价: C/s <=> A
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bc\s*(?:/\s*s|[\*·]?\s*s\^?-1)\b|\bc\s+s\^-1\b|库[仑]?[每/]?秒", "a");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*(?:安培|安)\b", "a");
+
+                // 角速度单位等价: rad/s <=> rad*s^-1
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\brad\s*(?:/\s*s|[\*·]?\s*s\^?-1)\b|\brad\s+s\^-1\b|弧度[每/]?秒", "rad/s");
+
+                // 电能与功单位: kW·h <=> 千瓦时 <=> 度
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bkw\s*[\*·]?\s*h\b|\bkw\s+h\b", "kwh");
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*度\b", "kwh");
+
                 // 化学同位素规范化: 如 ^{14}c, ^{14}_{6}c, c-14, 碳-14, 碳14 -> c-14
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\^\{?(\d+)\}?(?:_\{?\d+\}?)?([a-z]+)", "$2-$1");
                 sLower = sLower.Replace("碳-14", "c-14").Replace("碳14", "c-14")
@@ -3688,7 +3721,8 @@ namespace Northtropic.Services
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\((?:\\)?(sin|cos|tan|cot|sec|csc)\(([a-zA-Z0-9]+)\)\)\^(\d+)", "($1($2))^$3");
 
                 // 命题逻辑充分必要条件规范化
-                if (sLower == "充分必要条件" || sLower == "充要条件" || sLower == "充分且必要条件" || sLower == "充要")
+                if (sLower == "充分必要条件" || sLower == "充要条件" || sLower == "充分且必要条件" || sLower == "充要" ||
+                    sLower == "当且仅当" || sLower == "<=>" || sLower == "\\iff" || sLower == "iff")
                 {
                     return "充要条件";
                 }

@@ -335,6 +335,33 @@ namespace Northtropic.Services
         public DateTime ExecutedAt { get; set; } = DateTime.Now;
     }
 
+    public class DataIntegrityHealAllResultDto
+    {
+        public bool Success { get; set; } = true;
+        public string Message { get; set; } = string.Empty;
+        public int TotalHealedCount => PurgedOrphansCount +
+                                       DeduplicatedQuestionsCount +
+                                       HealedCorruptedQuestionsCount +
+                                       HealedBalancesCount +
+                                       HealedStudyPlansCount +
+                                       HealedHomeworkCount +
+                                       HealedErrorBooksCount +
+                                       HealedBindingsCount +
+                                       HealedFavoritesCount;
+        public int PurgedOrphansCount { get; set; }
+        public int DeduplicatedQuestionsCount { get; set; }
+        public int HealedCorruptedQuestionsCount { get; set; }
+        public int HealedBalancesCount { get; set; }
+        public int HealedStudyPlansCount { get; set; }
+        public int HealedHomeworkCount { get; set; }
+        public int HealedErrorBooksCount { get; set; }
+        public int HealedBindingsCount { get; set; }
+        public int HealedFavoritesCount { get; set; }
+        public double ElapsedMilliseconds { get; set; }
+        public List<string> OperationsExecuted { get; set; } = new();
+        public DateTime ExecutedAt { get; set; } = DateTime.Now;
+    }
+
     public interface ISystemHealthService
     {
         Task<SystemHealthDto> GetSystemHealthAsync();
@@ -362,6 +389,8 @@ namespace Northtropic.Services
         Task<int> HealStudyPlanInvariantsAsync();
         Task<int> HealStudentParentBindingInvariantsAsync();
         Task<int> HealUserFavoriteInvariantsAsync();
+        Task<int> HealCorruptedQuestionsAsync();
+        Task<DataIntegrityHealAllResultDto> HealAllInvariantsAsync();
         IReadOnlyList<SystemArchitectureEvent> GetRecentArchitectureEvents(string? category = null, string? level = null, int? maxCount = null);
         ArchitectureTelemetrySummaryDto GetArchitectureTelemetrySummary();
         Task<AdaptiveMaintenancePlanDto> EvaluateAdaptiveMaintenancePlanAsync();
@@ -369,4 +398,5 @@ namespace Northtropic.Services
         void RecordArchitectureEvent(string category, string level, string message, double? durationMs = null);
     }
 }
+
 

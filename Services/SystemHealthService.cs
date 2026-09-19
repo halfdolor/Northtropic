@@ -1754,15 +1754,18 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalOrphanLlmLogs} 条无主大模型推理日志 (所属用户或试题不存在)");
                 }
 
-                // 11. Corrupted Questions (单选/多选且 OptionsJson 格式无效)
-                var choiceQuestions = await db.Questions
-                    .Where(q => q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
-                    .Select(q => new { q.Id, q.OptionsJson })
+                // 11. Corrupted Questions (单选/多选且 OptionsJson 格式无效，或空题干)
+                var questionsToCheck = await db.Questions
+                    .Select(q => new { q.Id, q.Stem, q.Type, q.OptionsJson })
                     .ToListAsync();
-                audit.TotalCorruptedQuestions = choiceQuestions.Count(q => string.IsNullOrWhiteSpace(q.OptionsJson) || !q.OptionsJson.Trim().StartsWith("["));
+                audit.TotalCorruptedQuestions = questionsToCheck.Count(q =>
+                    string.IsNullOrWhiteSpace(q.Stem) ||
+                    ((q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice) &&
+                     (string.IsNullOrWhiteSpace(q.OptionsJson) || !q.OptionsJson.Trim().StartsWith("[")))
+                );
                 if (audit.TotalCorruptedQuestions > 0)
                 {
-                    audit.AuditDetails.Add($"发现 {audit.TotalCorruptedQuestions} 道选择题选项格式异常 (未包含合法选项列表)");
+                    audit.AuditDetails.Add($"发现 {audit.TotalCorruptedQuestions} 道试题格式破损 (选项缺失、非数组或空题干)");
                 }
 
                 // 12. Questions Creator Topology (孤儿私有题与悬垂公共题)
@@ -2775,6 +2778,144 @@ namespace Northtropic.Services
             }
 
             return healedCount;
+        }
+
+        public async Task<int> HealCorruptedQuestionsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            int healedCount = 0;
+
+            // 1. 修复选择题中 OptionsJson 破损（为空、空白或非 JSON 数组）的试题
+            var corruptedChoiceQuestions = await db.Questions
+                .Where(q => (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice) &&
+                            (string.IsNullOrWhiteSpace(q.OptionsJson) || !q.OptionsJson.Trim().StartsWith("[")))
+                .ToListAsync();
+
+            foreach (var q in corruptedChoiceQuestions)
+            {
+                var defaultOptions = new[] { "A. 选项A", "B. 选项B", "C. 选项C", "D. 选项D" };
+                q.OptionsJson = System.Text.Json.JsonSerializer.Serialize(defaultOptions, new System.Text.Json.JsonSerializerOptions
+                {
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                });
+                healedCount++;
+            }
+
+            // 2. 清理题干为空白的无意义脏数据试题及其级联引用
+            var unservableQuestions = await db.Questions
+                .Where(q => string.IsNullOrWhiteSpace(q.Stem))
+                .ToListAsync();
+
+            if (unservableQuestions.Count > 0)
+            {
+                var unservableIds = unservableQuestions.Select(q => q.Id).ToHashSet();
+
+                var relatedErrors = await db.ErrorItems.Where(e => unservableIds.Contains(e.QuestionId)).ToListAsync();
+                if (relatedErrors.Count > 0) db.ErrorItems.RemoveRange(relatedErrors);
+
+                var relatedRecords = await db.PracticeRecords.Where(r => unservableIds.Contains(r.QuestionId)).ToListAsync();
+                if (relatedRecords.Count > 0) db.PracticeRecords.RemoveRange(relatedRecords);
+
+                var relatedFavorites = await db.UserFavorites.Where(f => unservableIds.Contains(f.QuestionId)).ToListAsync();
+                if (relatedFavorites.Count > 0) db.UserFavorites.RemoveRange(relatedFavorites);
+
+                var relatedLogs = await db.LlmGenerationLogs.Where(l => l.QuestionId.HasValue && unservableIds.Contains(l.QuestionId.Value)).ToListAsync();
+                if (relatedLogs.Count > 0)
+                {
+                    foreach (var log in relatedLogs)
+                    {
+                        log.QuestionId = null;
+                    }
+                }
+
+                db.Questions.RemoveRange(unservableQuestions);
+                healedCount += unservableQuestions.Count;
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("QuestionIntegritySelfHealing", "Success", $"自愈修复并清理了 {healedCount} 道格式损坏/选项破损试题");
+            }
+
+            return healedCount;
+        }
+
+        public async Task<DataIntegrityHealAllResultDto> HealAllInvariantsAsync()
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var result = new DataIntegrityHealAllResultDto();
+
+            try
+            {
+                // 1. 清理孤儿记录
+                var purgeRes = await PurgeOrphanedRecordsAsync();
+                result.PurgedOrphansCount = purgeRes.TotalPurgedCount;
+                if (result.PurgedOrphansCount > 0)
+                    result.OperationsExecuted.Add($"清理孤儿记录: {result.PurgedOrphansCount} 条");
+
+                // 2. 题库去重
+                var dedupRes = await DeduplicateQuestionsAsync();
+                result.DeduplicatedQuestionsCount = dedupRes.DuplicateQuestionsPurged;
+                if (result.DeduplicatedQuestionsCount > 0)
+                    result.OperationsExecuted.Add($"题库去重: 清理 {result.DeduplicatedQuestionsCount} 道冗余副本");
+
+                // 3. 试题选项与破损试题自愈
+                result.HealedCorruptedQuestionsCount = await HealCorruptedQuestionsAsync();
+                if (result.HealedCorruptedQuestionsCount > 0)
+                    result.OperationsExecuted.Add($"试题格式与选项自愈: 修复/清理 {result.HealedCorruptedQuestionsCount} 道试题");
+
+                // 4. 用户资产与等级校准
+                result.HealedBalancesCount = await HealGamificationInvariantsAsync();
+                if (result.HealedBalancesCount > 0)
+                    result.OperationsExecuted.Add($"游戏化资产与等级校准: 修复 {result.HealedBalancesCount} 个用户");
+
+                // 5. 学习计划与任务领域不变量自愈
+                result.HealedStudyPlansCount = await HealStudyPlanInvariantsAsync();
+                if (result.HealedStudyPlansCount > 0)
+                    result.OperationsExecuted.Add($"学习计划领域不变量自愈: 修正 {result.HealedStudyPlansCount} 项记录");
+
+                // 6. 作业分配领域不变量自愈
+                result.HealedHomeworkCount = await HealHomeworkAssignmentInvariantsAsync();
+                if (result.HealedHomeworkCount > 0)
+                    result.OperationsExecuted.Add($"作业分配领域不变量自愈: 修正 {result.HealedHomeworkCount} 份作业");
+
+                // 7. 错题副本状态一致性修复
+                result.HealedErrorBooksCount = await HealErrorBookInvariantsAsync();
+                if (result.HealedErrorBooksCount > 0)
+                    result.OperationsExecuted.Add($"错题副本领域不变量自愈: 修正 {result.HealedErrorBooksCount} 条记录");
+
+                // 8. 家校监护绑定自愈
+                result.HealedBindingsCount = await HealStudentParentBindingInvariantsAsync();
+                if (result.HealedBindingsCount > 0)
+                    result.OperationsExecuted.Add($"家校监护绑定自愈: 清理 {result.HealedBindingsCount} 条异常绑定");
+
+                // 9. 收藏夹冗余自愈
+                result.HealedFavoritesCount = await HealUserFavoriteInvariantsAsync();
+                if (result.HealedFavoritesCount > 0)
+                    result.OperationsExecuted.Add($"收藏夹冗余副本自愈: 清理 {result.HealedFavoritesCount} 条重复记录");
+
+                sw.Stop();
+                result.ElapsedMilliseconds = sw.Elapsed.TotalMilliseconds;
+                result.Success = true;
+                result.Message = result.TotalHealedCount > 0
+                    ? $"全量自愈编排执行完成：共自愈收敛 {result.TotalHealedCount} 项领域不变量异常 (耗时 {result.ElapsedMilliseconds:F1}ms)"
+                    : $"全量自愈编排校验完成：全库各领域实体状态完全健康，无异常不变量 (耗时 {result.ElapsedMilliseconds:F1}ms)";
+
+                RecordArchitectureEvent("OrchestratedDomainHealing", "Success", result.Message, result.ElapsedMilliseconds);
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                result.Success = false;
+                result.ElapsedMilliseconds = sw.Elapsed.TotalMilliseconds;
+                result.Message = $"全量自愈编排执行失败: {ex.Message}";
+                RecordArchitectureEvent("OrchestratedDomainHealing", "Error", result.Message, result.ElapsedMilliseconds);
+            }
+
+            return result;
         }
     }
 }

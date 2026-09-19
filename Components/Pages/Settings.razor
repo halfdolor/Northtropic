@@ -989,6 +989,9 @@
                                     }
                                 </div>
                                 <div class="d-flex align-center gap-2 flex-wrap">
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.RocketLaunch" OnClick="HealAllInvariantsAsync" Disabled="@_isHealingAllInvariants" Class="font-weight-bold" Style="background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: white;">
+                                        @(_isHealingAllInvariants ? "全量编排自愈中..." : "🚀 一键全库编排自愈")
+                                    </MudButton>
                                     <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Search" OnClick="RunDataIntegrityAuditAsync" Disabled="@_isAuditingIntegrity">
                                         @(_isAuditingIntegrity ? "全库审计中..." : "🔍 审计数据拓扑")
                                     </MudButton>
@@ -1004,6 +1007,9 @@
                                             @(_isDeduplicatingQuestions ? "去重自愈中..." : "🔄 题库去重与重定向")
                                         </MudButton>
                                     }
+                                    <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.BuildCircle" OnClick="HealCorruptedQuestionsAsync" Disabled="@_isHealingCorruptedQuestions" Class="font-weight-bold">
+                                        @(_isHealingCorruptedQuestions ? "自愈中..." : "🩺 试题选项与破损自愈")
+                                    </MudButton>
                                     @if (_dataIntegrityAudit != null && _dataIntegrityAudit.UsersWithInvalidBalancesCount > 0)
                                     {
                                         <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Balance" OnClick="HealGamificationInvariantsAsync" Disabled="@_isHealingBalances" Class="font-weight-bold">
@@ -1027,6 +1033,30 @@
                                     </MudButton>
                                 </div>
                             </div>
+
+                            @if (_healAllInvariantsResult != null)
+                            {
+                                <MudAlert Severity="@(_healAllInvariantsResult.Success ? Severity.Success : Severity.Warning)" Variant="Variant.Outlined" Class="mt-2 mb-3 rounded-lg">
+                                    <div class="d-flex flex-column gap-1">
+                                        <div class="d-flex align-center justify-space-between flex-wrap">
+                                            <span class="font-weight-bold">
+                                                @(_healAllInvariantsResult.Success ? "✅ 全库领域不变量全量编排自愈完成" : "⚠️ 全量自愈编排执行预警")
+                                            </span>
+                                            <span style="font-size: 0.75rem; opacity: 0.9;">总耗时: @_healAllInvariantsResult.ElapsedMilliseconds.ToString("F1") ms | 共收敛修复: @_healAllInvariantsResult.TotalHealedCount 项</span>
+                                        </div>
+                                        <span style="font-size: 0.82rem;">@_healAllInvariantsResult.Message</span>
+                                        @if (_healAllInvariantsResult.OperationsExecuted.Any())
+                                        {
+                                            <div class="d-flex align-center gap-1 flex-wrap mt-1">
+                                                @foreach (var op in _healAllInvariantsResult.OperationsExecuted)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Dark" Variant="Variant.Filled" Style="font-size: 0.7rem; height: 20px;">@op</MudChip>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                </MudAlert>
+                            }
 
                             @if (_dataIntegrityAudit != null)
                             {
@@ -1124,6 +1154,14 @@
                                             <div class="mud-text-secondary" style="font-size: 0.72rem;">收藏重复副本</div>
                                             <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.DuplicateFavoritesCount > 0 ? "#ef4444" : "#10b981");">
                                                 @_dataIntegrityAudit.DuplicateFavoritesCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">破损试题/选项</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalCorruptedQuestions > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.TotalCorruptedQuestions
                                             </div>
                                         </div>
                                     </MudItem>
@@ -1391,6 +1429,9 @@
     private bool _isHealingHomeworkAssignments = false;
     private bool _isHealingBindings = false;
     private bool _isHealingFavorites = false;
+    private bool _isHealingCorruptedQuestions = false;
+    private bool _isHealingAllInvariants = false;
+    private DataIntegrityHealAllResultDto? _healAllInvariantsResult;
 
     private void FilterTelemetryEvents()
     {
@@ -2059,6 +2100,59 @@
         finally
         {
             _isHealingFavorites = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HealCorruptedQuestionsAsync()
+    {
+        _isHealingCorruptedQuestions = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealCorruptedQuestionsAsync();
+            Snackbar.Add($"🩺 试题格式与选项自愈完成：成功修复/清理 {healedCount} 道异常试题！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+            FilterTelemetryEvents();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"试题自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingCorruptedQuestions = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HealAllInvariantsAsync()
+    {
+        _isHealingAllInvariants = true;
+        StateHasChanged();
+        try
+        {
+            _healAllInvariantsResult = await SystemHealthService.HealAllInvariantsAsync();
+            if (_healAllInvariantsResult.Success)
+            {
+                Snackbar.Add($"🚀 全库领域不变量全量自愈编排完成：共自愈 {_healAllInvariantsResult.TotalHealedCount} 项领域异常！", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"全量自愈执行预警: {_healAllInvariantsResult.Message}", Severity.Warning);
+            }
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+            await LoadBackupsAndTelemetryAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"全量自愈执行异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingAllInvariants = false;
             StateHasChanged();
         }
     }
