@@ -922,13 +922,19 @@ namespace Northtropic.Services
                 // 国际单位制科学词头换算等价 (如 A与mA、kWh与度与J、h与min与s、kHz与Hz、kJ与J、kΩ与Ω、L与mL、mol/L与mmol/L、g/cm³与kg/m³等) 与物理工程量纲
                 if (CheckScientificUnitMultiplierEquivalence(user, correct) || CheckScientificUnitMultiplierEquivalence(normU, normC))
                 {
-                    return $"国际单位制科学词头换算等价（物理与工程量纲、化学量纲智能换算）：已自动对齐体积容积（L/mL/m³/dm³）、物质的量浓度（mol/L与mmol/L）、密度（g/cm³与kg/m³）、磁通量（Wb/Mx）、电感（H/mH）、电导（S/mS）、电流（A/mA/μA）、电能度数（kWh/度/J）、时间（h/min/s）、频率（Hz/kHz/MHz）、电容（F/uF/nF/pF）、速度（km/h与m/s）、功率（W/kW/MW）、压强（Pa/kPa/MPa）、电压、阻抗或力学等理化工程量纲智能换算，对应标准答案 [{correct}]";
+                    return $"国际单位制科学词头换算等价（物理与工程量纲、理化科学量纲与单位换算等价、化学量纲智能换算）：已自动对齐体积容积（L/mL/m³/dm³）、物质的量浓度（mol/L与mmol/L）、密度（g/cm³与kg/m³）、热学比热容与潜热、磁感应强度与电场强度、磁通量（Wb/Mx）、电感（H/mH）、电导（S/mS）、电流（A/mA/μA）、电能度数（kWh/度/J）、时间（h/min/s）、频率（Hz/kHz/MHz）、电容（F/uF/nF/pF）、速度（km/h与m/s）、功率（W/kW/MW）、压强（Pa/kPa/MPa）、电压、阻抗或力学等理化工程量纲智能换算，对应标准答案 [{correct}]";
                 }
 
-                // 生物遗传学基因型等位基因与基因座置换等价 (如 AaBb <=> BbAa <=> aAbB, AaBbCc <=> CcBbAa, X^B X^b <=> X^b X^B)
+                // 生物遗传学基因型等位基因与基因座置换等价 (如 AaBb <=> BbAa <=> aAbB, AaBbCc <=> CcBbAa, X^B X^b <=> X^b X^B, I^A I^B <=> I^B I^A)
                 if ((CheckGenotypeEquivalence(user, correct) || CheckGenotypeEquivalence(normU, normC)) && normU != normC)
                 {
-                    return $"生物遗传学基因型等价：已自动识别孟德尔遗传规律中独立遗传基因座（如 {user} 与 {correct}）的等位基因顺序与因式置换等价性，对应标准答案 [{correct}]";
+                    return $"生物遗传学基因型等价：已自动识别孟德尔遗传规律、ABO血型或伴性遗传等位基因显隐性排序与因式置换等价性（如 {user} 与 {correct}），对应标准答案 [{correct}]";
+                }
+
+                // 数学排列组合符号记号等价 (C_n^m / \binom{n}{m} / A_n^m / P_n^m 等)
+                if (CheckCombinatoricsEquivalence(user, correct) || CheckCombinatoricsEquivalence(normU, normC))
+                {
+                    return $"数学排列组合记号等价：已自动识别排列组合记号（C/A/P/组合数展开）的数理等价性，对应标准表达 [{correct}]";
                 }
 
                 // 复数代数形式等价 (z = a + bi, bi + a, 0 + bi 等，需包含虚数单位 i)
@@ -5182,6 +5188,12 @@ namespace Northtropic.Services
                 return true;
             }
 
+            // 数学排列组合记号等价 (如 C_n^m <=> \binom{n}{m} <=> C(n, m), A_n^m <=> P_n^m <=> A(n, m))
+            if (CheckCombinatoricsEquivalence(user, correct) || CheckCombinatoricsEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
             // 规范化多元方程解集无序置换等价匹配: 如 "y=3,x=2" 与 "x=2,y=3"
             if (normUser.Contains(',') && normUser.Contains('=') && normCorrect.Contains(',') && normCorrect.Contains('='))
             {
@@ -6039,6 +6051,15 @@ namespace Northtropic.Services
                 c = System.Text.RegularExpressions.Regex.Replace(c, @"(?<=\d)\s*S\b", "西门子");
             }
 
+            // 磁学磁感应强度特斯拉 (T) 语境预处理，避免与质量单位吨 (t) 混淆
+            bool isMagneticContext = System.Text.RegularExpressions.Regex.IsMatch(u, @"(?:特斯拉|高斯|gauss|gs|毫特|mT|Wb/m|韦伯)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
+                                     System.Text.RegularExpressions.Regex.IsMatch(c, @"(?:特斯拉|高斯|gauss|gs|毫特|mT|Wb/m|韦伯)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (isMagneticContext)
+            {
+                u = System.Text.RegularExpressions.Regex.Replace(u, @"(?<=\d)\s*T\b", "特斯拉");
+                c = System.Text.RegularExpressions.Regex.Replace(c, @"(?<=\d)\s*T\b", "特斯拉");
+            }
+
             static bool TryParseUnitNumber(string s, out double num)
             {
                 num = 0;
@@ -6131,10 +6152,23 @@ namespace Northtropic.Services
                     (@"n\*s|n·s|n\s*s|牛\*秒|牛·秒|牛\s*秒|牛秒", 1.0, "momentum"),
                     (@"kg\*m/s|kg·m/s|kg\s*m/s|千克\*米/秒|千克·米/秒|千克\s*米/秒|千克米/秒|公斤\*米/秒|公斤·米/秒|公斤米/秒", 1.0, "momentum"),
 
-                    // 磁学磁感应强度 (T, mT, Wb/m^2)
+                    // 比热容 (J/(kg·℃), J/(kg·K), kJ/(kg·K), 焦耳每千克摄氏度 等)
+                    (@"kj/(?:\(?\s*kg\s*[\*·]?\s*(?:k|℃|°c|c|开|摄氏度)\s*\)?)|千焦(?:每|/)(?:\(?\s*(?:千克|kg)\s*[\*·]?\s*(?:开|摄氏度|度|k|℃)\s*\)?)|千焦每千克开|千焦每千克摄氏度", 1000.0, "specific_heat"),
+                    (@"j/(?:\(?\s*kg\s*[\*·]?\s*(?:k|℃|°c|c|开|摄氏度)\s*\)?)|(?:焦耳|焦)(?:每|/)(?:\(?\s*(?:千克|kg)\s*[\*·]?\s*(?:开|摄氏度|度|k|℃)\s*\)?)|焦耳每千克开|焦耳每千克摄氏度|焦每千克开|焦每千克摄氏度", 1.0, "specific_heat"),
+
+                    // 比潜热 / 熔化热 / 汽化热 (J/kg, kJ/kg)
+                    (@"kj/kg|千焦/千克|千焦每千克", 1000.0, "latent_heat"),
+                    (@"j/kg|焦/千克|焦耳每千克|焦每千克", 1.0, "latent_heat"),
+
+                    // 电场强度 (V/m, kV/m, N/C)
+                    (@"kv/m|千伏/米|千伏每米", 1000.0, "efield"),
+                    (@"v/m|伏/米|伏每米|n/c|牛/库|牛顿每库仑|牛每库", 1.0, "efield"),
+
+                    // 磁学磁感应强度 (T, mT, Wb/m^2, Gs, Gauss)
                     (@"wb/m\^2|wb/m²|wb/m2|韦伯/平方米|韦伯每平方米", 1.0, "mag"),
                     ("mt|毫特", 1e-3, "mag"),
-                    ("特斯拉|特", 1.0, "mag"),
+                    ("特斯拉|特|tesla", 1.0, "mag"),
+                    (@"gauss|高斯|gs", 1e-4, "mag"),
 
                     // 磁学磁通量 (Wb, mWb, μWb, Mx)
                     (@"mwb|毫韦伯|毫韦", 1e-3, "flux"),
@@ -6270,6 +6304,13 @@ namespace Northtropic.Services
             c = c.Trim();
             if (string.Equals(u, c, StringComparison.OrdinalIgnoreCase)) return true;
 
+            // 0. ABO 血型复等位基因自然书写等价: 如 I^A I^B <=> I^B I^A <=> I(A)I(B) <=> IAIB, I^A i <=> i I^A, I^B i <=> i I^B, ii
+            if (TryCanonicalizeAboGenotype(u, out var aboU) &&
+                TryCanonicalizeAboGenotype(c, out var aboC))
+            {
+                if (string.Equals(aboU, aboC, StringComparison.Ordinal)) return true;
+            }
+
             // 1. 杂交/测交亲本组合无序对等: 如 AaBb × aabb 与 aabb × AaBb
             string[] crossSeparators = new[] { "×", "*", " x ", " X " };
             foreach (var sep in crossSeparators)
@@ -6287,7 +6328,14 @@ namespace Northtropic.Services
                 }
             }
 
-            // 2. 伴性遗传基因型: 如 X^B X^b <=> X^b X^B, X^B Y <=> Y X^B, X^{B}X^{b} 等
+            // 2. 伴性遗传或常染色体与伴性遗传混合基因型 / 配子: 如 Aa X^B Y <=> X^B Y Aa <=> aA Y X^B, Aa X^B X^b <=> X^B X^b Aa, AX^B <=> X^B A
+            if (TryCanonicalizeHybridGenotype(u, out var canonHybU) &&
+                TryCanonicalizeHybridGenotype(c, out var canonHybC))
+            {
+                if (string.Equals(canonHybU, canonHybC, StringComparison.Ordinal)) return true;
+            }
+
+            // 3. 伴性遗传基因型: 如 X^B X^b <=> X^b X^B, X^B Y <=> Y X^B, X^{B}X^{b} 等
             static string NormalizeSexLinked(string s)
             {
                 return s.Replace(" ", "").Replace("{", "").Replace("}", "");
@@ -6306,11 +6354,83 @@ namespace Northtropic.Services
                 }
             }
 
-            // 3. 孟德尔常染色体多基因座基因型 (二倍体或配子单倍体): 如 AaBb <=> BbAa <=> aAbB, AaBbCc <=> CcBbAa, AAbb <=> bbAA
+            // 4. 孟德尔常染色体多基因座基因型 (二倍体或配子单倍体): 如 AaBb <=> BbAa <=> aAbB, AaBbCc <=> CcBbAa, AAbb <=> bbAA
             if (TryCanonicalizeAutosomalGenotype(u, out var canonU) &&
                 TryCanonicalizeAutosomalGenotype(c, out var canonC))
             {
                 if (string.Equals(canonU, canonC, StringComparison.Ordinal)) return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryCanonicalizeAboGenotype(string s, out string canon)
+        {
+            canon = string.Empty;
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            string norm = s.Trim().Replace(" ", "").Replace("{", "").Replace("}", "");
+            var matches = System.Text.RegularExpressions.Regex.Matches(norm, @"(I\^\{?[ABab]\}?|I\([ABab]\)|I[ABab]|i)");
+            if (matches.Count == 0 || matches.Sum(m => m.Length) != norm.Length) return false;
+
+            var alleles = new List<string>();
+            foreach (System.Text.RegularExpressions.Match m in matches)
+            {
+                string v = m.Value;
+                if (v.Contains("A", StringComparison.OrdinalIgnoreCase))
+                {
+                    alleles.Add("IA");
+                }
+                else if (v.Contains("B", StringComparison.OrdinalIgnoreCase))
+                {
+                    alleles.Add("IB");
+                }
+                else
+                {
+                    alleles.Add("i");
+                }
+            }
+
+            if (alleles.Count == 1)
+            {
+                canon = alleles[0];
+                return true;
+            }
+            if (alleles.Count == 2)
+            {
+                var sorted = alleles.OrderBy(a => a switch { "IA" => 1, "IB" => 2, _ => 3 }).ToList();
+                canon = string.Concat(sorted);
+                return true;
+            }
+            return false;
+        }
+
+        private static bool TryCanonicalizeHybridGenotype(string s, out string canon)
+        {
+            canon = string.Empty;
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            s = s.Trim().Replace("{", "").Replace("}", "");
+
+            var matches = System.Text.RegularExpressions.Regex.Matches(s, @"(X(?:\^\{?[A-Za-z0-9+-]{1,3}\}?|\([A-Za-z0-9+-]{1,3}\))?|Y(?:\^\{?[A-Za-z0-9+-]{1,3}\}?|\([A-Za-z0-9+-]{1,3}\))?)");
+            if (matches.Count == 0) return false;
+
+            var sortedChroms = matches.Select(m => m.Value.Replace(" ", ""))
+                                      .OrderBy(x => x.StartsWith("Y", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                                      .ThenBy(x => x, StringComparer.Ordinal)
+                                      .ToList();
+
+            string withoutSpaces = s.Replace(" ", "");
+            int totalChromLen = sortedChroms.Sum(c => c.Length);
+            if (totalChromLen == withoutSpaces.Length)
+            {
+                canon = "SEX:" + string.Join("", sortedChroms);
+                return true;
+            }
+
+            string rem = System.Text.RegularExpressions.Regex.Replace(s, @"(X(?:\^\{?[A-Za-z0-9+-]{1,3}\}?|\([A-Za-z0-9+-]{1,3}\))?|Y(?:\^\{?[A-Za-z0-9+-]{1,3}\}?|\([A-Za-z0-9+-]{1,3}\))?)", "").Trim();
+            if (TryCanonicalizeAutosomalGenotype(rem, out var canonAuto))
+            {
+                canon = canonAuto + ";" + string.Join("", sortedChroms);
+                return true;
             }
 
             return false;
@@ -6335,6 +6455,11 @@ namespace Northtropic.Services
             canon = string.Empty;
             if (string.IsNullOrWhiteSpace(s)) return false;
             s = s.Trim().Replace(" ", "");
+            if (s.Length == 1 && char.IsLetter(s[0]))
+            {
+                canon = s;
+                return true;
+            }
             if (s.Length < 2 || s.Length > 16) return false;
             foreach (char ch in s)
             {
@@ -6361,11 +6486,144 @@ namespace Northtropic.Services
 
             // 配子单倍体 (每个基因座 1 个等位基因, 如 AB, Ab, aB, ab, ABC)
             bool isHaploid = groups.All(g => g.Count() == 1);
-            if (isHaploid && groups.Count >= 2 && groups.Count <= 3)
+            if (isHaploid && groups.Count >= 1 && groups.Count <= 4)
             {
                 var alleles = groups.OrderBy(g => g.Key).Select(g => g.First()).ToArray();
                 canon = new string(alleles);
                 return true;
+            }
+
+            return false;
+        }
+
+        public static bool CheckCombinatoricsEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            u = u.Trim();
+            c = c.Trim();
+            if (string.Equals(u, c, StringComparison.OrdinalIgnoreCase)) return true;
+
+            static bool TryParseCombinatorics(string s, out bool isComb, out long n, out long m, out long value)
+            {
+                isComb = false; n = 0; m = 0; value = 0;
+                if (string.IsNullOrWhiteSpace(s)) return false;
+                s = s.Trim().Replace(" ", "").Replace("\\mathrm", "").Replace("\\text", "").Replace("{", "").Replace("}", "");
+
+                // \binom{n}{m} 或 \binom(n,m)
+                var binomMatch = System.Text.RegularExpressions.Regex.Match(s, @"^\\binom(?:\((\d+),(\d+)\)|(\d+)(\d+))$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (binomMatch.Success)
+                {
+                    if (!string.IsNullOrEmpty(binomMatch.Groups[1].Value))
+                    {
+                        n = long.Parse(binomMatch.Groups[1].Value);
+                        m = long.Parse(binomMatch.Groups[2].Value);
+                    }
+                    else
+                    {
+                        n = long.Parse(binomMatch.Groups[3].Value);
+                        m = long.Parse(binomMatch.Groups[4].Value);
+                    }
+                    isComb = true;
+                    return TryEvalComb(n, m, out value);
+                }
+
+                // C_n^m or C^m_n or C(n, m)
+                var cMatch = System.Text.RegularExpressions.Regex.Match(s, @"^C(?:_(\d+)\^(\d+)|\^(\d+)_(\d+)|\((\d+),(\d+)\))$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (cMatch.Success)
+                {
+                    if (!string.IsNullOrEmpty(cMatch.Groups[1].Value))
+                    {
+                        n = long.Parse(cMatch.Groups[1].Value);
+                        m = long.Parse(cMatch.Groups[2].Value);
+                    }
+                    else if (!string.IsNullOrEmpty(cMatch.Groups[3].Value))
+                    {
+                        m = long.Parse(cMatch.Groups[3].Value);
+                        n = long.Parse(cMatch.Groups[4].Value);
+                    }
+                    else
+                    {
+                        n = long.Parse(cMatch.Groups[5].Value);
+                        m = long.Parse(cMatch.Groups[6].Value);
+                    }
+                    isComb = true;
+                    return TryEvalComb(n, m, out value);
+                }
+
+                // A_n^m or P_n^m or A(n, m) or P(n, m)
+                var aMatch = System.Text.RegularExpressions.Regex.Match(s, @"^[AP](?:_(\d+)\^(\d+)|\^(\d+)_(\d+)|\((\d+),(\d+)\))$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (aMatch.Success)
+                {
+                    if (!string.IsNullOrEmpty(aMatch.Groups[1].Value))
+                    {
+                        n = long.Parse(aMatch.Groups[1].Value);
+                        m = long.Parse(aMatch.Groups[2].Value);
+                    }
+                    else if (!string.IsNullOrEmpty(aMatch.Groups[3].Value))
+                    {
+                        m = long.Parse(aMatch.Groups[3].Value);
+                        n = long.Parse(aMatch.Groups[4].Value);
+                    }
+                    else
+                    {
+                        n = long.Parse(aMatch.Groups[5].Value);
+                        m = long.Parse(aMatch.Groups[6].Value);
+                    }
+                    isComb = false;
+                    return TryEvalPerm(n, m, out value);
+                }
+
+                return false;
+            }
+
+            static bool TryEvalComb(long n, long m, out long val)
+            {
+                val = 0;
+                if (n < 0 || m < 0 || m > n || n > 30) return false;
+                if (m == 0 || m == n) { val = 1; return true; }
+                if (m > n / 2) m = n - m;
+                long num = 1;
+                for (long i = 1; i <= m; i++)
+                {
+                    num = checked(num * (n - i + 1)) / i;
+                }
+                val = num;
+                return true;
+            }
+
+            static bool TryEvalPerm(long n, long m, out long val)
+            {
+                val = 0;
+                if (n < 0 || m < 0 || m > n || n > 20) return false;
+                if (m == 0) { val = 1; return true; }
+                long num = 1;
+                for (long i = 0; i < m; i++)
+                {
+                    num = checked(num * (n - i));
+                }
+                val = num;
+                return true;
+            }
+
+            bool uParsed = TryParseCombinatorics(u, out var uIsComb, out var uN, out var uM, out var uVal);
+            bool cParsed = TryParseCombinatorics(c, out var cIsComb, out var cN, out var cM, out var cVal);
+
+            if (uParsed && cParsed)
+            {
+                if (uIsComb == cIsComb)
+                {
+                    if (uN == cN && uM == cM) return true;
+                    if (uIsComb && uN == cN && (uM + cM == uN)) return true;
+                    if (uVal == cVal) return true;
+                }
+            }
+            else if (uParsed && long.TryParse(c.Trim(), out var cNum))
+            {
+                return uVal == cNum;
+            }
+            else if (cParsed && long.TryParse(u.Trim(), out var uNum))
+            {
+                return cVal == uNum;
             }
 
             return false;

@@ -1835,13 +1835,22 @@ namespace Northtropic.Services
                     u.GoldBoostUntil,
                     u.ActiveTitle,
                     u.AccountStatus,
-                    u.ApprovedAt
+                    u.ApprovedAt,
+                    u.Role,
+                    u.DailyTargetQuestions,
+                    u.SessionTimeoutMinutes,
+                    u.Password
                 }).ToListAsync();
                 int invalidUsersCount = 0;
                 foreach (var u in users)
                 {
                     int expNeeded = GamificationService.CalculateExpNeeded(u.Level);
                     bool expOverflown = u.Exp >= expNeeded;
+                    bool invalidLoginSecurity = (u.Role == UserRole.SuperAdmin && u.AccountStatus != UserAccountStatus.Approved) ||
+                        string.IsNullOrWhiteSpace(u.Password) ||
+                        u.SessionTimeoutMinutes < 5 || u.SessionTimeoutMinutes > 1440;
+                    bool invalidDailyTarget = u.DailyTargetQuestions < 5 || u.DailyTargetQuestions > 200;
+
                     if (u.Exp < 0 || u.Coins < 0 || u.Level < 1 || expOverflown ||
                         u.CurrentStreak > u.TotalCorrect ||
                         u.MaxCombo < u.CurrentStreak ||
@@ -1852,7 +1861,9 @@ namespace Northtropic.Services
                         (u.ExpBoostUntil.HasValue && u.ExpBoostUntil.Value < DateTime.Now.AddDays(-30)) ||
                         (u.GoldBoostUntil.HasValue && u.GoldBoostUntil.Value < DateTime.Now.AddDays(-30)) ||
                         string.IsNullOrWhiteSpace(u.ActiveTitle) ||
-                        (u.AccountStatus == UserAccountStatus.Approved && !u.ApprovedAt.HasValue))
+                        (u.AccountStatus == UserAccountStatus.Approved && !u.ApprovedAt.HasValue) ||
+                        invalidLoginSecurity ||
+                        invalidDailyTarget)
                     {
                         invalidUsersCount++;
                     }
@@ -1860,7 +1871,7 @@ namespace Northtropic.Services
                 audit.TotalUsersWithInvalidBalances = invalidUsersCount;
                 if (audit.TotalUsersWithInvalidBalances > 0)
                 {
-                    audit.AuditDetails.Add($"发现 {audit.TotalUsersWithInvalidBalances} 个用户存在经验/金币异常、连击越界、答题计数倒挂、过期Buff或审核时间脱节");
+                    audit.AuditDetails.Add($"发现 {audit.TotalUsersWithInvalidBalances} 个用户存在经验/金币异常、连击越界、答题计数倒挂、登录会话/安全态异常、过期Buff或审核时间脱节");
                 }
 
                 // 15. StudyPlan Domain Invariants
@@ -1928,7 +1939,9 @@ namespace Northtropic.Services
                         h.AccuracyRate,
                         h.Score,
                         h.IsCompleted,
-                        h.CompletedAt
+                        h.CompletedAt,
+                        h.Deadline,
+                        h.CreatedAt
                     })
                     .ToListAsync();
                 int invalidHomeworkCount = homeworkInvariants.Count(h =>
@@ -1940,13 +1953,15 @@ namespace Northtropic.Services
                     h.CorrectCount < 0 || h.CorrectCount > h.TotalAnswered ||
                     h.Score < 0 || h.Score > 100 ||
                     (h.TotalAnswered > 0 && Math.Abs(h.AccuracyRate - (double)h.CorrectCount / h.TotalAnswered * 100) > 0.5) ||
+                    (h.TotalAnswered >= h.QuestionCount && !h.IsCompleted) ||
+                    (h.Deadline.HasValue && h.Deadline.Value < h.CreatedAt) ||
                     (h.IsCompleted && h.CompletedAt == null) ||
                     (!h.IsCompleted && h.CompletedAt != null)
                 );
                 audit.TotalInvalidHomeworkAssignments = invalidHomeworkCount;
                 if (audit.TotalInvalidHomeworkAssignments > 0)
                 {
-                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidHomeworkAssignments} 份作业分配存在领域不变量异常 (包含负数答题量、答对数越界或完成时间脱节)");
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidHomeworkAssignments} 份作业分配存在领域不变量异常 (包含负数答题量、已完成未闭环、截止时间早于创建或完成时间脱节)");
                 }
 
                 // 18. UserFavorites Duplicate Invariants (同一用户对同一题目的重复收藏冗余)
@@ -1960,30 +1975,35 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalDuplicateFavorites} 条收藏夹冗余副本 (同一题目被相同用户重复收藏)");
                 }
 
-                // 19. PracticeRecord Domain Invariants (异常用时、负数连击与负数奖励)
+                // 19. PracticeRecord Domain Invariants (异常用时、负数连击、时间漂移与负数奖励)
                 var practiceRecordsToCheck = await db.PracticeRecords
-                    .Select(r => new { r.Id, r.TimeTakenSeconds, r.ComboAtAnswer, r.EarnedExp, r.EarnedCoins })
+                    .Select(r => new { r.Id, r.TimeTakenSeconds, r.ComboAtAnswer, r.EarnedExp, r.EarnedCoins, r.AnsweredAt })
                     .ToListAsync();
                 int invalidPracticeRecordsCount = practiceRecordsToCheck.Count(r =>
                     r.TimeTakenSeconds < 0 || r.TimeTakenSeconds > 86400 ||
                     r.ComboAtAnswer < 0 ||
                     r.EarnedExp < 0 ||
-                    r.EarnedCoins < 0
+                    r.EarnedCoins < 0 ||
+                    r.AnsweredAt > DateTime.Now.AddDays(1) ||
+                    r.AnsweredAt < new DateTime(2020, 1, 1)
                 );
                 audit.TotalInvalidPracticeRecords = invalidPracticeRecordsCount;
                 if (audit.TotalInvalidPracticeRecords > 0)
                 {
-                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidPracticeRecords} 条学生答题流水存在领域不变量异常 (包含负数用时/连击/资产或越界时间跨度)");
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidPracticeRecords} 条学生答题流水存在领域不变量异常 (包含负数用时/连击/资产或越界时间戳漂移)");
                 }
 
-                // 20. ErrorItem Domain Invariants & Duplicate Copies (负复习次数、未标记复习时间、空分类与重复错题副本)
+                // 20. ErrorItem Domain Invariants & Duplicate Copies (负复习次数、艾宾浩斯掌握态倒挂、未标记复习时间、空分类与重复错题副本)
                 var errorItemsToCheck = await db.ErrorItems
-                    .Select(e => new { e.Id, e.UserId, e.QuestionId, e.RevisionCount, e.IsMastered, e.LastRevisedAt, e.ErrorReasonCategory })
+                    .Select(e => new { e.Id, e.UserId, e.QuestionId, e.RevisionCount, e.IsMastered, e.LastRevisedAt, e.ErrorReasonCategory, e.CreatedAt })
                     .ToListAsync();
                 int singleInvalidErrors = errorItemsToCheck.Count(e =>
                     e.RevisionCount < 0 ||
+                    (e.RevisionCount >= 3 && !e.IsMastered) ||
+                    (e.IsMastered && e.RevisionCount == 0) ||
                     (e.IsMastered && !e.LastRevisedAt.HasValue) ||
-                    string.IsNullOrWhiteSpace(e.ErrorReasonCategory)
+                    string.IsNullOrWhiteSpace(e.ErrorReasonCategory) ||
+                    e.CreatedAt > DateTime.Now.AddDays(1)
                 );
                 int duplicateErrorItemsCount = errorItemsToCheck
                     .GroupBy(e => new { e.UserId, e.QuestionId })
@@ -1992,7 +2012,7 @@ namespace Northtropic.Services
                 audit.TotalInvalidErrorItems = singleInvalidErrors + duplicateErrorItemsCount;
                 if (audit.TotalInvalidErrorItems > 0)
                 {
-                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidErrorItems} 条错题本领域不变量异常 (包含负数复习次数、未标记复习时间、空分类或重复错题副本)");
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidErrorItems} 条错题本领域不变量异常 (包含复习次数与掌握态倒挂、未标记复习时间、未来时间戳、空分类或重复错题副本)");
                 }
 
                 // 21. UserAchievement Duplicate Invariants (同一用户相同成就重复解锁冗余副本)
@@ -2634,6 +2654,29 @@ namespace Northtropic.Services
                     changed = true;
                 }
 
+                // 规范化用户登录安全态、密码与超级管理员特权豁免
+                if (user.Role == UserRole.SuperAdmin)
+                {
+                    if (user.AccountStatus != UserAccountStatus.Approved)
+                    {
+                        user.AccountStatus = UserAccountStatus.Approved;
+                        changed = true;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(user.Password))
+                {
+                    user.Password = "123456";
+                    user.MustChangePassword = true;
+                    changed = true;
+                }
+
+                if (user.SessionTimeoutMinutes < 5 || user.SessionTimeoutMinutes > 1440)
+                {
+                    user.SessionTimeoutMinutes = Math.Clamp(user.SessionTimeoutMinutes, 5, 1440);
+                    changed = true;
+                }
+
                 if (changed) healedCount++;
             }
 
@@ -2770,6 +2813,18 @@ namespace Northtropic.Services
                         changed = true;
                     }
                 }
+                else if (!h.IsCompleted && h.TotalAnswered >= h.QuestionCount && h.QuestionCount > 0)
+                {
+                    h.IsCompleted = true;
+                    h.CompletedAt = DateTime.Now;
+                    changed = true;
+                }
+
+                if (h.Deadline.HasValue && h.Deadline.Value < h.CreatedAt)
+                {
+                    h.Deadline = h.CreatedAt.AddDays(7);
+                    changed = true;
+                }
 
                 if (changed) healedCount++;
             }
@@ -2808,6 +2863,20 @@ namespace Northtropic.Services
                 {
                     item.IsMastered = true;
                     item.LastRevisedAt ??= DateTime.Now;
+                    changed = true;
+                }
+
+                // B2. 标记已掌握但复习次数为 0 的错题补偿为至少 1 次
+                if (item.IsMastered && item.RevisionCount == 0)
+                {
+                    item.RevisionCount = 1;
+                    changed = true;
+                }
+
+                // B3. 修复未来时间戳异常漂移
+                if (item.CreatedAt > DateTime.Now.AddDays(1))
+                {
+                    item.CreatedAt = DateTime.Now;
                     changed = true;
                 }
 
@@ -3140,6 +3209,13 @@ namespace Northtropic.Services
                 if (r.EarnedCoins < 0)
                 {
                     r.EarnedCoins = 0;
+                    changed = true;
+                }
+
+                // D. 答题时间戳未来异常漂移或远古脏数据校准
+                if (r.AnsweredAt > DateTime.Now.AddDays(1) || r.AnsweredAt < new DateTime(2020, 1, 1))
+                {
+                    r.AnsweredAt = DateTime.Now;
                     changed = true;
                 }
 
