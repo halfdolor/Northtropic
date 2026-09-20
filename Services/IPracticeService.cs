@@ -8,6 +8,7 @@ namespace Northtropic.Services
     public class AnswerCheckResult
     {
         public bool IsCorrect { get; set; }
+        public string UserAnswer { get; set; } = string.Empty;
         public string StandardAnswer { get; set; } = string.Empty;
         public string Analysis { get; set; } = string.Empty;
         public RewardResult Reward { get; set; } = new RewardResult();

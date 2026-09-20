@@ -1218,12 +1218,43 @@
                     </div>
                 }
 
-                <MudText Typo="Typo.body2" Class="mt-2">
-                    <strong>标准答案：</strong> @_lastResult.StandardAnswer
-                </MudText>
-                <MudText Typo="Typo.body2" Class="mt-1 mud-text-secondary">
-                    <strong>官方解析：</strong> @_lastResult.Analysis
-                </MudText>
+                <div class="my-3 pa-3 rounded-lg d-flex flex-column gap-2" style="background: rgba(var(--mud-palette-surface-rgb), 0.6); border: 1px solid rgba(var(--mud-palette-lines-default-rgb), 0.15);">
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                        <div class="d-flex align-center gap-2">
+                            <span class="px-2 py-1 rounded text-caption font-weight-bold" style="font-size: 0.75rem; border: 1px solid @(_lastResult.IsCorrect ? "var(--mud-palette-success)" : "var(--mud-palette-error)"); color: @(_lastResult.IsCorrect ? "var(--mud-palette-success)" : "var(--mud-palette-error)"); background: @(_lastResult.IsCorrect ? "rgba(34, 197, 94, 0.08)" : "rgba(239, 68, 68, 0.08)");">
+                                您的作答
+                            </span>
+                            <MudText Typo="Typo.body2" Class="font-weight-bold" Style="@(_lastResult.IsCorrect ? "color: var(--mud-palette-success);" : "color: var(--mud-palette-error);")">
+                                @(!string.IsNullOrWhiteSpace(_lastResult.UserAnswer) ? _lastResult.UserAnswer : GetFinalUserAnswer())
+                            </MudText>
+                        </div>
+                        <div class="d-flex align-center gap-2">
+                            <span class="px-2 py-1 rounded text-caption font-weight-bold" style="font-size: 0.75rem; border: 1px solid var(--mud-palette-primary); color: var(--mud-palette-primary); background: rgba(var(--mud-palette-primary-rgb), 0.08);">
+                                标准答案
+                            </span>
+                            <MudText Typo="Typo.body2" Class="font-weight-bold" Style="color: var(--mud-palette-primary);">
+                                @_lastResult.StandardAnswer
+                            </MudText>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_lastResult.EquivalentMatchReason))
+                    {
+                        <div class="pa-2 rounded" style="background: rgba(34, 197, 94, 0.08); border-left: 3px solid #22c55e;">
+                            <MudText Typo="Typo.caption" Style="color: var(--mud-palette-success); font-weight: 600;">
+                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Style="vertical-align: middle; margin-right: 4px;" />
+                                @_lastResult.EquivalentMatchReason
+                            </MudText>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_lastResult.Analysis))
+                    {
+                        <div class="pt-2 mt-1" style="border-top: 1px dashed rgba(var(--mud-palette-lines-default-rgb), 0.15);">
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="line-height: 1.6;">
+                                <strong style="color: var(--mud-palette-text-primary);">官方解析：</strong> @_lastResult.Analysis
+                            </MudText>
+                        </div>
+                    }
+                </div>
 
                 @if (!_lastResult.IsCorrect)
                 {
@@ -1578,6 +1609,79 @@
                     }
                 </MudText>
             </div>
+
+            <!-- 本卷作答明细与解析回顾折叠面板 -->
+            @if (_questions.Count > 0)
+            {
+                <MudExpansionPanels MultiExpansion="true" Elevation="0" Class="my-2">
+                    <MudExpansionPanel Text="📋 本卷作答明细与解析回顾 (点击展开)" Style="background: rgba(var(--mud-palette-surface-rgb), 0.5); border-radius: 8px; border: 1px solid rgba(var(--mud-palette-lines-default-rgb), 0.15);">
+                        <div class="d-flex flex-column gap-3 py-2">
+                            @for (int i = 0; i < _questions.Count; i++)
+                            {
+                                int qIndex = i + 1;
+                                var q = _questions[i];
+                                var eval = _evalMode.Contains("整卷统一")
+                                    ? (_paperEvalResults.TryGetValue(qIndex, out var pe) ? pe : null)
+                                    : (_instantEvalResults.TryGetValue(qIndex, out var ie) ? ie : null);
+                                bool hasResult = eval != null;
+                                bool isCorrect = eval?.IsCorrect == true;
+
+                                <div class="pa-3 rounded-lg" style="background: rgba(var(--mud-palette-surface-rgb), 0.7); border-left: 4px solid @(hasResult ? (isCorrect ? "var(--mud-palette-success)" : "var(--mud-palette-error)") : "var(--mud-palette-lines-default)"); border-top: 1px solid rgba(var(--mud-palette-lines-default-rgb), 0.1); border-right: 1px solid rgba(var(--mud-palette-lines-default-rgb), 0.1); border-bottom: 1px solid rgba(var(--mud-palette-lines-default-rgb), 0.1);">
+                                    <div class="d-flex align-center justify-space-between flex-wrap gap-1 mb-1">
+                                        <div class="d-flex align-center gap-2">
+                                            @if (hasResult)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="@(isCorrect ? Color.Success : Color.Error)" Variant="Variant.Filled">
+                                                    第 @qIndex 题 · @(isCorrect ? "正确" : "错误")
+                                                </MudChip>
+                                            }
+                                            else
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                                                    第 @qIndex 题 · 未作答
+                                                </MudChip>
+                                            }
+                                            <span class="text-caption mud-text-secondary">[@q.Subject - @q.Category]</span>
+                                        </div>
+                                    </div>
+                                    <MudText Typo="Typo.body2" Class="font-weight-medium my-1">
+                                        @q.Stem
+                                    </MudText>
+                                    <div class="d-flex flex-column gap-1 mt-2 pt-2 text-caption" style="border-top: 1px dashed rgba(var(--mud-palette-lines-default-rgb), 0.15);">
+                                        <div class="d-flex align-center gap-3 flex-wrap">
+                                            @if (hasResult && !string.IsNullOrWhiteSpace(eval?.UserAnswer))
+                                            {
+                                                <div>
+                                                    <span class="font-weight-bold" style="color: @(isCorrect ? "var(--mud-palette-success)" : "var(--mud-palette-error)");">您的作答：</span>
+                                                    <span style="font-weight: 600;">@eval?.UserAnswer</span>
+                                                </div>
+                                            }
+                                            <div>
+                                                <span class="font-weight-bold" style="color: var(--mud-palette-primary);">标准答案：</span>
+                                                <span style="font-weight: 600;">@q.CorrectAnswer</span>
+                                            </div>
+                                        </div>
+                                        @if (hasResult && !string.IsNullOrWhiteSpace(eval?.EquivalentMatchReason))
+                                        {
+                                            <div class="mt-1 pa-1 rounded" style="background: rgba(34, 197, 94, 0.08); color: var(--mud-palette-success); font-size: 0.75rem;">
+                                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Style="vertical-align: middle; margin-right: 4px;" />
+                                                @eval.EquivalentMatchReason
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(q.StandardAnalysis))
+                                        {
+                                            <div class="mt-1 mud-text-secondary">
+                                                <span class="font-weight-bold" style="color: var(--mud-palette-text-primary);">解析：</span>
+                                                <span>@q.StandardAnalysis</span>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+            }
         </div>
     </DialogContent>
     <DialogActions>

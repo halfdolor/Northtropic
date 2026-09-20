@@ -2185,7 +2185,7 @@ namespace Northtropic.Services
                     .ToListAsync();
 
                 int desyncedPublishQuestions = questionInvariantsToCheck.Count(q =>
-                    (q.IsPublic && q.PublishStatus == PublishStatusEnum.Private) ||
+                    (q.IsPublic && (q.PublishStatus == PublishStatusEnum.Private || q.PublishStatus == PublishStatusEnum.Pending || q.PublishStatus == PublishStatusEnum.Rejected)) ||
                     (!q.IsPublic && q.PublishStatus == PublishStatusEnum.Approved)
                 );
                 audit.TotalDesyncedPublishStatusQuestions = desyncedPublishQuestions;
@@ -2199,9 +2199,28 @@ namespace Northtropic.Services
                     if (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
                     {
                         var ans = q.CorrectAnswer?.Trim();
-                        if (string.IsNullOrEmpty(ans)) return false;
+                        if (string.IsNullOrEmpty(ans)) return true;
                         if (ans.StartsWith("[") && ans.EndsWith("]")) return true;
                         if (ans.EndsWith(".") || ans.EndsWith("、") || ans.EndsWith(";") || ans.EndsWith("；")) return true;
+                        if (string.IsNullOrWhiteSpace(q.OptionsJson) || q.OptionsJson.Trim() == "[]") return true;
+                        try
+                        {
+                            var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                            if (opts == null || opts.Count < 2) return true;
+                        }
+                        catch { return true; }
+                    }
+                    else
+                    {
+                        if (!string.IsNullOrWhiteSpace(q.OptionsJson) && q.OptionsJson.Trim() != "[]")
+                        {
+                            try
+                            {
+                                var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                                if (opts != null && opts.Count > 0) return true;
+                            }
+                            catch { }
+                        }
                     }
                     return false;
                 });
@@ -3460,7 +3479,15 @@ namespace Northtropic.Services
                 }
 
                 // 领域不变量：公开可见性与审批发布状态对齐自愈
-                if (q.IsPublic && q.PublishStatus == PublishStatusEnum.Private)
+                if (q.PublishStatus == PublishStatusEnum.Rejected || q.PublishStatus == PublishStatusEnum.Pending)
+                {
+                    if (q.IsPublic)
+                    {
+                        q.IsPublic = false;
+                        modified = true;
+                    }
+                }
+                else if (q.IsPublic && q.PublishStatus == PublishStatusEnum.Private)
                 {
                     q.PublishStatus = PublishStatusEnum.Approved;
                     modified = true;
@@ -3473,6 +3500,26 @@ namespace Northtropic.Services
 
                 if (q.Type == QuestionType.SingleChoice)
                 {
+                    bool needOptionsHeal = false;
+                    if (string.IsNullOrWhiteSpace(q.OptionsJson) || q.OptionsJson.Trim() == "[]")
+                    {
+                        needOptionsHeal = true;
+                    }
+                    else
+                    {
+                        try
+                        {
+                            var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                            if (opts == null || opts.Count < 2) needOptionsHeal = true;
+                        }
+                        catch { needOptionsHeal = true; }
+                    }
+                    if (needOptionsHeal)
+                    {
+                        q.OptionsJson = System.Text.Json.JsonSerializer.Serialize(new List<string> { "选项A", "选项B", "选项C", "选项D" });
+                        modified = true;
+                    }
+
                     if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
                     {
                         q.CorrectAnswer = "A";
@@ -3501,6 +3548,26 @@ namespace Northtropic.Services
                 }
                 else if (q.Type == QuestionType.MultipleChoice)
                 {
+                    bool needOptionsHeal = false;
+                    if (string.IsNullOrWhiteSpace(q.OptionsJson) || q.OptionsJson.Trim() == "[]")
+                    {
+                        needOptionsHeal = true;
+                    }
+                    else
+                    {
+                        try
+                        {
+                            var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                            if (opts == null || opts.Count < 2) needOptionsHeal = true;
+                        }
+                        catch { needOptionsHeal = true; }
+                    }
+                    if (needOptionsHeal)
+                    {
+                        q.OptionsJson = System.Text.Json.JsonSerializer.Serialize(new List<string> { "选项A", "选项B", "选项C", "选项D" });
+                        modified = true;
+                    }
+
                     if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
                     {
                         q.CorrectAnswer = "AB";
@@ -3529,12 +3596,21 @@ namespace Northtropic.Services
                         }
                     }
                 }
-                else if (q.Type == QuestionType.FillInBlank)
+                else
                 {
-                    if (!string.IsNullOrWhiteSpace(q.CorrectAnswer) && q.CorrectAnswer != q.CorrectAnswer.Trim())
+                    if (!string.IsNullOrWhiteSpace(q.OptionsJson) && q.OptionsJson.Trim() != "[]")
                     {
-                        q.CorrectAnswer = q.CorrectAnswer.Trim();
+                        q.OptionsJson = "[]";
                         modified = true;
+                    }
+
+                    if (q.Type == QuestionType.FillInBlank)
+                    {
+                        if (!string.IsNullOrWhiteSpace(q.CorrectAnswer) && q.CorrectAnswer != q.CorrectAnswer.Trim())
+                        {
+                            q.CorrectAnswer = q.CorrectAnswer.Trim();
+                            modified = true;
+                        }
                     }
                 }
 

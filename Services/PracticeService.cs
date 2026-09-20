@@ -676,6 +676,7 @@ namespace Northtropic.Services
             return new AnswerCheckResult
             {
                 IsCorrect = isCorrect,
+                UserAnswer = userAnswer ?? string.Empty,
                 StandardAnswer = activeQuestion.CorrectAnswer ?? string.Empty,
                 Analysis = !string.IsNullOrWhiteSpace(activeQuestion.StandardAnalysis) ? activeQuestion.StandardAnalysis : (question.StandardAnalysis ?? string.Empty),
                 Reward = rewardResult,
@@ -686,6 +687,12 @@ namespace Northtropic.Services
                 CognitiveBadgeText = cognitiveBadge,
                 StudyPlanProgressFeedback = planFeedback
             };
+        }
+
+        public static string GenerateEquivalentMatchReason(string user, string correct, QuestionType type = QuestionType.FillInBlank)
+        {
+            var q = new Question { CorrectAnswer = correct, Type = type };
+            return GenerateEquivalentMatchReason(q, user);
         }
 
         public static string GenerateEquivalentMatchReason(Question question, string rawUserAnswer)
@@ -776,11 +783,43 @@ namespace Northtropic.Services
                     return $"理化复合单位智能对齐等价：已自动识别摩尔质量/摩尔体积等理化单位，对应标准答案 [{correct}]";
                 }
 
+                // 对数换底公式等价 (\log_a b <=> \frac{\ln b}{\ln a} <=> \frac{\lg b}{\lg a})
+                if (CheckLogarithmBaseChangeEquivalence(user, correct) || CheckLogarithmBaseChangeEquivalence(normU, normC))
+                {
+                    return $"对数换底公式等价：已自动识别对数换底公式 \\log_a b = \\frac{{\\ln b}}{{\\ln a}} = \\frac{{\\lg b}}{{\\lg a}} 的精确数理等价性，对应标准答案 [{correct}]";
+                }
+
                 // 对数底数、真数与记号等价 (\ln(x) vs \log_e(x), \lg(x) vs \log_{10}(x), \log_2(x) 等)
                 if ((normU.Contains("log") || normU.Contains("ln") || normU.Contains("lg")) &&
                     (normC.Contains("log") || normC.Contains("ln") || normC.Contains("lg")))
                 {
                     return $"对数记号与底数等价：已自动识别以 e 为底的自然对数 (\\ln)、以 10 为底的常用对数 (\\lg) 及对数 \\log_b(x) 的符号等价性，对应标准答案 [{correct}]";
+                }
+
+                // 核物理与辐射剂量单位等价 (Bq, Ci, Gy, Sv, rad, rem)
+                if (normU.Contains("bq") || normC.Contains("bq") || normU.Contains("ci") || normC.Contains("ci") ||
+                    normU.Contains("gy") || normC.Contains("gy") || normU.Contains("sv") || normC.Contains("sv") ||
+                    normU.Contains("rad") || normC.Contains("rad") || normU.Contains("rem") || normC.Contains("rem") ||
+                    normU.Contains("贝克") || normC.Contains("贝克") || normU.Contains("居里") || normC.Contains("居里") ||
+                    normU.Contains("戈瑞") || normC.Contains("戈瑞") || normU.Contains("希沃特") || normC.Contains("希沃特"))
+                {
+                    return $"核物理与辐射剂量单位等价：已自动识别放射性活度（Bq/Ci）与辐射剂量（Gy/Sv/rad/rem）等计量单位换算，对应标准答案 [{correct}]";
+                }
+
+                // 计算机数据容量与存储单位等价 (Byte, bit, KB, MB, GB, TB)
+                if (normU.Contains("byte") || normC.Contains("byte") || normU.Contains("bit") || normC.Contains("bit") ||
+                    normU.Contains("kb") || normC.Contains("kb") || normU.Contains("mb") || normC.Contains("mb") ||
+                    normU.Contains("gb") || normC.Contains("gb") || normU.Contains("tb") || normC.Contains("tb") ||
+                    normU.Contains("字节") || normC.Contains("字节") || normU.Contains("比特") || normC.Contains("比特"))
+                {
+                    return $"计算机数据容量与存储单位等价：已自动识别数据容量（Byte/bit/KB/MB/GB/TB）之间的二进制换算等价性，对应标准答案 [{correct}]";
+                }
+
+                // 压强单位科学等价 (Torr, psi, atm, Pa, bar, mmHg)
+                if (normU.Contains("torr") || normC.Contains("torr") || normU.Contains("托") || normC.Contains("托") ||
+                    normU.Contains("psi") || normC.Contains("psi"))
+                {
+                    return $"压强单位科学等价：已自动识别真空度与流体压强单位（Torr/托、psi、Pa、atm、mmHg）之间的精确换算，对应标准答案 [{correct}]";
                 }
 
                 // 速度、加速度、密度、压强、功率等理科复合单位智能对齐等价
@@ -2676,7 +2715,7 @@ namespace Northtropic.Services
         {
             if (string.IsNullOrWhiteSpace(s)) return string.Empty;
             s = s.Trim();
-            var unitPattern = @"(?<=\d|\d\.\d+|\})\s*(\\mu m|\\mu s|\\mu a|\\mu c|\\mu f|\\mu v|\\mu h|\\mu t|\\mu mol|mu m|mu s|mu a|mu c|mu f|mu v|mu h|mu t|mu mol|mum|mus|mua|muc|muf|muv|muh|mut|mumol|μm|μs|μa|μc|μf|μv|μh|μt|μmol|um|us|ua|uc|uf|uv|uh|ut|umol|nm|pm|ns|ps|pf|nf|mt|mh|kj/mol|j/mol|kj\*mol\^\{-1\}|kj\*mol\^-1|kj·mol\^-1|kj·mol\^\{-1\}|j\*mol\^\{-1\}|j\*mol\^-1|j·mol\^-1|千焦/摩尔|千焦每摩尔|焦/摩尔|焦每摩尔|g/mol|g\*mol\^\{-1\}|g\*mol\^-1|g·mol\^-1|g·mol\^\{-1\}|l/mol|l\*mol\^\{-1\}|l\*mol\^-1|l·mol\^-1|l·mol\^\{-1\}|mol\^\{-1\}|mol\^-1|/mol|克/摩尔|克每摩尔|升/摩尔|升每摩尔|mol/l|mol·l\^\{-1\}|mol\*l\^\{-1\}|mol·l\^-1|mol\*l\^-1|mol·l\{-1\}|mol/L|摩尔/升|摩尔每升|g/ml|g/l|g/mL|克/毫升|克/升|克每升|克每毫升|m\*s\^\{-?[12]\}|m\*s\^-?[12]|m·s\^\{-?[12]\}|m·s\^-?[12]|m/s\^2|m/s²|m/s2|m/s|km/h|km\*h\^\{-1\}|km\*h\^-1|km/时|公里/小时|公里每小时|千米/小时|千米每小时|千米/时|mol|cm\^3|m\^3|dm\^3|mm\^3|cm³|m³|dm³|mm³|立方厘米|立方分米|立方毫米|立方米|cm\^2|m\^2|dm\^2|mm\^2|km\^2|cm²|m²|dm²|mm²|km²|平方厘米|平方分米|平方毫米|平方米|平方千米|平方公里|kg\*m/s\^2|n\*m|n·m|牛·米|牛\*米|牛顿·米|牛顿\*米|牛米|牛顿米|g/cm\^3|g/cm³|g/cm3|g·cm\^\{-?3\}|g·cm\^-?3|g\*cm\^\{-?3\}|g\*cm\^-?3|kg/m\^3|kg/m³|kg/m3|kg·m\^\{-?3\}|kg·m\^-?3|kg\*m\^\{-?3\}|kg\*m\^-?3|kw\*h|kw·h|kwh|j/\(kg\*℃\)|j/\(kg·℃\)|j/\(kg\*c\)|j/\(kg·c\)|j/\(kg\*k\)|j/\(kg·k\)|j/kg\*k|j/kg\*c|n/kg|n\*kg\^\{-1\}|n\*kg\^-1|n/m\^2|n/m²|n/m2|n\*m\^\{-?2\}|n\*m\^-?2|n·m\^\{-?2\}|n·m\^-?2|j/s|j\*s\^\{-?1\}|j\*s\^-?1|j·s\^\{-?1\}|j·s\^-?1|v/m|n/c|pa\*s|pa·s|pa|kpa|mpa|hpa|千帕|兆帕|百帕|atm|mmhg|hz|khz|mhz|ghz|kg|mg|cm|mm|dm|km|t|ml|v|kv|mv|a|ma|w|kw|mw|gw|千瓦|兆瓦|j|kj|mj|gj|千焦|兆焦|kn|n|c|ev|kev|mev|gev|wb|h|komega|momega|gomega|kohm|mohm|gohm|kω|mω|gω|ω|kΩ|mΩ|gΩ|Ω|千欧|兆欧|ohm|omega|bar|mbar|°c|deg|l|g|kb|mb|gb|tb|rad/s|rad|db|微米|纳米|皮米|微秒|纳秒|毫秒|微安|毫安|微法|纳法|皮法|微库|毫库|微伏|毫伏|毫特|微特|毫亨|微亨|牛顿?|焦耳?/\(千克[\*·]?(?:摄氏度|℃|度)\)|焦/\(千克[\*·]?(?:摄氏度|℃|度)\)|焦耳?/\(千克·摄氏度\)|焦/\(千克·摄氏度\)|焦/\(千克·度\)|焦/\(千克·℃\)|焦/\(千克\*℃\)|焦每千克摄氏度|焦耳?|瓦特?|帕斯卡?|帕·秒|帕\*秒|帕秒|帕|牛/千克|牛每千克|牛顿每千克|牛/平方米|牛每平方米|焦/秒|焦每秒|伏/米|伏每米|牛/库仑?|牛每库仑?|标准大气压|毫米汞柱|米/秒²|米/秒\^2|米每秒二次方|米每二次方秒|米每秒的平方|米/秒|米每秒|千瓦时|千瓦·时|千瓦\*时|度|摄氏度|℃|开尔文|k|厘米|毫米|分米|千米|米|克/立方厘米|克每立方厘米|千克/立方米|千克每立方米|克|千克|公斤|吨|升|毫升|摩尔|伏特?|伏|安培?|安|欧姆|欧|库仑?|库|特斯拉?|韦伯?|亨利?|电子伏特?|电子伏|字节|弧度|分贝|种|个|条|类|只|支|组|份|位|次|倍|对|双|根|颗|粒|株|块|幅|门|项|节|题|道|把|套)$";
+            var unitPattern = @"(?<=\d|\d\.\d+|\})\s*(\\mu m|\\mu s|\\mu a|\\mu c|\\mu f|\\mu v|\\mu h|\\mu t|\\mu mol|mu m|mu s|mu a|mu c|mu f|mu v|mu h|mu t|mu mol|mum|mus|mua|muc|muf|muv|muh|mut|mumol|μm|μs|μa|μc|μf|μv|μh|μt|μmol|um|us|ua|uc|uf|uv|uh|ut|umol|nm|pm|ns|ps|pf|nf|mt|mh|kj/mol|j/mol|kj\*mol\^\{-1\}|kj\*mol\^-1|kj·mol\^-1|kj·mol\^\{-1\}|j\*mol\^\{-1\}|j\*mol\^-1|j·mol\^-1|千焦/摩尔|千焦每摩尔|焦/摩尔|焦每摩尔|g/mol|g\*mol\^\{-1\}|g\*mol\^-1|g·mol\^-1|g·mol\^\{-1\}|l/mol|l\*mol\^\{-1\}|l\*mol\^-1|l·mol\^-1|l·mol\^\{-1\}|mol\^\{-1\}|mol\^-1|/mol|克/摩尔|克每摩尔|升/摩尔|升每摩尔|mol/l|mol·l\^\{-1\}|mol\*l\^\{-1\}|mol·l\^-1|mol\*l\^-1|mol·l\{-1\}|mol/L|摩尔/升|摩尔每升|g/ml|g/l|g/mL|克/毫升|克/升|克每升|克每毫升|m\*s\^\{-?[12]\}|m\*s\^-?[12]|m·s\^\{-?[12]\}|m·s\^-?[12]|m/s\^2|m/s²|m/s2|m/s|km/h|km\*h\^\{-1\}|km\*h\^-1|km/时|公里/小时|公里每小时|千米/小时|千米每小时|千米/时|mol|cm\^3|m\^3|dm\^3|mm\^3|cm³|m³|dm³|mm³|立方厘米|立方分米|立方毫米|立方米|cm\^2|m\^2|dm\^2|mm\^2|km\^2|cm²|m²|dm²|mm²|km²|平方厘米|平方分米|平方毫米|平方米|平方千米|平方公里|kg\*m/s\^2|n\*m|n·m|牛·米|牛\*米|牛顿·米|牛顿\*米|牛米|牛顿米|g/cm\^3|g/cm³|g/cm3|g·cm\^\{-?3\}|g·cm\^-?3|g\*cm\^\{-?3\}|g\*cm\^-?3|kg/m\^3|kg/m³|kg/m3|kg·m\^\{-?3\}|kg·m\^-?3|kg\*m\^\{-?3\}|kg\*m\^-?3|kw\*h|kw·h|kwh|j/\(kg\*℃\)|j/\(kg·℃\)|j/\(kg\*c\)|j/\(kg·c\)|j/\(kg\*k\)|j/\(kg·k\)|j/kg\*k|j/kg\*c|n/kg|n\*kg\^\{-1\}|n\*kg\^-1|n/m\^2|n/m²|n/m2|n\*m\^\{-?2\}|n\*m\^-?2|n·m\^\{-?2\}|n·m\^-?2|j/s|j\*s\^\{-?1\}|j\*s\^-?1|j·s\^\{-?1\}|j·s\^-?1|v/m|n/c|pa\*s|pa·s|pa|kpa|mpa|hpa|千帕|兆帕|百帕|atm|mmhg|hz|khz|mhz|ghz|kg|mg|cm|mm|dm|km|t|ml|v|kv|mv|a|ma|w|kw|mw|gw|千瓦|兆瓦|j|kj|mj|gj|千焦|兆焦|kn|n|c|ev|kev|mev|gev|wb|h|komega|momega|gomega|kohm|mohm|gohm|kω|mω|gω|ω|kΩ|mΩ|gΩ|Ω|千欧|兆欧|ohm|omega|bar|mbar|°c|deg|l|g|kb|mb|gb|tb|rad/s|rad|db|微米|纳米|皮米|微秒|纳秒|毫秒|微安|毫安|微法|纳法|皮法|微库|毫库|微伏|毫伏|毫特|微特|毫亨|微亨|bq|kbq|mbq|gbq|ci|mci|uci|μci|gy|kgy|mgy|sv|msv|usv|μsv|torr|psi|bit|bits|byte|bytes|贝克|居里|戈瑞|希沃特|雷姆|拉德|托|比特|牛顿?|焦耳?/\(千克[\*·]?(?:摄氏度|℃|度)\)|焦/\(千克[\*·]?(?:摄氏度|℃|度)\)|焦耳?/\(千克·摄氏度\)|焦/\(千克·摄氏度\)|焦/\(千克·度\)|焦/\(千克·℃\)|焦/\(千克\*℃\)|焦每千克摄氏度|焦耳?|瓦特?|帕斯卡?|帕·秒|帕\*秒|帕秒|帕|牛/千克|牛每千克|牛顿每千克|牛/平方米|牛每平方米|焦/秒|焦每秒|伏/米|伏每米|牛/库仑?|牛每库仑?|标准大气压|毫米汞柱|米/秒²|米/秒\^2|米每秒二次方|米每二次方秒|米每秒的平方|米/秒|米每秒|千瓦时|千瓦·时|千瓦\*时|度|摄氏度|℃|开尔文|k|厘米|毫米|分米|千米|米|克/立方厘米|克每立方厘米|千克/立方米|千克每立方米|克|千克|公斤|吨|升|毫升|摩尔|伏特?|伏|安培?|安|欧姆|欧|库仑?|库|特斯拉?|韦伯?|亨利?|电子伏特?|电子伏|字节|弧度|分贝|种|个|条|类|只|支|组|份|位|次|倍|对|双|根|颗|粒|株|块|幅|门|项|节|题|道|把|套)$";
             return System.Text.RegularExpressions.Regex.Replace(s, unitPattern, "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
         }
 
@@ -4093,6 +4132,7 @@ namespace Northtropic.Services
                 // 数学集合隶属度符号归一: \in, ∈, 属于 -> in; \notin, ∉, 不属于 -> !in
                 s = s.Replace("\\notin", " !in ").Replace("∉", " !in ").Replace("不属于", " !in ");
                 s = s.Replace("\\in", " in ").Replace("∈", " in ").Replace("属于", " in ");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"^[a-zA-Z]\s+in\s+(?=[\(\[])", "");
                 // 常见数集专有名词中文与正负号归一 (全体实数/实数集 -> R, 全体整数/整数集 -> Z, 自然数集 -> N, 正整数集 -> N*, 有理数集 -> Q, 复数集 -> C)
                 s = s.Replace("全体实数集", "R").Replace("全体实数", "R").Replace("实数集", "R");
                 s = s.Replace("全体整数集", "Z").Replace("全体整数", "Z").Replace("整数集", "Z");
@@ -5673,6 +5713,12 @@ namespace Northtropic.Services
                 return true;
             }
 
+            // 数学对数换底公式与对数记号等价 (如 \log_a b <=> \frac{\ln b}{\ln a} <=> \frac{\lg b}{\lg a})
+            if (CheckLogarithmBaseChangeEquivalence(user, correct) || CheckLogarithmBaseChangeEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
             // 规范化多元方程解集无序置换等价匹配: 如 "y=3,x=2" 与 "x=2,y=3"
             if (normUser.Contains(',') && normUser.Contains('=') && normCorrect.Contains(',') && normCorrect.Contains('='))
             {
@@ -6560,6 +6606,15 @@ namespace Northtropic.Services
                     }
                 }
 
+                // 纯 10 的幂次: 如 10^9, 10^6, 10^{-3}
+                var pow10Match = System.Text.RegularExpressions.Regex.Match(s, @"^([+-]?)\s*10\^[\{\(]?([+-]?\d+)[\}\)]?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (pow10Match.Success && int.TryParse(pow10Match.Groups[2].Value, out var p10))
+                {
+                    double sign = pow10Match.Groups[1].Value == "-" ? -1.0 : 1.0;
+                    num = sign * Math.Pow(10, p10);
+                    return true;
+                }
+
                 // 简易分数: 如 1/2, 3/4
                 var fracParts = s.Split('/');
                 if (fracParts.Length == 2 &&
@@ -6698,14 +6753,45 @@ namespace Northtropic.Services
                     ("ms|毫秒", 1e-3, "time"),
                     ("s|秒|sec|secs", 1.0, "time"),
 
-                    // 压强 (1 atm = 101325 Pa, 1 bar = 1e5 Pa, 1 mmHg ≈ 133.322 Pa)
+                    // 压强 (1 atm = 101325 Pa, 1 bar = 1e5 Pa, 1 mmHg ≈ 133.322 Pa, 1 Torr ≈ 133.322 Pa, 1 psi ≈ 6894.757 Pa)
                     (@"atm|标准大气压", 101325.0, "press"),
                     (@"bar|巴", 1e5, "press"),
                     (@"mmhg|毫米汞柱", 133.322368, "press"),
+                    (@"torr|托", 133.322368, "press"),
+                    (@"psi|磅每平方英寸|磅/平方英寸", 6894.757, "press"),
                     ("mpa|兆帕", 1e6, "press"),
                     ("kpa|千帕", 1e3, "press"),
                     ("hpa|百帕|mbar|毫巴", 100.0, "press"),
                     ("pa|帕斯卡|帕", 1.0, "press"),
+
+                    // 放射性活度 (Bq, kBq, MBq, GBq, Ci, mCi, μCi)
+                    ("gbq|吉贝克", 1e9, "radioactivity"),
+                    ("mbq|兆贝克", 1e6, "radioactivity"),
+                    ("kbq|千贝克", 1e3, "radioactivity"),
+                    (@"uci|μci|\\mu\s*ci|微居里|微居", 3.7e4, "radioactivity"),
+                    ("mci|毫居里|毫居", 3.7e7, "radioactivity"),
+                    ("ci|居里", 3.7e10, "radioactivity"),
+                    ("bq|贝克勒尔|贝克", 1.0, "radioactivity"),
+
+                    // 辐射吸收剂量与照射量 (Gy, mGy, rad)
+                    ("kgy|千戈瑞|千戈", 1e3, "absorbed_dose"),
+                    ("mgy|毫戈瑞|毫戈", 1e-3, "absorbed_dose"),
+                    ("gy|戈瑞|戈", 1.0, "absorbed_dose"),
+                    ("rad|拉德", 0.01, "absorbed_dose"),
+
+                    // 辐射等效剂量与有效剂量 (Sv, mSv, μSv, rem)
+                    ("msv|毫希沃特|毫希", 1e-3, "dose_equivalent"),
+                    (@"usv|μsv|\\mu\s*sv|微希沃特|微希", 1e-6, "dose_equivalent"),
+                    ("sv|希沃特|希", 1.0, "dose_equivalent"),
+                    ("rem|雷姆", 0.01, "dose_equivalent"),
+
+                    // 计算机与数据存储容量 (B, KB, MB, GB, TB, bit)
+                    (@"tb|tbytes?|太字节", 1024.0 * 1024.0 * 1024.0 * 1024.0, "data_storage"),
+                    (@"gb|gbytes?|吉字节|千兆字节", 1024.0 * 1024.0 * 1024.0, "data_storage"),
+                    (@"mb|mbytes?|兆字节", 1024.0 * 1024.0, "data_storage"),
+                    (@"kb|kbytes?|千字节", 1024.0, "data_storage"),
+                    (@"bit|bits|比特|位", 0.125, "data_storage"),
+                    (@"bytes?|字节|\bb\b", 1.0, "data_storage"),
 
                     // 力学
                     ("kn|千牛", 1e3, "force"),
@@ -6778,6 +6864,9 @@ namespace Northtropic.Services
                 {
                     "press" => 0.015, // 压强允许 1.5% 相对容差 (兼容 1.01x10^5 Pa / 101.3 kPa 与 101325 Pa)
                     "len" when maxVal > 1e10 => 0.025, // 天文距离允许 2.5% 相对容差 (兼容教材约算: 1.5e11 m vs 1.496e11 m AU, 9.46e15 m vs 9.4607e15 m ly, 3.26 ly vs 1 pc)
+                    "radioactivity" => 0.01, // 放射性活度允许 1% 相对容差 (兼容 3.7x10^10 Bq)
+                    "absorbed_dose" => 0.01,
+                    "dose_equivalent" => 0.01,
                     _ => 2e-3         // 通用单位允许 0.2% 相对容差
                 };
                 return (diff / maxVal) <= relTol;
@@ -7048,9 +7137,21 @@ namespace Northtropic.Services
             {
                 isComb = false; n = 0; m = 0; value = 0;
                 if (string.IsNullOrWhiteSpace(s)) return false;
-                s = s.Trim().Replace(" ", "").Replace("\\mathrm", "").Replace("\\text", "").Replace("{", "").Replace("}", "");
+                s = s.Trim().Replace(" ", "").Replace("\\mathrm", "").Replace("\\text", "").Replace("\\mathbf", "").Replace("\\boldsymbol", "");
 
-                // \binom{n}{m} 或 \binom(n,m)
+                // \binom{n}{m} 或 \binom(n, m) (优先保留花括号边界以防多位数字如 \binom{10}{3} 混淆)
+                var binomBraceMatch = System.Text.RegularExpressions.Regex.Match(s, @"^\\binom\s*(?:\{(\d+)\}\s*\{(\d+)\}|\((\d+)\s*,\s*(\d+)\))$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (binomBraceMatch.Success)
+                {
+                    n = long.Parse(!string.IsNullOrEmpty(binomBraceMatch.Groups[1].Value) ? binomBraceMatch.Groups[1].Value : binomBraceMatch.Groups[3].Value);
+                    m = long.Parse(!string.IsNullOrEmpty(binomBraceMatch.Groups[2].Value) ? binomBraceMatch.Groups[2].Value : binomBraceMatch.Groups[4].Value);
+                    isComb = true;
+                    return TryEvalComb(n, m, out value);
+                }
+
+                s = s.Replace("{", "").Replace("}", "");
+
+                // \binom(n,m) 或单字符简写 \binom52
                 var binomMatch = System.Text.RegularExpressions.Regex.Match(s, @"^\\binom(?:\((\d+),(\d+)\)|(\d+)(\d+))$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 if (binomMatch.Success)
                 {
@@ -7165,6 +7266,92 @@ namespace Northtropic.Services
             else if (cParsed && long.TryParse(u.Trim(), out var uNum))
             {
                 return cVal == uNum;
+            }
+
+            return false;
+        }
+
+        public static bool CheckLogarithmBaseChangeEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            u = u.Trim();
+            c = c.Trim();
+            if (string.Equals(u, c, StringComparison.OrdinalIgnoreCase)) return true;
+
+            static bool TryExtractLog(string s, out string baseVal, out string argVal)
+            {
+                baseVal = ""; argVal = "";
+                if (string.IsNullOrWhiteSpace(s)) return false;
+                s = s.Trim().Replace(" ", "").Replace("\\mathrm", "").Replace("\\text", "");
+
+                // \log_a b or \log_{a}{b} or \log_{a}(b) or log_a(b)
+                var m = System.Text.RegularExpressions.Regex.Match(s, @"^\\?log(?:_\{?([a-zA-Z0-9\.\/]+)\}?)(?:\{([^{}]+)\}|\(([^\(\)]+)\)|([a-zA-Z0-9]+))$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (m.Success)
+                {
+                    baseVal = m.Groups[1].Value;
+                    argVal = !string.IsNullOrEmpty(m.Groups[2].Value) ? m.Groups[2].Value :
+                             !string.IsNullOrEmpty(m.Groups[3].Value) ? m.Groups[3].Value : m.Groups[4].Value;
+                    return true;
+                }
+                return false;
+            }
+
+            static bool TryExtractLogFraction(string s, out string baseVal, out string argVal)
+            {
+                baseVal = ""; argVal = "";
+                if (string.IsNullOrWhiteSpace(s)) return false;
+                s = s.Trim().Replace(" ", "").Replace("\\mathrm", "").Replace("\\text", "");
+
+                // \frac{\ln b}{\ln a} or \frac{\lg b}{\lg a} or \frac{\log b}{\log a}
+                var mFrac = System.Text.RegularExpressions.Regex.Match(s, @"^\\frac\{(\\?(?:ln|lg|log)(?:\{([^{}]+)\}|\(([^\(\)]+)\)|([a-zA-Z0-9]+)))\}\{(\\?(?:ln|lg|log)(?:\{([^{}]+)\}|\(([^\(\)]+)\)|([a-zA-Z0-9]+)))\}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (mFrac.Success)
+                {
+                    argVal = !string.IsNullOrEmpty(mFrac.Groups[2].Value) ? mFrac.Groups[2].Value :
+                             !string.IsNullOrEmpty(mFrac.Groups[3].Value) ? mFrac.Groups[3].Value : mFrac.Groups[4].Value;
+                    baseVal = !string.IsNullOrEmpty(mFrac.Groups[6].Value) ? mFrac.Groups[6].Value :
+                              !string.IsNullOrEmpty(mFrac.Groups[7].Value) ? mFrac.Groups[7].Value : mFrac.Groups[8].Value;
+                    return true;
+                }
+
+                var mSlash = System.Text.RegularExpressions.Regex.Match(s, @"^\\?(?:ln|lg|log)(?:\{([^{}]+)\}|\(([^\(\)]+)\)|([a-zA-Z0-9]+))\s*/\s*\\?(?:ln|lg|log)(?:\{([^{}]+)\}|\(([^\(\)]+)\)|([a-zA-Z0-9]+))$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (mSlash.Success)
+                {
+                    argVal = !string.IsNullOrEmpty(mSlash.Groups[1].Value) ? mSlash.Groups[1].Value :
+                             !string.IsNullOrEmpty(mSlash.Groups[2].Value) ? mSlash.Groups[2].Value : mSlash.Groups[3].Value;
+                    baseVal = !string.IsNullOrEmpty(mSlash.Groups[4].Value) ? mSlash.Groups[4].Value :
+                              !string.IsNullOrEmpty(mSlash.Groups[5].Value) ? mSlash.Groups[5].Value : mSlash.Groups[6].Value;
+                    return true;
+                }
+
+                return false;
+            }
+
+            if (TryExtractLog(u, out var uB, out var uA) && TryExtractLogFraction(c, out var cB, out var cA))
+            {
+                if (string.Equals(uB, cB, StringComparison.OrdinalIgnoreCase) && string.Equals(uA, cA, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+                if (double.TryParse(uB, out var numB1) && double.TryParse(cB, out var numB2) &&
+                    double.TryParse(uA, out var numA1) && double.TryParse(cA, out var numA2) &&
+                    Math.Abs(numB1 - numB2) < 1e-6 && Math.Abs(numA1 - numA2) < 1e-6)
+                {
+                    return true;
+                }
+            }
+
+            if (TryExtractLog(c, out var logB, out var logA) && TryExtractLogFraction(u, out var fracB, out var fracA))
+            {
+                if (string.Equals(logB, fracB, StringComparison.OrdinalIgnoreCase) && string.Equals(logA, fracA, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+                if (double.TryParse(logB, out var numB1) && double.TryParse(fracB, out var numB2) &&
+                    double.TryParse(logA, out var numA1) && double.TryParse(fracA, out var numA2) &&
+                    Math.Abs(numB1 - numB2) < 1e-6 && Math.Abs(numA1 - numA2) < 1e-6)
+                {
+                    return true;
+                }
             }
 
             return false;
