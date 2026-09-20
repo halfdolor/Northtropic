@@ -2257,6 +2257,67 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalMalformedJudgementQuestions} 道判断题存在选项或答案格式不变量异常 (包含未规范为「正确/错误」的自然语言答案或破损选项)");
                 }
 
+                int malformedMultipleChoiceQuestions = questionInvariantsToCheck.Count(q =>
+                {
+                    if (q.Type != QuestionType.MultipleChoice) return false;
+                    if (IsJudgementQuestion(q.Category, q.Stem, q.Type, q.OptionsJson, q.CorrectAnswer)) return false;
+
+                    if (q.CorrectAnswer == null) return true;
+                    var ans = q.CorrectAnswer.Trim();
+                    if (q.CorrectAnswer != ans) return true;
+                    if (ans.StartsWith("[") && ans.EndsWith("]")) return true;
+                    if (ans != ans.TrimEnd('.', '。', '、', ';', '；', ' ') || ans != ans.ToUpperInvariant()) return true;
+
+                    if (string.IsNullOrWhiteSpace(q.OptionsJson) || q.OptionsJson.Trim() == "[]") return true;
+                    try
+                    {
+                        var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                        if (opts == null || opts.Count < 2) return true;
+                    }
+                    catch { return true; }
+
+                    return false;
+                });
+                audit.TotalMalformedMultipleChoiceQuestions = malformedMultipleChoiceQuestions;
+                if (audit.TotalMalformedMultipleChoiceQuestions > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalMalformedMultipleChoiceQuestions} 道多选题存在格式不变量异常 (包含答案包含JSON数组格式/未转大写/标点污染或破损选项)");
+                }
+
+                int malformedFillInQuestions = questionInvariantsToCheck.Count(q =>
+                {
+                    if (q.Type != QuestionType.FillInBlank && q.Type != QuestionType.ShortAnswer && q.Type != QuestionType.EssayAnalysis) return false;
+                    if (IsJudgementQuestion(q.Category, q.Stem, q.Type, q.OptionsJson, q.CorrectAnswer)) return false;
+
+                    var ans = q.CorrectAnswer;
+                    if (string.IsNullOrWhiteSpace(ans)) return true;
+                    if (ans != ans.Trim()) return true;
+
+                    if ((ans.StartsWith("\"") && ans.EndsWith("\"") && ans.Length > 1) ||
+                        (ans.StartsWith("“") && ans.EndsWith("”") && ans.Length > 1) ||
+                        (ans.StartsWith("【") && ans.EndsWith("】") && ans.Length > 1))
+                    {
+                        return true;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(q.OptionsJson) && q.OptionsJson.Trim() != "[]")
+                    {
+                        try
+                        {
+                            var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                            if (opts != null && opts.Count > 0) return true;
+                        }
+                        catch { }
+                    }
+
+                    return false;
+                });
+                audit.TotalMalformedFillInQuestions = malformedFillInQuestions;
+                if (audit.TotalMalformedFillInQuestions > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalMalformedFillInQuestions} 道填空/简答题存在格式不变量异常 (包含空白答案、残留选项或外层符号/引号污染)");
+                }
+
                 if (audit.IsHealthy)
                 {
                     audit.AuditDetails.Add("✅ 数据库全库拓扑与业务外键完整性审计通过，未发现任何孤儿或格式损坏记录。");
@@ -3671,7 +3732,7 @@ namespace Northtropic.Services
                         }
                         else
                         {
-                            raw = raw.TrimEnd('.', '、', ';', '；', ' ');
+                            raw = raw.TrimEnd('.', '。', '、', ';', '；', ' ');
                             raw = raw.ToUpperInvariant();
                         }
                         if (q.CorrectAnswer != raw)
@@ -3689,12 +3750,28 @@ namespace Northtropic.Services
                         modified = true;
                     }
 
-                    if (q.Type == QuestionType.FillInBlank)
+                    if (q.Type == QuestionType.FillInBlank || q.Type == QuestionType.ShortAnswer || q.Type == QuestionType.EssayAnalysis)
                     {
-                        if (!string.IsNullOrWhiteSpace(q.CorrectAnswer) && q.CorrectAnswer != q.CorrectAnswer.Trim())
+                        if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
                         {
-                            q.CorrectAnswer = q.CorrectAnswer.Trim();
+                            q.CorrectAnswer = "待补充答案";
                             modified = true;
+                        }
+                        else
+                        {
+                            var cleaned = q.CorrectAnswer.Trim();
+                            if ((cleaned.StartsWith("\"") && cleaned.EndsWith("\"") && cleaned.Length > 1) ||
+                                (cleaned.StartsWith("“") && cleaned.EndsWith("”") && cleaned.Length > 1) ||
+                                (cleaned.StartsWith("【") && cleaned.EndsWith("】") && cleaned.Length > 1) ||
+                                (cleaned.StartsWith("[") && cleaned.EndsWith("]") && cleaned.Length > 1))
+                            {
+                                cleaned = cleaned.Substring(1, cleaned.Length - 2).Trim();
+                            }
+                            if (q.CorrectAnswer != cleaned)
+                            {
+                                q.CorrectAnswer = cleaned;
+                                modified = true;
+                            }
                         }
                     }
                 }

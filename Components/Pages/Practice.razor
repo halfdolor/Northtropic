@@ -1615,13 +1615,14 @@
             {
                 <MudExpansionPanels MultiExpansion="true" Elevation="0" Class="my-2">
                     <MudExpansionPanel Text="📋 本卷作答明细与解析回顾 (点击展开)" Style="background: rgba(var(--mud-palette-surface-rgb), 0.5); border-radius: 8px; border: 1px solid rgba(var(--mud-palette-lines-default-rgb), 0.15);">
-                        <!-- 智能多维筛选 Chips -->
-                        <div class="d-flex align-center gap-2 flex-wrap mb-3 pt-1">
+                        <!-- 智能多维筛选 Chips 与一键导出 -->
+                        <div class="d-flex align-center gap-2 flex-wrap mb-2 pt-1">
+                            <span class="text-caption mud-text-secondary mr-1">作答状态：</span>
                             <MudChip T="string" Size="Size.Small" 
                                      Color="@(_victoryReviewFilter == "all" ? Color.Primary : Color.Default)" 
                                      Variant="@(_victoryReviewFilter == "all" ? Variant.Filled : Variant.Outlined)"
                                      OnClick="@(() => _victoryReviewFilter = "all")">
-                                全部试题 (@_questions.Count)
+                                全部 (@_questions.Count)
                             </MudChip>
                             <MudChip T="string" Size="Size.Small" 
                                      Color="@(_victoryReviewFilter == "wrong" ? Color.Error : Color.Default)" 
@@ -1643,6 +1644,52 @@
                             </MudChip>
                         </div>
 
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                            <div class="d-flex align-center gap-1 flex-wrap">
+                                <span class="text-caption mud-text-secondary mr-1">试题题型：</span>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(_victoryTypeFilter == "all" ? Color.Primary : Color.Default)"
+                                         Variant="@(_victoryTypeFilter == "all" ? Variant.Filled : Variant.Outlined)"
+                                         OnClick="@(() => _victoryTypeFilter = "all")">
+                                    全部题型
+                                </MudChip>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(_victoryTypeFilter == "SingleChoice" ? Color.Secondary : Color.Default)"
+                                         Variant="@(_victoryTypeFilter == "SingleChoice" ? Variant.Filled : Variant.Outlined)"
+                                         OnClick="@(() => _victoryTypeFilter = "SingleChoice")">
+                                    单选 (@_questions.Count(q => q.Type == QuestionType.SingleChoice && !SystemHealthService.IsJudgementQuestion(q)))
+                                </MudChip>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(_victoryTypeFilter == "MultipleChoice" ? Color.Secondary : Color.Default)"
+                                         Variant="@(_victoryTypeFilter == "MultipleChoice" ? Variant.Filled : Variant.Outlined)"
+                                         OnClick="@(() => _victoryTypeFilter = "MultipleChoice")">
+                                    多选 (@_questions.Count(q => q.Type == QuestionType.MultipleChoice))
+                                </MudChip>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(_victoryTypeFilter == "Judgement" ? Color.Secondary : Color.Default)"
+                                         Variant="@(_victoryTypeFilter == "Judgement" ? Variant.Filled : Variant.Outlined)"
+                                         OnClick="@(() => _victoryTypeFilter = "Judgement")">
+                                    判断 (@_questions.Count(q => SystemHealthService.IsJudgementQuestion(q)))
+                                </MudChip>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(_victoryTypeFilter == "FillInBlank" ? Color.Secondary : Color.Default)"
+                                         Variant="@(_victoryTypeFilter == "FillInBlank" ? Variant.Filled : Variant.Outlined)"
+                                         OnClick="@(() => _victoryTypeFilter = "FillInBlank")">
+                                    填空 (@_questions.Count(q => q.Type == QuestionType.FillInBlank && !SystemHealthService.IsJudgementQuestion(q)))
+                                </MudChip>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(_victoryTypeFilter == "ShortAnswer" ? Color.Secondary : Color.Default)"
+                                         Variant="@(_victoryTypeFilter == "ShortAnswer" ? Variant.Filled : Variant.Outlined)"
+                                         OnClick="@(() => _victoryTypeFilter = "ShortAnswer")">
+                                    简答 (@_questions.Count(q => q.Type == QuestionType.ShortAnswer || q.Type == QuestionType.EssayAnalysis))
+                                </MudChip>
+                            </div>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ContentCopy"
+                                       OnClick="@CopyAllSessionErrorsToClipboard">
+                                📋 导出/复制本轮错题清单
+                            </MudButton>
+                        </div>
+
                         <div class="d-flex flex-column gap-3 py-2">
                             @{
                                 int renderedReviewCount = 0;
@@ -1661,6 +1708,16 @@
                                 if (_victoryReviewFilter == "wrong" && (hasResult && isCorrect)) continue;
                                 if (_victoryReviewFilter == "equivalent" && !isEquiv) continue;
                                 if (_victoryReviewFilter == "correct" && (!hasResult || !isCorrect)) continue;
+
+                                if (_victoryTypeFilter != "all")
+                                {
+                                    bool isJudgement = SystemHealthService.IsJudgementQuestion(q);
+                                    if (_victoryTypeFilter == "Judgement" && !isJudgement) continue;
+                                    if (_victoryTypeFilter == "SingleChoice" && (q.Type != QuestionType.SingleChoice || isJudgement)) continue;
+                                    if (_victoryTypeFilter == "FillInBlank" && (q.Type != QuestionType.FillInBlank || isJudgement)) continue;
+                                    if (_victoryTypeFilter == "MultipleChoice" && q.Type != QuestionType.MultipleChoice) continue;
+                                    if (_victoryTypeFilter == "ShortAnswer" && q.Type != QuestionType.ShortAnswer && q.Type != QuestionType.EssayAnalysis) continue;
+                                }
 
                                 renderedReviewCount++;
 
@@ -1977,6 +2034,7 @@
     private int _sessionStrugglingCount = 0;
     private string _sessionPaceAdvice = string.Empty;
     private string _victoryReviewFilter = "all";
+    private string _victoryTypeFilter = "all";
 
     // AI Modal State
     private bool _aiDialogVisible = false;
@@ -3782,6 +3840,72 @@
         catch (Exception ex)
         {
             Snackbar.Add($"复制失败: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private async Task CopyAllSessionErrorsToClipboard()
+    {
+        try
+        {
+            var wrongQuestions = new List<(int Index, Question Question, string? UserAnswer, string? EquivalentReason)>();
+            for (int i = 0; i < _questions.Count; i++)
+            {
+                int qIndex = i + 1;
+                var q = _questions[i];
+                var eval = _evalMode.Contains("整卷统一")
+                    ? (_paperEvalResults.TryGetValue(qIndex, out var pe) ? pe : null)
+                    : (_instantEvalResults.TryGetValue(qIndex, out var ie) ? ie : null);
+                bool hasResult = eval != null;
+                bool isCorrect = eval?.IsCorrect == true;
+                if (!hasResult || !isCorrect)
+                {
+                    wrongQuestions.Add((qIndex, q, eval?.UserAnswer, eval?.EquivalentMatchReason));
+                }
+            }
+
+            if (wrongQuestions.Count == 0)
+            {
+                Snackbar.Add("🎉 太棒了！本轮作答全部正确，未发现任何错题！", Severity.Success);
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"# 本轮刷题错题复盘清单 ({_selectedSubject} · 共 {wrongQuestions.Count} 题)");
+            sb.AppendLine($"生成时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine();
+
+            foreach (var item in wrongQuestions)
+            {
+                sb.AppendLine("---");
+                sb.AppendLine($"## 第 {item.Index} 题 · [{item.Question.Subject} - {item.Question.Category}] {item.Question.TypeDisplayName}");
+                sb.AppendLine(item.Question.Stem);
+                sb.AppendLine();
+                if (!string.IsNullOrWhiteSpace(item.UserAnswer))
+                {
+                    sb.AppendLine($"- ❌ **考生作答**: {item.UserAnswer}");
+                }
+                else
+                {
+                    sb.AppendLine($"- ⚠️ **考生作答**: (未作答)");
+                }
+                sb.AppendLine($"- ✅ **标准答案**: {item.Question.CorrectAnswer}");
+                if (!string.IsNullOrWhiteSpace(item.EquivalentReason))
+                {
+                    sb.AppendLine($"- 🎯 **智能等价认可**: {item.EquivalentReason}");
+                }
+                if (!string.IsNullOrWhiteSpace(item.Question.StandardAnalysis))
+                {
+                    sb.AppendLine($"- 💡 **解析**: {item.Question.StandardAnalysis}");
+                }
+                sb.AppendLine();
+            }
+
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString().TrimEnd());
+            Snackbar.Add($"📋 已成功复制本轮全部 {wrongQuestions.Count} 道错题与解析清单！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"错题清单复制失败: {ex.Message}", Severity.Warning);
         }
     }
 

@@ -754,6 +754,42 @@ namespace Northtropic.Services
                     return $"微积分不定积分常数等价：已自动识别原函数与积分任意常数 C 的加法交换律与大小写表达，对应标准答案 [{correct}]";
                 }
 
+                // 热力学温标与气体压强等价 (如 0℃ <=> 273.15 K, 1 atm <=> 101.3 kPa <=> 760 mmHg)
+                if (CheckThermodynamicAndPressureEquivalence(user, correct) || CheckThermodynamicAndPressureEquivalence(normU, normC))
+                {
+                    bool isPressure = normU.Contains("atm") || normC.Contains("atm") ||
+                                      normU.Contains("pa") || normC.Contains("pa") ||
+                                      normU.Contains("torr") || normC.Contains("torr") ||
+                                      normU.Contains("托") || normC.Contains("托") ||
+                                      normU.Contains("大气压") || normC.Contains("大气压") ||
+                                      normU.Contains("mmhg") || normC.Contains("mmhg");
+                    if (isPressure)
+                    {
+                        return $"压强单位科学等价：已自动识别真空度与气体压强单位（atm、kPa、Pa、Torr/托、mmHg）之间的精确换算，对应标准答案 [{correct}]";
+                    }
+                    return $"热力学温标等价：已自动识别摄氏度与开尔文温标（T = t + 273.15 K）换算，对应标准答案 [{correct}]";
+                }
+
+                // 基本物理常数等价 (如光速 c, 普朗克常量 h, 基本元电荷 e)
+                if (CheckFundamentalPhysicalConstantsEquivalence(user, correct) || CheckFundamentalPhysicalConstantsEquivalence(normU, normC))
+                {
+                    return $"基本物理常数等价：已自动识别光速（c = 3×10^8 m/s）、普朗克常量（h = 6.626×10^-34 J·s）或元电荷（e = 1.6×10^-19 C）表达，对应标准答案 [{correct}]";
+                }
+
+                // 数学对数特殊值与实数集/空集区间等价 (如 ln(e) = 1, lg(100) = 2, (-∞, +∞) = R)
+                if (CheckLogarithmAndIntervalNotationEquivalence(user, correct) || CheckLogarithmAndIntervalNotationEquivalence(normU, normC))
+                {
+                    if (normU.Contains("inf") || normC.Contains("inf") || normU == "r" || normC == "r" || normU.Contains("实数") || normC.Contains("实数"))
+                    {
+                        return $"全实数集合域等价：已识别全体实数、实数集与实数域 \\mathbb{{R}} / (-∞, +∞) 等价，对应标准答案 [{correct}]";
+                    }
+                    if (normU == "∅" || normC == "∅" || normU == "空集" || normC == "空集" || normU == "{}" || normC == "{}")
+                    {
+                        return $"解集与空集等价：已识别无解/空集 \\emptyset 与 {{}} 等价，对应标准答案 [{correct}]";
+                    }
+                    return $"数学对数特殊值等价：已自动识别对数特殊值（如 ln(e)=1, lg(100)=2, log2(8)=3）对应标准答案 [{correct}]";
+                }
+
                 // 代数因式分解因子乘积交换律等价
                 if (CheckPolynomialFactorProductCommutativeMatch(user, correct) ||
                     CheckPolynomialFactorProductCommutativeMatch(normU, normC))
@@ -5767,6 +5803,24 @@ namespace Northtropic.Services
                 return true;
             }
 
+            // 热力学温标与气体压强等价 (如 0℃ <=> 273.15 K, 1 atm <=> 101.3 kPa <=> 760 mmHg)
+            if (CheckThermodynamicAndPressureEquivalence(user, correct) || CheckThermodynamicAndPressureEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
+            // 基本物理常数等价 (如光速 c, 普朗克常量 h, 基本元电荷 e)
+            if (CheckFundamentalPhysicalConstantsEquivalence(user, correct) || CheckFundamentalPhysicalConstantsEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
+            // 数学对数特殊值与实数集/空集区间等价 (如 ln(e) = 1, lg(100) = 2, (-∞, +∞) = R)
+            if (CheckLogarithmAndIntervalNotationEquivalence(user, correct) || CheckLogarithmAndIntervalNotationEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
             // 规范化多元方程解集无序置换等价匹配: 如 "y=3,x=2" 与 "x=2,y=3"
             if (normUser.Contains(',') && normUser.Contains('=') && normCorrect.Contains(',') && normCorrect.Contains('='))
             {
@@ -7756,6 +7810,266 @@ namespace Northtropic.Services
                 return false;
             }
             if (IsMolarVolumeStp(nU) && IsMolarVolumeStp(nC)) return true;
+
+            return false;
+        }
+
+        public static bool CheckThermodynamicAndPressureEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            u = u.Trim();
+            c = c.Trim();
+
+            // 1. 热力学温标与摄氏度等价: 0℃ <=> 273.15K (或 273K), 25℃ <=> 298.15K, 100℃ <=> 373.15K, -273.15℃ <=> 0K
+            bool hasTempHint = System.Text.RegularExpressions.Regex.IsMatch(u, @"(℃|°c|celsius|摄氏度|\b[kK]\b|kelvin|开尔文)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
+                               System.Text.RegularExpressions.Regex.IsMatch(c, @"(℃|°c|celsius|摄氏度|\b[kK]\b|kelvin|开尔文)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (hasTempHint)
+            {
+                static bool TryParseTempKelvin(string s, out double kelvin)
+                {
+                    kelvin = 0;
+                    if (string.IsNullOrWhiteSpace(s)) return false;
+                    var raw = s.Trim().ToLowerInvariant()
+                        .Replace(" ", "")
+                        .Replace("摄氏度", "c").Replace("℃", "c").Replace("°c", "c").Replace("celsius", "c")
+                        .Replace("开尔文", "k").Replace("kelvin", "k");
+
+                    if (raw.EndsWith("k"))
+                    {
+                        var numStr = raw.Substring(0, raw.Length - 1);
+                        if (double.TryParse(numStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double kVal))
+                        {
+                            kelvin = kVal;
+                            return true;
+                        }
+                    }
+                    else if (raw.EndsWith("c"))
+                    {
+                        var numStr = raw.Substring(0, raw.Length - 1);
+                        if (double.TryParse(numStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double cVal))
+                        {
+                            kelvin = cVal + 273.15;
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                if (TryParseTempKelvin(u, out double kU) && TryParseTempKelvin(c, out double kC))
+                {
+                    // 允许 273 或 273.15 的细微标准差异 (0.25K 宽容度)
+                    if (Math.Abs(kU - kC) <= 0.25) return true;
+                }
+            }
+
+            // 2. 气体压强单位等价: 1 atm <=> 101.3 kPa <=> 1.013*10^5 Pa <=> 101325 Pa <=> 760 mmHg <=> 760 Torr
+            bool hasPressureHint = System.Text.RegularExpressions.Regex.IsMatch(u, @"(atm|kpa|pa|mmhg|torr|标准大气压|帕)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
+                                   System.Text.RegularExpressions.Regex.IsMatch(c, @"(atm|kpa|pa|mmhg|torr|标准大气压|帕)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (hasPressureHint)
+            {
+                static bool TryParsePressurePa(string s, out double pa)
+                {
+                    pa = 0;
+                    if (string.IsNullOrWhiteSpace(s)) return false;
+                    var raw = s.Trim().ToLowerInvariant()
+                        .Replace(" ", "")
+                        .Replace("\\times", "*").Replace("×", "*").Replace("·", "*")
+                        .Replace("标准大气压", "atm")
+                        .Replace("千帕", "kpa").Replace("帕斯卡", "pa").Replace("毫米汞柱", "mmhg").Replace("托", "torr");
+
+                    if (raw == "1atm" || raw == "atm") { pa = 101325; return true; }
+                    if (raw.EndsWith("atm"))
+                    {
+                        var nStr = raw.Substring(0, raw.Length - 3);
+                        if (double.TryParse(nStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double aVal))
+                        {
+                            pa = aVal * 101325;
+                            return true;
+                        }
+                    }
+                    if (raw.EndsWith("mmhg") || raw.EndsWith("torr"))
+                    {
+                        int cut = raw.EndsWith("mmhg") ? 4 : 4;
+                        var nStr = raw.Substring(0, raw.Length - cut);
+                        if (double.TryParse(nStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double mVal))
+                        {
+                            pa = mVal * (101325.0 / 760.0);
+                            return true;
+                        }
+                    }
+                    if (raw.EndsWith("kpa"))
+                    {
+                        var nStr = raw.Substring(0, raw.Length - 3);
+                        if (double.TryParse(nStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double kVal))
+                        {
+                            pa = kVal * 1000.0;
+                            return true;
+                        }
+                    }
+                    if (raw.EndsWith("pa"))
+                    {
+                        var nStr = raw.Substring(0, raw.Length - 2);
+                        if (nStr == "1.013*10^5" || nStr == "1.013*10^{5}" || nStr == "1.013e5" || nStr == "101325") { pa = 101325; return true; }
+                        if (nStr == "1*10^5" || nStr == "10^5" || nStr == "100000") { pa = 100000; return true; }
+                        if (double.TryParse(nStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double pVal))
+                        {
+                            pa = pVal;
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                if (TryParsePressurePa(u, out double pU) && TryParsePressurePa(c, out double pC))
+                {
+                    if (pU > 0 && pC > 0 && Math.Abs(pU - pC) / Math.Max(pU, pC) < 0.005) return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static bool CheckFundamentalPhysicalConstantsEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            u = u.Trim();
+            c = c.Trim();
+
+            static string NormConst(string s)
+            {
+                return s.Trim().ToLowerInvariant()
+                    .Replace(" ", "")
+                    .Replace("\\times", "*").Replace("×", "*").Replace("·", "*")
+                    .Replace("{", "(").Replace("}", ")")
+                    .Replace("光速", "c").Replace("普朗克常数", "h").Replace("普朗克常量", "h").Replace("元电荷", "e").Replace("基本电荷", "e");
+            }
+
+            var nU = NormConst(u);
+            var nC = NormConst(c);
+
+            // 1. 光速 c <=> 3*10^8 m/s <=> 3.0*10^8 m/s <=> 3e8 m/s <=> 3*10^5 km/s <=> 300000 km/s
+            static bool IsSpeedOfLight(string s)
+            {
+                if (s == "c" || s == "光速") return true;
+                if (s == "3*10^8m/s" || s == "3.0*10^8m/s" || s == "3*10^(8)m/s" || s == "3e8m/s" || s == "3.0e8m/s" || s == "300000000m/s") return true;
+                if (s == "3*10^5km/s" || s == "3.0*10^5km/s" || s == "3*10^(5)km/s" || s == "3e5km/s" || s == "300000km/s") return true;
+                return false;
+            }
+            if ((nU == "c" || nU == "光速" || nC == "c" || nC == "光速") &&
+                (nU == "3*10^8" || nU == "3.0*10^8" || nU == "3e8" || nC == "3*10^8" || nC == "3.0*10^8" || nC == "3e8"))
+            {
+                return true;
+            }
+            if (IsSpeedOfLight(nU) && IsSpeedOfLight(nC)) return true;
+
+            // 2. 普朗克常量 h <=> 6.626*10^-34 J*s <=> 6.63*10^-34 J*s
+            static bool IsPlanck(string s)
+            {
+                if (s == "h" || s == "普朗克常数" || s == "普朗克常量") return true;
+                bool hasUnit = s.Contains("j*s") || s.Contains("j·s") || s.Contains("js") || s.Contains("焦");
+                var raw = s.Replace("j*s", "").Replace("j·s", "").Replace("js", "").Replace("焦·秒", "").Replace("焦耳·秒", "");
+                if (raw == "6.626*10^-34" || raw == "6.626*10^(-34)" || raw == "6.626e-34" ||
+                    raw == "6.63*10^-34" || raw == "6.63*10^(-34)" || raw == "6.63e-34")
+                {
+                    return hasUnit;
+                }
+                return false;
+            }
+            if ((nU == "h" || nU == "普朗克常数" || nU == "普朗克常量" || nC == "h" || nC == "普朗克常数" || nC == "普朗克常量") &&
+                (nU.Contains("6.626") || nU.Contains("6.63") || nC.Contains("6.626") || nC.Contains("6.63")))
+            {
+                return true;
+            }
+            if (IsPlanck(nU) && IsPlanck(nC)) return true;
+
+            // 3. 元电荷 e <=> 1.6*10^-19 C <=> 1.60*10^-19 C <=> 1.602*10^-19 C
+            static bool IsElementaryCharge(string s)
+            {
+                if (s == "e" || s == "元电荷" || s == "基本电荷") return true;
+                bool hasUnit = s.Contains("c") || s.Contains("库");
+                var raw = s.Replace("c", "").Replace("库仑", "").Replace("库", "");
+                if (raw == "1.6*10^-19" || raw == "1.6*10^(-19)" || raw == "1.6e-19" ||
+                    raw == "1.60*10^-19" || raw == "1.60*10^(-19)" || raw == "1.60e-19" ||
+                    raw == "1.602*10^-19" || raw == "1.602*10^(-19)" || raw == "1.602e-19")
+                {
+                    return hasUnit;
+                }
+                return false;
+            }
+            if ((nU == "e" || nU == "元电荷" || nU == "基本电荷" || nC == "e" || nC == "元电荷" || nC == "基本电荷") &&
+                (nU.Contains("1.6") || nC.Contains("1.6")))
+            {
+                return true;
+            }
+            if (IsElementaryCharge(nU) && IsElementaryCharge(nC)) return true;
+
+            return false;
+        }
+
+        public static bool CheckLogarithmAndIntervalNotationEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            u = u.Trim();
+            c = c.Trim();
+
+            static string CleanMath(string s)
+            {
+                return s.Trim().ToLowerInvariant()
+                    .Replace(" ", "")
+                    .Replace("{", "(").Replace("}", ")")
+                    .Replace("（", "(").Replace("）", ")")
+                    .Replace("【", "[").Replace("】", "]")
+                    .Replace("\\mathbb(r)", "r").Replace("\\mathbf(r)", "r").Replace("实数集", "r").Replace("全体实数", "r")
+                    .Replace("\\emptyset", "∅").Replace("\\phi", "∅").Replace("phi", "∅").Replace("空集", "∅").Replace("()", "∅");
+            }
+
+            var nU = CleanMath(u);
+            var nC = CleanMath(c);
+
+            // 1. 实数集与区间等价: (-∞, +∞) <=> (-inf, inf) <=> R
+            static bool IsRealNumbersSet(string s)
+            {
+                if (s == "r" || s == "实数" || s == "全体实数" || s == "实数集") return true;
+                if (s == "(-inf,+inf)" || s == "(-inf,inf)" || s == "(-∞,+∞)" || s == "(-∞,∞)" || s == "(-infty,+infty)" || s == "(-infty,infty)") return true;
+                return false;
+            }
+            if (IsRealNumbersSet(nU) && IsRealNumbersSet(nC)) return true;
+
+            // 2. 空集等价: ∅ <=> 空集 <=> {} <=> \emptyset
+            static bool IsEmptySet(string s)
+            {
+                return s == "∅" || s == "{}" || s == "空集";
+            }
+            if (IsEmptySet(nU) && IsEmptySet(nC)) return true;
+
+            // 3. 对数特殊值等价:
+            static bool TryEvalSpecialLog(string s, out int val)
+            {
+                val = 0;
+                if (s == "0") { val = 0; return true; }
+                if (s == "1") { val = 1; return true; }
+                if (s == "2") { val = 2; return true; }
+                if (s == "3") { val = 3; return true; }
+                if (s == "4") { val = 4; return true; }
+
+                if (s == "ln(e)" || s == "lne") { val = 1; return true; }
+                if (s == "ln(1)" || s == "ln1") { val = 0; return true; }
+                if (s == "lg(10)" || s == "lg10") { val = 1; return true; }
+                if (s == "lg(100)" || s == "lg100") { val = 2; return true; }
+                if (s == "lg(1000)" || s == "lg1000") { val = 3; return true; }
+                if (s == "lg(1)" || s == "lg1") { val = 0; return true; }
+                if (s == "log2(2)" || s == "log_2(2)" || s == "log22") { val = 1; return true; }
+                if (s == "log2(4)" || s == "log_2(4)" || s == "log24") { val = 2; return true; }
+                if (s == "log2(8)" || s == "log_2(8)" || s == "log28") { val = 3; return true; }
+                if (s == "log2(16)" || s == "log_2(16)" || s == "log216") { val = 4; return true; }
+                if (s == "log2(1)" || s == "log_2(1)" || s == "log21") { val = 0; return true; }
+                return false;
+            }
+
+            if ((nU.Contains("l") || nC.Contains("l")) && TryEvalSpecialLog(nU, out int vU) && TryEvalSpecialLog(nC, out int vC))
+            {
+                return vU == vC;
+            }
 
             return false;
         }
