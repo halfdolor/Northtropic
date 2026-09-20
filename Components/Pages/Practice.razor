@@ -1684,10 +1684,16 @@
                                     简答 (@_questions.Count(q => q.Type == QuestionType.ShortAnswer || q.Type == QuestionType.EssayAnalysis))
                                 </MudChip>
                             </div>
-                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ContentCopy"
-                                       OnClick="@CopyAllSessionErrorsToClipboard">
-                                📋 导出/复制本轮错题清单
-                            </MudButton>
+                            <div class="d-flex align-center gap-2">
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ContentCopy"
+                                           OnClick="@CopyAllSessionErrorsToClipboard">
+                                    📋 导出/复制本轮错题清单
+                                </MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download"
+                                           OnClick="@DownloadSessionErrorsMarkdownAsync">
+                                    📥 下载错题复盘文档 (.md)
+                                </MudButton>
+                            </div>
                         </div>
 
                         <div class="d-flex flex-column gap-3 py-2">
@@ -1733,6 +1739,19 @@
                                                 {
                                                     <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.CheckCircle">
                                                         🎯 智能等价认可
+                                                    </MudChip>
+                                                }
+                                                @if (eval?.TimeTakenSeconds > 0)
+                                                {
+                                                    var sec = eval.TimeTakenSeconds;
+                                                    var (paceColor, paceIcon, paceLabel) = sec switch
+                                                    {
+                                                        < 10 => (Color.Tertiary, Icons.Material.Filled.FlashOn, "极速"),
+                                                        <= 45 => (Color.Info, Icons.Material.Filled.Speed, "稳健"),
+                                                        _ => (Color.Warning, Icons.Material.Filled.HourglassBottom, "深思")
+                                                    };
+                                                    <MudChip T="string" Size="Size.Small" Color="@paceColor" Variant="Variant.Outlined" Icon="@paceIcon">
+                                                        ⏱️ @(sec)s · @paceLabel
                                                     </MudChip>
                                                 }
                                             }
@@ -3906,6 +3925,78 @@
         catch (Exception ex)
         {
             Snackbar.Add($"错题清单复制失败: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private async Task DownloadSessionErrorsMarkdownAsync()
+    {
+        try
+        {
+            var wrongQuestions = new List<(int Index, Question Question, string? UserAnswer, string? EquivalentReason)>();
+            for (int i = 0; i < _questions.Count; i++)
+            {
+                int qIndex = i + 1;
+                var q = _questions[i];
+                var eval = _evalMode.Contains("整卷统一")
+                    ? (_paperEvalResults.TryGetValue(qIndex, out var pe) ? pe : null)
+                    : (_instantEvalResults.TryGetValue(qIndex, out var ie) ? ie : null);
+                bool hasResult = eval != null;
+                bool isCorrect = eval?.IsCorrect == true;
+                if (!hasResult || !isCorrect)
+                {
+                    wrongQuestions.Add((qIndex, q, eval?.UserAnswer, eval?.EquivalentMatchReason));
+                }
+            }
+
+            if (wrongQuestions.Count == 0)
+            {
+                Snackbar.Add("🎉 太棒了！本轮作答全部正确，无错题需下载！", Severity.Success);
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"# 本轮刷题错题复盘报告");
+            sb.AppendLine();
+            sb.AppendLine($"- **学科与题库**: {_selectedSubject} · {_selectedCategory}");
+            sb.AppendLine($"- **生成时间**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"- **错题总数**: {wrongQuestions.Count} 题");
+            sb.AppendLine();
+
+            foreach (var item in wrongQuestions)
+            {
+                sb.AppendLine("---");
+                sb.AppendLine($"## 第 {item.Index} 题 · [{item.Question.Subject} - {item.Question.Category}] {item.Question.TypeDisplayName}");
+                sb.AppendLine();
+                sb.AppendLine(item.Question.Stem);
+                sb.AppendLine();
+                if (!string.IsNullOrWhiteSpace(item.UserAnswer))
+                {
+                    sb.AppendLine($"- ❌ **考生作答**: {item.UserAnswer}");
+                }
+                else
+                {
+                    sb.AppendLine($"- ⚠️ **考生作答**: (未作答)");
+                }
+                sb.AppendLine($"- ✅ **标准答案**: {item.Question.CorrectAnswer}");
+                if (!string.IsNullOrWhiteSpace(item.EquivalentReason))
+                {
+                    sb.AppendLine($"- 🎯 **智能等价说明**: {item.EquivalentReason}");
+                }
+                if (!string.IsNullOrWhiteSpace(item.Question.StandardAnalysis))
+                {
+                    sb.AppendLine($"- 💡 **解析**: {item.Question.StandardAnalysis}");
+                }
+                sb.AppendLine();
+            }
+
+            string safeSubject = string.IsNullOrWhiteSpace(_selectedSubject) ? "全科" : _selectedSubject.Trim();
+            string fileName = $"错题复盘_{safeSubject}_{DateTime.Now:yyyyMMdd_HHmmss}.md";
+            await JSRuntime.InvokeVoidAsync("downloadTextFile", fileName, sb.ToString(), "text/markdown;charset=utf-8");
+            Snackbar.Add($"📥 已开始下载错题复盘文档: {fileName}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"错题文档下载失败: {ex.Message}", Severity.Warning);
         }
     }
 

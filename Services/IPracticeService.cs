@@ -18,6 +18,7 @@ namespace Northtropic.Services
         public string? CognitiveClassification { get; set; }
         public string? CognitiveBadgeText { get; set; }
         public string? StudyPlanProgressFeedback { get; set; }
+        public int TimeTakenSeconds { get; set; }
     }
 
     public class SubjectAnalyticsDto

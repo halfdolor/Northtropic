@@ -2210,6 +2210,9 @@ namespace Northtropic.Services
                         {
                             var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
                             if (opts == null || opts.Count < 2) return true;
+                            if (opts.Any(string.IsNullOrWhiteSpace)) return true;
+                            var nonBlank = opts.Select(o => o.Trim()).Where(o => !string.IsNullOrEmpty(o)).ToList();
+                            if (nonBlank.Distinct(StringComparer.OrdinalIgnoreCase).Count() < nonBlank.Count) return true;
                         }
                         catch { return true; }
                     }
@@ -3647,6 +3650,7 @@ namespace Northtropic.Services
                 else if (q.Type == QuestionType.SingleChoice)
                 {
                     bool needOptionsHeal = false;
+                    List<string>? currentOpts = null;
                     if (string.IsNullOrWhiteSpace(q.OptionsJson) || q.OptionsJson.Trim() == "[]")
                     {
                         needOptionsHeal = true;
@@ -3655,14 +3659,53 @@ namespace Northtropic.Services
                     {
                         try
                         {
-                            var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
-                            if (opts == null || opts.Count < 2) needOptionsHeal = true;
+                            currentOpts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                            if (currentOpts == null || currentOpts.Count < 2 || currentOpts.Any(string.IsNullOrWhiteSpace))
+                            {
+                                needOptionsHeal = true;
+                            }
+                            else
+                            {
+                                var nonBlank = currentOpts.Select(o => o.Trim()).Where(o => !string.IsNullOrEmpty(o)).ToList();
+                                if (nonBlank.Distinct(StringComparer.OrdinalIgnoreCase).Count() < nonBlank.Count)
+                                {
+                                    needOptionsHeal = true;
+                                }
+                            }
                         }
                         catch { needOptionsHeal = true; }
                     }
                     if (needOptionsHeal)
                     {
-                        q.OptionsJson = System.Text.Json.JsonSerializer.Serialize(new List<string> { "选项A", "选项B", "选项C", "选项D" });
+                        var healed = new List<string>();
+                        if (currentOpts != null)
+                        {
+                            foreach (var opt in currentOpts)
+                            {
+                                var t = opt?.Trim();
+                                if (!string.IsNullOrWhiteSpace(t) && !healed.Any(h => string.Equals(h, t, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    healed.Add(t);
+                                }
+                            }
+                        }
+                        var fallbackPool = new[] { "选项A", "选项B", "选项C", "选项D" };
+                        foreach (var f in fallbackPool)
+                        {
+                            if (healed.Count >= 4) break;
+                            if (!healed.Any(h => string.Equals(h, f, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                healed.Add(f);
+                            }
+                        }
+                        if (healed.Count < 2)
+                        {
+                            healed = new List<string> { "选项A", "选项B", "选项C", "选项D" };
+                        }
+                        q.OptionsJson = System.Text.Json.JsonSerializer.Serialize(healed, new System.Text.Json.JsonSerializerOptions
+                        {
+                            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                        });
                         modified = true;
                     }
 
@@ -3695,6 +3738,7 @@ namespace Northtropic.Services
                 else if (q.Type == QuestionType.MultipleChoice)
                 {
                     bool needOptionsHeal = false;
+                    List<string>? currentOpts = null;
                     if (string.IsNullOrWhiteSpace(q.OptionsJson) || q.OptionsJson.Trim() == "[]")
                     {
                         needOptionsHeal = true;
@@ -3703,14 +3747,53 @@ namespace Northtropic.Services
                     {
                         try
                         {
-                            var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
-                            if (opts == null || opts.Count < 2) needOptionsHeal = true;
+                            currentOpts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                            if (currentOpts == null || currentOpts.Count < 2 || currentOpts.Any(string.IsNullOrWhiteSpace))
+                            {
+                                needOptionsHeal = true;
+                            }
+                            else
+                            {
+                                var nonBlank = currentOpts.Select(o => o.Trim()).Where(o => !string.IsNullOrEmpty(o)).ToList();
+                                if (nonBlank.Distinct(StringComparer.OrdinalIgnoreCase).Count() < nonBlank.Count)
+                                {
+                                    needOptionsHeal = true;
+                                }
+                            }
                         }
                         catch { needOptionsHeal = true; }
                     }
                     if (needOptionsHeal)
                     {
-                        q.OptionsJson = System.Text.Json.JsonSerializer.Serialize(new List<string> { "选项A", "选项B", "选项C", "选项D" });
+                        var healed = new List<string>();
+                        if (currentOpts != null)
+                        {
+                            foreach (var opt in currentOpts)
+                            {
+                                var t = opt?.Trim();
+                                if (!string.IsNullOrWhiteSpace(t) && !healed.Any(h => string.Equals(h, t, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    healed.Add(t);
+                                }
+                            }
+                        }
+                        var fallbackPool = new[] { "选项A", "选项B", "选项C", "选项D" };
+                        foreach (var f in fallbackPool)
+                        {
+                            if (healed.Count >= 4) break;
+                            if (!healed.Any(h => string.Equals(h, f, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                healed.Add(f);
+                            }
+                        }
+                        if (healed.Count < 2)
+                        {
+                            healed = new List<string> { "选项A", "选项B", "选项C", "选项D" };
+                        }
+                        q.OptionsJson = System.Text.Json.JsonSerializer.Serialize(healed, new System.Text.Json.JsonSerializerOptions
+                        {
+                            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                        });
                         modified = true;
                     }
 
@@ -3773,6 +3856,28 @@ namespace Northtropic.Services
                                 modified = true;
                             }
                         }
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(q.StandardAnalysis))
+                {
+                    var sa = q.StandardAnalysis.Trim();
+                    bool saModified = false;
+                    while (true)
+                    {
+                        if (sa.StartsWith("解析：解析：", StringComparison.OrdinalIgnoreCase)) { sa = "解析：" + sa.Substring(6).Trim(); saModified = true; }
+                        else if (sa.StartsWith("解析:解析:", StringComparison.OrdinalIgnoreCase)) { sa = "解析:" + sa.Substring(6).Trim(); saModified = true; }
+                        else if (sa.StartsWith("【解析】【解析】", StringComparison.OrdinalIgnoreCase)) { sa = "【解析】" + sa.Substring(8).Trim(); saModified = true; }
+                        else if (sa.StartsWith("解析：【解析】", StringComparison.OrdinalIgnoreCase)) { sa = "解析：" + sa.Substring(7).Trim(); saModified = true; }
+                        else if (sa.StartsWith("【解析】解析：", StringComparison.OrdinalIgnoreCase)) { sa = "【解析】" + sa.Substring(7).Trim(); saModified = true; }
+                        else if (sa.StartsWith("解析:【解析】", StringComparison.OrdinalIgnoreCase)) { sa = "解析:" + sa.Substring(6).Trim(); saModified = true; }
+                        else if (sa.StartsWith("【解析】解析:", StringComparison.OrdinalIgnoreCase)) { sa = "【解析】" + sa.Substring(7).Trim(); saModified = true; }
+                        else { break; }
+                    }
+                    if (saModified && q.StandardAnalysis != sa)
+                    {
+                        q.StandardAnalysis = sa;
+                        modified = true;
                     }
                 }
 

@@ -685,7 +685,8 @@ namespace Northtropic.Services
                 EquivalentMatchReason = matchReason,
                 CognitiveClassification = cognitiveClass,
                 CognitiveBadgeText = cognitiveBadge,
-                StudyPlanProgressFeedback = planFeedback
+                StudyPlanProgressFeedback = planFeedback,
+                TimeTakenSeconds = timeTakenSeconds
             };
         }
 
@@ -752,6 +753,24 @@ namespace Northtropic.Services
                 if (CheckIndefiniteIntegralConstantCMatch(user, correct) || CheckIndefiniteIntegralConstantCMatch(normU, normC))
                 {
                     return $"微积分不定积分常数等价：已自动识别原函数与积分任意常数 C 的加法交换律与大小写表达，对应标准答案 [{correct}]";
+                }
+
+                // 化学电解质溶液与酸碱 pH/pOH、离子浓度等价
+                if (CheckChemicalPhAndElectrolyteEquivalence(user, correct) || CheckChemicalPhAndElectrolyteEquivalence(normU, normC))
+                {
+                    return $"化学溶液与酸碱平衡等价：已自动识别溶液 pH/pOH、氢离子/氢氧根浓度换算（pH <=> pOH <=> c(H+)）或电离平衡常数科学等价性，对应标准答案 [{correct}]";
+                }
+
+                // 物理复合量与常用度量换算等价（速度、密度、电功度数）
+                if (CheckPhysicalCompoundUnitAndConversionEquivalence(user, correct) || CheckPhysicalCompoundUnitAndConversionEquivalence(normU, normC))
+                {
+                    return $"物理复合单位与常用度量换算等价（物理电磁/频率/能量单位智能对齐等价）：已自动识别速度（m/s <=> km/h）、密度（g/cm³ <=> kg/m³）或电能千瓦时与焦耳（kW·h <=> J / 度电）科学等价换算，对应标准答案 [{correct}]";
+                }
+
+                // 立体几何与解析几何形体表面积与体积公式符号等价
+                if (CheckGeometricFormulaEquivalence(user, correct) || CheckGeometricFormulaEquivalence(normU, normC))
+                {
+                    return $"立体几何核心形体公式等价：已自动识别球体/圆柱/圆锥的表面积或体积公式（包含大小写半径、系数乘法与符号表达）等价性，对应标准公式 [{correct}]";
                 }
 
                 // 热力学温标与气体压强等价 (如 0℃ <=> 273.15 K, 1 atm <=> 101.3 kPa <=> 760 mmHg)
@@ -6554,6 +6573,15 @@ namespace Northtropic.Services
             // 微积分不定积分常数 C 加法交换与大小写等价 (如 x^2 + C vs C + x^2 vs x^2 + c)
             if (CheckIndefiniteIntegralConstantCMatch(user, correct) || CheckIndefiniteIntegralConstantCMatch(normUser, normCorrect)) return true;
 
+            // 化学电解质溶液与酸碱平衡等价 (如 pH = 7 <=> pOH = 7 <=> 中性, pH = 3 <=> pOH = 11, c(H+) = 10^-7 mol/L <=> pH = 7, Ksp <=> K_{sp})
+            if (CheckChemicalPhAndElectrolyteEquivalence(user, correct) || CheckChemicalPhAndElectrolyteEquivalence(normUser, normCorrect)) return true;
+
+            // 物理复合量与常用单位科学换算等价 (如 10 m/s <=> 36 km/h, 1 g/cm³ <=> 1000 kg/m³, 1 kW·h <=> 3.6*10^6 J <=> 1度)
+            if (CheckPhysicalCompoundUnitAndConversionEquivalence(user, correct) || CheckPhysicalCompoundUnitAndConversionEquivalence(normUser, normCorrect)) return true;
+
+            // 立体几何与解析几何形体表面积与体积公式符号等价 (如 V = 4/3*pi*r^3, S = 4*pi*r^2, V = pi*r^2*h <=> Sh)
+            if (CheckGeometricFormulaEquivalence(user, correct) || CheckGeometricFormulaEquivalence(normUser, normCorrect)) return true;
+
             return false;
         }
 
@@ -8189,6 +8217,447 @@ namespace Northtropic.Services
             }
 
             return false;
+        }
+
+        public static bool CheckChemicalPhAndElectrolyteEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+
+            string nu = NormalizePhInput(u);
+            string nc = NormalizePhInput(c);
+
+            if (string.IsNullOrEmpty(nu) || string.IsNullOrEmpty(nc)) return false;
+            if (string.Equals(nu, nc, StringComparison.OrdinalIgnoreCase)) return true;
+
+            // 平衡常数符号匹配 (Ksp <=> K_{sp}, Ka <=> K_{a}, Kb <=> K_{b}, Kw <=> K_{w}, Kh <=> K_{h})
+            if (IsEquivEquilibriumConstant(nu, nc)) return true;
+
+            // 水的离子积常数数值: Kw = 10^-14 <=> 1.0 * 10^-14 <=> 10^-14 mol^2/L^2
+            if (IsEquivKwValue(nu, nc)) return true;
+
+            // 中性溶液: pH = 7 <=> 中性
+            if ((nu == "ph=7" || nu == "7" || nu == "ph7") && (nc.Contains("中性") || nc == "7")) return true;
+            if ((nc == "ph=7" || nc == "7" || nc == "ph7") && (nu.Contains("中性") || nu == "7")) return true;
+
+            // pH 与 pOH 换算: pH + pOH = 14
+            if (TryExtractPhOrPoh(nu, out var isPohU, out var valU) &&
+                TryExtractPhOrPoh(nc, out var isPohC, out var valC))
+            {
+                double effectivePhU = isPohU ? 14.0 - valU : valU;
+                double effectivePhC = isPohC ? 14.0 - valC : valC;
+                if (Math.Abs(effectivePhU - effectivePhC) < 0.05) return true;
+            }
+
+            // 氢离子浓度 c(H+) 与 pH
+            if (TryExtractConcentrationPh(nu, out var phFromConcU) && TryExtractPhOrPoh(nc, out var isPohC2, out var valC2))
+            {
+                double targetPh = isPohC2 ? 14.0 - valC2 : valC2;
+                if (Math.Abs(phFromConcU - targetPh) < 0.05) return true;
+            }
+            if (TryExtractConcentrationPh(nc, out var phFromConcC) && TryExtractPhOrPoh(nu, out var isPohU2, out var valU2))
+            {
+                double targetPh = isPohU2 ? 14.0 - valU2 : valU2;
+                if (Math.Abs(phFromConcC - targetPh) < 0.05) return true;
+            }
+
+            // c(OH-) 与 pOH / pH
+            if (TryExtractHydroxideConcPoh(nu, out var pohFromConcU) && TryExtractPhOrPoh(nc, out var isPohC3, out var valC3))
+            {
+                double targetPoh = isPohC3 ? valC3 : 14.0 - valC3;
+                if (Math.Abs(pohFromConcU - targetPoh) < 0.05) return true;
+            }
+            if (TryExtractHydroxideConcPoh(nc, out var pohFromConcC) && TryExtractPhOrPoh(nu, out var isPohU3, out var valU3))
+            {
+                double targetPoh = isPohU3 ? valU3 : 14.0 - valU3;
+                if (Math.Abs(pohFromConcC - targetPoh) < 0.05) return true;
+            }
+
+            return false;
+        }
+
+        private static string NormalizePhInput(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+            s = s.Trim().Replace(" ", "").Replace("$", "").Replace("￥", "");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:text|mathrm|mathbf)\{([^}]*)\}", "$1");
+            s = s.Replace("×", "*").Replace("·", "*").Replace("✕", "*");
+            s = s.Replace("【", "[").Replace("】", "]");
+            s = s.Replace("¹", "1").Replace("²", "2").Replace("³", "3").Replace("⁴", "4").Replace("⁵", "5")
+                 .Replace("⁶", "6").Replace("⁷", "7").Replace("⁸", "8").Replace("⁹", "9").Replace("⁰", "0")
+                 .Replace("⁻", "-").Replace("⁺", "+");
+            return s.ToLowerInvariant();
+        }
+
+        private static bool IsEquivEquilibriumConstant(string a, string b)
+        {
+            string NormK(string s)
+            {
+                s = s.Replace("{", "").Replace("}", "").Replace("_", "").Replace("^", "");
+                if (s == "ksp" || s == "k_sp") return "ksp";
+                if (s == "ka" || s == "k_a") return "ka";
+                if (s == "kb" || s == "k_b") return "kb";
+                if (s == "kw" || s == "k_w") return "kw";
+                if (s == "kh" || s == "k_h") return "kh";
+                return s;
+            }
+            string na = NormK(a);
+            string nb = NormK(b);
+            return na == nb && (na == "ksp" || na == "ka" || na == "kb" || na == "kw" || na == "kh");
+        }
+
+        private static bool IsEquivKwValue(string a, string b)
+        {
+            string NormKwVal(string s)
+            {
+                s = s.Replace("mol^2/l^2", "").Replace("mol2/l2", "").Replace("mol^2*l^-2", "");
+                s = s.Replace("kw=", "").Replace("k_w=", "").Replace("kw:", "");
+                if (s == "10^-14" || s == "1*10^-14" || s == "1.0*10^-14" || s == "1.0x10^-14" || s == "1e-14") return "1e-14";
+                return s;
+            }
+            return NormKwVal(a) == "1e-14" && NormKwVal(b) == "1e-14";
+        }
+
+        private static bool TryExtractPhOrPoh(string s, out bool isPoh, out double val)
+        {
+            isPoh = false;
+            val = 0;
+            if (string.IsNullOrWhiteSpace(s)) return false;
+
+            if (s.StartsWith("poh=", StringComparison.OrdinalIgnoreCase) || s.StartsWith("poh:", StringComparison.OrdinalIgnoreCase))
+            {
+                isPoh = true;
+                return double.TryParse(s.Substring(4), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out val);
+            }
+            if (s.StartsWith("poh", StringComparison.OrdinalIgnoreCase))
+            {
+                isPoh = true;
+                return double.TryParse(s.Substring(3), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out val);
+            }
+
+            if (s.StartsWith("ph=", StringComparison.OrdinalIgnoreCase) || s.StartsWith("ph:", StringComparison.OrdinalIgnoreCase))
+            {
+                isPoh = false;
+                return double.TryParse(s.Substring(3), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out val);
+            }
+            if (s.StartsWith("ph", StringComparison.OrdinalIgnoreCase))
+            {
+                isPoh = false;
+                return double.TryParse(s.Substring(2), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out val);
+            }
+
+            if (double.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) && d >= 0 && d <= 14)
+            {
+                isPoh = false;
+                val = d;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryExtractConcentrationPh(string s, out double ph)
+        {
+            ph = 0;
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            s = s.Replace("mol/l", "").Replace("m/l", "").Replace("c(h+)=", "").Replace("[h+]=", "").Replace("c(h+):", "");
+            var match = System.Text.RegularExpressions.Regex.Match(s, @"^(?:1(?:\.0+)?\*)?10\^-?(\d+(?:\.\d+)?)$");
+            if (match.Success && double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var exp))
+            {
+                ph = exp;
+                return true;
+            }
+            if (double.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) && d > 0 && d <= 1)
+            {
+                ph = -Math.Log10(d);
+                return true;
+            }
+            return false;
+        }
+
+        private static bool TryExtractHydroxideConcPoh(string s, out double poh)
+        {
+            poh = 0;
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            if (!s.Contains("oh") && !s.Contains("c(oh-)")) return false;
+            s = s.Replace("mol/l", "").Replace("m/l", "").Replace("c(oh-)=", "").Replace("[oh-]=", "").Replace("c(oh-):", "");
+            var match = System.Text.RegularExpressions.Regex.Match(s, @"^(?:1(?:\.0+)?\*)?10\^-?(\d+(?:\.\d+)?)$");
+            if (match.Success && double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var exp))
+            {
+                poh = exp;
+                return true;
+            }
+            return false;
+        }
+
+        public static bool CheckPhysicalCompoundUnitAndConversionEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+
+            string nu = NormalizePhysicsUnitInput(u);
+            string nc = NormalizePhysicsUnitInput(c);
+
+            if (string.IsNullOrEmpty(nu) || string.IsNullOrEmpty(nc)) return false;
+            if (string.Equals(nu, nc, StringComparison.OrdinalIgnoreCase)) return true;
+
+            // 1. 速度换算: 1 m/s = 3.6 km/h (如 10 m/s <=> 36 km/h, 20 m/s <=> 72 km/h, 5 m/s <=> 18 km/h)
+            if (TryExtractSpeed(nu, out var speedMsU) && TryExtractSpeed(nc, out var speedMsC))
+            {
+                if (Math.Abs(speedMsU - speedMsC) < 0.05 * Math.Max(speedMsU, speedMsC) || Math.Abs(speedMsU - speedMsC) < 0.02)
+                    return true;
+            }
+
+            // 2. 密度换算: 1 g/cm^3 = 1000 kg/m^3 (如 1 g/cm3 <=> 1000 kg/m3 <=> 1*10^3 kg/m3 <=> 1 g/mL)
+            if (TryExtractDensity(nu, out var densityKgM3U) && TryExtractDensity(nc, out var densityKgM3C))
+            {
+                if (Math.Abs(densityKgM3U - densityKgM3C) < 0.05 * Math.Max(densityKgM3U, densityKgM3C) || Math.Abs(densityKgM3U - densityKgM3C) < 0.2)
+                    return true;
+            }
+
+            // 3. 电功与能耗度数换算: 1 kW*h = 3.6*10^6 J = 3.6*10^3 kJ = 3.6 MJ = 1 度
+            if (TryExtractElectricalWorkJoules(nu, out var workJoulesU) && TryExtractElectricalWorkJoules(nc, out var workJoulesC))
+            {
+                if (Math.Abs(workJoulesU - workJoulesC) < 0.05 * Math.Max(workJoulesU, workJoulesC) || Math.Abs(workJoulesU - workJoulesC) < 1.0)
+                    return true;
+            }
+
+            // 4. 重力加速度与重力常数等价: 9.8 m/s^2 <=> 9.8 N/kg, 10 m/s^2 <=> 10 N/kg
+            if (IsEquivGravityAcceleration(nu, nc)) return true;
+
+            return false;
+        }
+
+        private static string NormalizePhysicsUnitInput(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+            s = s.Trim().Replace(" ", "").Replace("$", "").Replace("￥", "");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:text|mathrm|mathbf)\{([^}]*)\}", "$1");
+            s = s.Replace("×", "*").Replace("·", "*").Replace("✕", "*");
+            s = s.Replace("【", "[").Replace("】", "]");
+            s = s.Replace("¹", "1").Replace("²", "2").Replace("³", "3").Replace("⁴", "4").Replace("⁵", "5")
+                 .Replace("⁶", "6").Replace("⁷", "7").Replace("⁸", "8").Replace("⁹", "9").Replace("⁰", "0")
+                 .Replace("⁻", "-").Replace("⁺", "+");
+            return s.ToLowerInvariant();
+        }
+
+        private static bool TryExtractSpeed(string s, out double speedMs)
+        {
+            speedMs = 0;
+            if (string.IsNullOrWhiteSpace(s)) return false;
+
+            if (s.Contains("km/h") || s.Contains("千米/小时") || s.Contains("公里/小时") || s.Contains("km*h^-1") || s.Contains("kmh^-1"))
+            {
+                var numStr = s.Replace("km/h", "").Replace("千米/小时", "").Replace("公里/小时", "").Replace("km*h^-1", "").Replace("kmh^-1", "");
+                if (double.TryParse(numStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var kmh))
+                {
+                    speedMs = kmh / 3.6;
+                    return true;
+                }
+            }
+
+            if (s.Contains("m/s") || s.Contains("米/秒") || s.Contains("m*s^-1") || s.Contains("ms^-1"))
+            {
+                var numStr = s.Replace("m/s", "").Replace("米/秒", "").Replace("m*s^-1", "").Replace("ms^-1", "");
+                if (double.TryParse(numStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var ms))
+                {
+                    speedMs = ms;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryExtractDensity(string s, out double densityKgM3)
+        {
+            densityKgM3 = 0;
+            if (string.IsNullOrWhiteSpace(s)) return false;
+
+            if (s.Contains("g/cm^3") || s.Contains("g/cm3") || s.Contains("g/ml") || s.Contains("克/立方厘米") || s.Contains("g*cm^-3") || s.Contains("gcm^-3"))
+            {
+                var numStr = s.Replace("g/cm^3", "").Replace("g/cm3", "").Replace("g/ml", "").Replace("克/立方厘米", "").Replace("g*cm^-3", "").Replace("gcm^-3", "");
+                if (double.TryParse(numStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var gcm3))
+                {
+                    densityKgM3 = gcm3 * 1000.0;
+                    return true;
+                }
+            }
+
+            if (s.Contains("kg/m^3") || s.Contains("kg/m3") || s.Contains("千克/立方米") || s.Contains("kg*m^-3") || s.Contains("kgm^-3"))
+            {
+                var numStr = s.Replace("kg/m^3", "").Replace("kg/m3", "").Replace("千克/立方米", "").Replace("kg*m^-3", "").Replace("kgm^-3", "");
+                if (numStr.Contains("10^3") || numStr.Contains("10^") || numStr.Contains("e"))
+                {
+                    var sciMatch = System.Text.RegularExpressions.Regex.Match(numStr, @"^(.*?)[\*x]10\^(\d+)$");
+                    if (sciMatch.Success &&
+                        double.TryParse(sciMatch.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var coef) &&
+                        int.TryParse(sciMatch.Groups[2].Value, out var exp))
+                    {
+                        densityKgM3 = coef * Math.Pow(10, exp);
+                        return true;
+                    }
+                    if (numStr == "10^3") { densityKgM3 = 1000.0; return true; }
+                }
+                if (double.TryParse(numStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var kgm3))
+                {
+                    densityKgM3 = kgm3;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryExtractElectricalWorkJoules(string s, out double joules)
+        {
+            joules = 0;
+            if (string.IsNullOrWhiteSpace(s)) return false;
+
+            if (s.Contains("kwh") || s.Contains("kw*h") || s.Contains("kw.h") || s.Contains("千瓦时") || s.EndsWith("度") || s.EndsWith("度电"))
+            {
+                var numStr = s.Replace("kwh", "").Replace("kw*h", "").Replace("kw.h", "").Replace("千瓦时", "").Replace("度电", "").Replace("度", "");
+                if (double.TryParse(numStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var kwh))
+                {
+                    joules = kwh * 3600000.0;
+                    return true;
+                }
+            }
+
+            if (s.EndsWith("mj"))
+            {
+                var numStr = s.Substring(0, s.Length - 2);
+                if (double.TryParse(numStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var mj))
+                {
+                    joules = mj * 1000000.0;
+                    return true;
+                }
+            }
+
+            if (s.EndsWith("kj"))
+            {
+                var numStr = s.Substring(0, s.Length - 2);
+                if (double.TryParse(numStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var kj))
+                {
+                    joules = kj * 1000.0;
+                    return true;
+                }
+            }
+
+            if (s.EndsWith("j") || s.EndsWith("焦") || s.EndsWith("焦耳"))
+            {
+                var numStr = s.TrimEnd('j', '焦', '耳');
+                var sciMatch = System.Text.RegularExpressions.Regex.Match(numStr, @"^(.*?)[\*x]10\^(\d+)$");
+                if (sciMatch.Success &&
+                    double.TryParse(sciMatch.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var coef) &&
+                    int.TryParse(sciMatch.Groups[2].Value, out var exp))
+                {
+                    joules = coef * Math.Pow(10, exp);
+                    return true;
+                }
+                if (double.TryParse(numStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var j))
+                {
+                    joules = j;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsEquivGravityAcceleration(string a, string b)
+        {
+            string NormG(string s)
+            {
+                s = s.Replace("g=", "").Replace("g:", "");
+                if (s == "9.8m/s^2" || s == "9.8m/s2" || s == "9.8n/kg" || s == "9.8牛/千克") return "g9.8";
+                if (s == "10m/s^2" || s == "10m/s2" || s == "10n/kg" || s == "10牛/千克") return "g10";
+                return s;
+            }
+            string na = NormG(a);
+            string nb = NormG(b);
+            return na == nb && (na == "g9.8" || na == "g10");
+        }
+
+        public static bool CheckGeometricFormulaEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+
+            string nu = NormalizeGeometricFormula(u);
+            string nc = NormalizeGeometricFormula(c);
+
+            if (string.IsNullOrEmpty(nu) || string.IsNullOrEmpty(nc)) return false;
+            if (string.Equals(nu, nc, StringComparison.OrdinalIgnoreCase)) return true;
+
+            // 球体积: V = 4/3 * pi * r^3
+            if (IsSphereVolumeFormula(nu) && IsSphereVolumeFormula(nc)) return true;
+
+            // 球表面积: S = 4 * pi * r^2
+            if (IsSphereSurfaceAreaFormula(nu) && IsSphereSurfaceAreaFormula(nc)) return true;
+
+            // 圆面积: S = pi * r^2
+            if (IsCircleAreaFormula(nu) && IsCircleAreaFormula(nc)) return true;
+
+            // 圆周长: C = 2 * pi * r
+            if (IsCirclePerimeterFormula(nu) && IsCirclePerimeterFormula(nc)) return true;
+
+            // 圆柱体积: V = pi * r^2 * h <=> V = Sh
+            if (IsCylinderVolumeFormula(nu) && IsCylinderVolumeFormula(nc)) return true;
+
+            // 圆锥体积: V = 1/3 * pi * r^2 * h <=> V = 1/3 * Sh
+            if (IsConeVolumeFormula(nu) && IsConeVolumeFormula(nc)) return true;
+
+            return false;
+        }
+
+        private static string NormalizeGeometricFormula(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+            s = s.Trim().Replace(" ", "").Replace("$", "").Replace("￥", "");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:text|mathrm|mathbf)\{([^}]*)\}", "$1");
+            s = s.Replace("×", "*").Replace("·", "*").Replace("✕", "*");
+            s = s.Replace("\\frac{4}{3}", "4/3").Replace("\\frac{1}{3}", "1/3").Replace("\\frac{1}{2}", "1/2");
+            s = s.Replace("\\pi", "pi").Replace("π", "pi");
+            s = s.Replace("【", "[").Replace("】", "]");
+            s = s.Replace("¹", "1").Replace("²", "2").Replace("³", "3");
+            s = s.Replace("R", "r"); // 大小写半径归一
+            s = s.Replace("*", "");  // 乘号紧凑化
+            return s.ToLowerInvariant();
+        }
+
+        private static bool IsSphereVolumeFormula(string s)
+        {
+            s = s.Replace("v=", "").Replace("v:", "");
+            return s == "4/3pir^3" || s == "(4/3)pir^3" || s == "4/3pir3" || s == "(4/3)pir3";
+        }
+
+        private static bool IsSphereSurfaceAreaFormula(string s)
+        {
+            s = s.Replace("s=", "").Replace("s:", "").Replace("s球=", "");
+            return s == "4pir^2" || s == "4pir2";
+        }
+
+        private static bool IsCircleAreaFormula(string s)
+        {
+            s = s.Replace("s=", "").Replace("s:", "").Replace("s圆=", "");
+            return s == "pir^2" || s == "pir2";
+        }
+
+        private static bool IsCirclePerimeterFormula(string s)
+        {
+            s = s.Replace("c=", "").Replace("c:", "").Replace("l=", "");
+            return s == "2pir" || s == "2pi*r";
+        }
+
+        private static bool IsCylinderVolumeFormula(string s)
+        {
+            s = s.Replace("v=", "").Replace("v:", "").Replace("v圆柱=", "");
+            return s == "pir^2h" || s == "pir2h" || s == "sh";
+        }
+
+        private static bool IsConeVolumeFormula(string s)
+        {
+            s = s.Replace("v=", "").Replace("v:", "").Replace("v圆锥=", "");
+            return s == "1/3pir^2h" || s == "(1/3)pir^2h" || s == "1/3pir2h" || s == "(1/3)pir2h" ||
+                   s == "1/3sh" || s == "(1/3)sh";
         }
 
         public async Task<List<LlmGenerationLog>> GetLlmGenerationLogsAsync(Guid userId)
