@@ -1017,14 +1017,15 @@ namespace Northtropic.Services
                 }
 
                 // 6. 化学方程式反应项等价 (需包含反应物生成物加号或特征反应箭头)
-                if (((normU.Contains("=") && normU.Contains("+")) || normU.Contains("->") || normU.Contains("<=>")) &&
-                    ((normC.Contains("=") && normC.Contains("+")) || normC.Contains("->") || normC.Contains("<=>")))
+                if (CheckChemicalEquationEquivalence(user, correct) || CheckChemicalEquationEquivalence(normU, normC) ||
+                    (((normU.Contains("=") && normU.Contains("+")) || normU.Contains("->") || normU.Contains("<=>")) &&
+                     ((normC.Contains("=") && normC.Contains("+")) || normC.Contains("->") || normC.Contains("<=>"))))
                 {
                     if (user.Contains("overset") || correct.Contains("overset") || user.Contains("stackrel") || correct.Contains("stackrel") || user.Contains("点燃") || user.Contains("加热") || user.Contains("高温") || user.Contains("催化剂") || user.Contains("通电") || user.Contains("电解") || user.Contains("高压"))
                     {
                         return $"化学反应方程式条件等价：已自动识别反应条件标注（如点燃、加热、催化剂、通电、电解等）与标准方程式等价对应 [{correct}]";
                     }
-                    return $"化学方程式反应项等价：已识别反应物与生成物项的无序书写，对应标准方程式 [{correct}]";
+                    return $"化学方程式反应项等价：已识别反应物与生成物项无序书写、状态沉淀气标容错与反应箭头规范，对应标准方程式 [{correct}]";
                 }
 
                 // 7. 有机化学结构简式与分子式等价
@@ -2959,14 +2960,23 @@ namespace Northtropic.Services
             {
                 s = s.Trim().Replace(" ", "").Replace("·", "").Replace("\\cdot", "").Replace("\\times", "").Replace("*", "");
                 s = s.Replace("（", "(").Replace("）", ")").Replace("＝", "=");
+                s = s.ToLowerInvariant();
                 s = s.Replace("v_{0}", "v0").Replace("v_0", "v0").Replace("v_{t}", "vt").Replace("v_t", "vt");
                 s = s.Replace("v_{max}", "vmax").Replace("v_max", "vmax").Replace("v_{min}", "vmin").Replace("v_min", "vmin");
-                s = s.Replace("e_k", "ek").Replace("e_{k}", "ek").Replace("E_k", "ek").Replace("E_{k}", "ek");
-                s = s.Replace("e_p", "ep").Replace("e_{p}", "ep").Replace("E_p", "ep").Replace("E_{p}", "ep");
+                s = s.Replace("e_k", "ek").Replace("e_{k}", "ek");
+                s = s.Replace("e_p", "ep").Replace("e_{p}", "ep");
                 s = s.Replace("\\frac{1}{2}", "0.5").Replace("1/2", "0.5");
                 s = s.Replace("^{2}", "²").Replace("^2", "²");
                 s = s.Replace("$", "");
-                return s.ToLowerInvariant();
+                s = s.Replace("\\lambda", "λ").Replace("\\nu", "ν").Replace("\\omega", "ω").Replace("\\rho", "ρ").Replace("\\pi", "π")
+                     .Replace("\\delta", "δ").Replace("△", "δ").Replace("∆", "δ").Replace("δ", "δ");
+                s = s.Replace("m_{1}", "m1").Replace("m_1", "m1").Replace("m_{2}", "m2").Replace("m_2", "m2");
+                s = s.Replace("q_{1}", "q1").Replace("q_1", "q1").Replace("q_{2}", "q2").Replace("q_2", "q2");
+                s = s.Replace("t_{0}", "t0").Replace("t_0", "t0").Replace("t_{1}", "t1").Replace("t_1", "t1").Replace("t_{2}", "t2").Replace("t_2", "t2");
+                s = s.Replace("f_{浮}", "f浮").Replace("f_浮", "f浮").Replace("f_{向}", "f").Replace("f_向", "f");
+                s = s.Replace("ρ_{液}", "ρ液").Replace("ρ_液", "ρ液").Replace("v_{排}", "v排").Replace("v_排", "v排");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\frac\{([^}]+)\}\{([^}]+)\}", "$1/$2");
+                return s;
             }
 
             var ca = CleanPhysics(a);
@@ -3049,6 +3059,58 @@ namespace Northtropic.Services
             };
             if (lensGroup.Contains(ca) && lensGroup.Contains(cb)) return true;
 
+            // 11. 万有引力定律: F = G*M*m/r² <=> F = G*m1*m2/r² <=> F = GMm/r²
+            var gravityGroup = new HashSet<string>
+            {
+                "f=gmm/r²", "f=gm1m2/r²", "gmm/r²=f", "gm1m2/r²=f",
+                "f=(gmm)/r²", "f=(gm1m2)/r²", "f=g(mm)/r²", "f=g(m1m2)/r²",
+                "f=g(mm/r²)", "f=g(m1m2/r²)", "f=g*mm/r²", "f=g*m1m2/r²"
+            };
+            if (gravityGroup.Contains(ca) && gravityGroup.Contains(cb)) return true;
+
+            // 12. 向心力公式: F = m*v²/r <=> F = m*ω²*r <=> F = m*4π²r/T²
+            var centripetalGroup = new HashSet<string>
+            {
+                "f=mv²/r", "f=m(v²)/r", "f=m(v²/r)", "mv²/r=f", "f=mω²r", "f=mrω²", "f=m(ω²)r", "mω²r=f", "mrω²=f",
+                "f=4π²mr/t²", "f=m4π²r/t²", "f=4π²rm/t²", "4π²mr/t²=f"
+            };
+            if (centripetalGroup.Contains(ca) && centripetalGroup.Contains(cb)) return true;
+
+            // 13. 理想气体状态方程 (克拉珀龙方程): PV = nRT <=> P = nRT/V <=> PV/T = nR <=> PV/T = C
+            var gasGroup = new HashSet<string>
+            {
+                "pv=nrt", "nrt=pv", "p=nrt/v", "v=nrt/p", "pv/t=nr", "pv/t=c", "nr=pv/t"
+            };
+            if (gasGroup.Contains(ca) && gasGroup.Contains(cb)) return true;
+
+            // 14. 机械波与电磁波波速公式: v = λf <=> v = λν <=> λ = v/f <=> f = v/λ
+            var waveGroup = new HashSet<string>
+            {
+                "v=λf", "v=fλ", "λf=v", "fλ=v", "v=λν", "v=νλ", "λν=v", "νλ=v", "λ=v/f", "f=v/λ", "λ=v/ν", "ν=v/λ"
+            };
+            if (waveGroup.Contains(ca) && waveGroup.Contains(cb)) return true;
+
+            // 15. 库仑定律: F = k*q1*q2/r² <=> F = kq1q2/r² <=> F = k*q*q/r²
+            var coulombGroup = new HashSet<string>
+            {
+                "f=kq1q2/r²", "f=kqq/r²", "kq1q2/r²=f", "kqq/r²=f", "f=k(q1q2)/r²", "f=k(q1q2/r²)"
+            };
+            if (coulombGroup.Contains(ca) && coulombGroup.Contains(cb)) return true;
+
+            // 16. 比热容与热量公式: Q = cmΔt <=> Q = cm(t-t0) <=> Q = cm(t2-t1)
+            var heatGroup = new HashSet<string>
+            {
+                "q=cmδt", "cmδt=q", "q=cm(t-t0)", "q=cm(t2-t1)", "q=cm(t-t1)", "cm(t-t0)=q", "cm(t2-t1)=q"
+            };
+            if (heatGroup.Contains(ca) && heatGroup.Contains(cb)) return true;
+
+            // 17. 阿基米德浮力定律: F_浮 = ρ_液*g*V_排 <=> F = ρgV
+            var buoyancyGroup = new HashSet<string>
+            {
+                "f=ρgv", "f浮=ρgv", "f=ρ液gv排", "f浮=ρ液gv排", "ρgv=f", "ρ液gv排=f", "f=ρ*g*v", "f浮=ρ*g*v"
+            };
+            if (buoyancyGroup.Contains(ca) && buoyancyGroup.Contains(cb)) return true;
+
             return false;
         }
 
@@ -3089,6 +3151,14 @@ namespace Northtropic.Services
             // 饱和一元醇/醚通式: C_n H_{2n+2}O <=> C_n H_{2n+1}OH
             var alcohol = new HashSet<string> { "cnh2n+2o", "cnh(2n+2)o", "cnh2n+1oh", "cnh(2n+1)oh" };
             if (alcohol.Contains(ca) && alcohol.Contains(cb)) return true;
+
+            // 饱和一元羧酸/酯通式: C_n H_{2n} O_2 <=> CnH2nO2
+            var acidEster = new HashSet<string> { "cnh2no2", "cnh(2n)o2", "cnh2n+1cooh", "cnh(2n+1)cooh" };
+            if (acidEster.Contains(ca) && acidEster.Contains(cb)) return true;
+
+            // 饱和一元醛/酮通式: C_n H_{2n} O <=> CnH2nO
+            var aldehydeKetone = new HashSet<string> { "cnh2no", "cnh(2n)o", "cnh2n+1cho", "cnh(2n+1)cho" };
+            if (aldehydeKetone.Contains(ca) && aldehydeKetone.Contains(cb)) return true;
 
             // 反应焓变吸放热记号: \Delta H < 0 <=> ΔH < 0, \Delta H > 0 <=> ΔH > 0
             static string CleanDeltaH(string s)
@@ -3220,6 +3290,36 @@ namespace Northtropic.Services
             return false;
         }
 
+        public static string NormalizeChemical(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+            var trimmed = s.Trim().ToLowerInvariant();
+            if (ChemicalSynonymMap.TryGetValue(trimmed, out var mappedFormula))
+            {
+                s = mappedFormula;
+            }
+            // 统一 Unicode 离子电荷与角标
+            s = s.Replace("³⁺", "3+").Replace("²⁺", "2+").Replace("⁴⁺", "4+").Replace("⁺", "+")
+                 .Replace("³⁻", "3-").Replace("²⁻", "2-").Replace("⁴⁻", "4-").Replace("⁻", "-");
+            s = s.Replace('₀', '0').Replace('₁', '1').Replace('₂', '2').Replace('₃', '3').Replace('₄', '4')
+                 .Replace('₅', '5').Replace('₆', '6').Replace('₇', '7').Replace('₈', '8').Replace('₉', '9');
+            // 统一可逆反应符号
+            s = s.Replace("⇌", "<=>").Replace("⇄", "<=>").Replace("\\rightleftharpoons", "<=>").Replace("<==>", "<=>").Replace("<-->", "<=>");
+            // 剥离气体与沉淀箭头：↑, ↓, \uparrow, \downarrow, ^
+            s = s.Replace("↑", "").Replace("↓", "").Replace("\\uparrow", "").Replace("\\downarrow", "").Replace("^", "");
+            // 剥离化学物态标注: (s), (l), (g), (aq), (固), (液), (气), (水), (沉淀)
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"[\(（](?:s|l|g|aq|固|液|气|水|沉淀)[\)）]", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            // Ca(OH)_2 -> ca(oh)2, H_2O -> h2o, CO_2 -> co2
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"_\{?(\d+)\}?", "$1");
+            // Fe^{3+} -> fe3+, Fe^3+ -> fe3+, SO4^{2-} -> so42-
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\^\{?(\d*[+-])\}?", "$1");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\^([0-9]*[+-])", "$1");
+            // 离子电荷多加号/多减号容错: Fe+++ -> fe3+, SO4-- -> so42-
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\+{2,}", m => $"{m.Length}+");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\-{2,}", m => $"{m.Length}-");
+            return s.ToLowerInvariant().Trim();
+        }
+
         public static string NormalizeElectrochemicalReaction(string eq)
         {
             if (string.IsNullOrWhiteSpace(eq)) return string.Empty;
@@ -3282,6 +3382,116 @@ namespace Northtropic.Services
             }
 
             return $"{newLhs} = {newRhs}";
+        }
+
+        public static bool CheckChemicalEquationEquivalence(string a, string b)
+        {
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+
+            static string CleanEquation(string s)
+            {
+                s = s.Trim();
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:stackrel|overset)\s*\{[^}]*\}\s*\{?=?\}?", "=");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:xlongequal|xrightleftharpoons|xrightarrow)(?:\[[^\]]*\]|\{[^}]*\})*", "=");
+                s = s.Replace("\\rightleftharpoons", "=")
+                     .Replace("\\longrightarrow", "=")
+                     .Replace("\\rightarrow", "=")
+                     .Replace("⇌", "=")
+                     .Replace("⇄", "=")
+                     .Replace("<->", "=")
+                     .Replace("↔", "=")
+                     .Replace("===", "=")
+                     .Replace("==", "=")
+                     .Replace("->", "=")
+                     .Replace("-->", "=")
+                     .Replace("→", "=")
+                     .Replace("<=>", "=")
+                     .Replace("＝", "=");
+                s = s.Replace("↑", "").Replace("↓", "").Replace("\\uparrow", "").Replace("\\downarrow", "").Replace("^", "");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"[\(（](?:s|l|g|aq|固|液|气|水|沉淀)[\)）]", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"_\{?(\d+)\}?", "$1");
+                return s;
+            }
+
+            string cleanA = CleanEquation(a);
+            string cleanB = CleanEquation(b);
+
+            var normA = NormalizeElectrochemicalReaction(cleanA);
+            var normB = NormalizeElectrochemicalReaction(cleanB);
+
+            if (string.IsNullOrWhiteSpace(normA) || string.IsNullOrWhiteSpace(normB)) return false;
+
+            var partsA = normA.Split('=', StringSplitOptions.RemoveEmptyEntries);
+            var partsB = normB.Split('=', StringSplitOptions.RemoveEmptyEntries);
+            if (partsA.Length != 2 || partsB.Length != 2) return false;
+
+            static List<string> ExtractTerms(string side)
+            {
+                side = side.Trim();
+                side = System.Text.RegularExpressions.Regex.Replace(side, @"([0-9]?[+-])\+", "$1 + ");
+                side = System.Text.RegularExpressions.Regex.Replace(side, @"(?<=[a-zA-Z\)])\+(?=[0-9a-zA-Z])", " + ");
+                side = System.Text.RegularExpressions.Regex.Replace(side, @"(?<=\d[+-])(?=[0-9a-zA-Z])", " + ");
+
+                var rawTerms = System.Text.RegularExpressions.Regex.Split(side, @"\s+\+\s+")
+                    .Select(t => t.Trim())
+                    .Where(t => !string.IsNullOrEmpty(t))
+                    .ToList();
+
+                if (rawTerms.Count == 1 && side.Contains('+') && !side.EndsWith("+"))
+                {
+                    rawTerms = side.Split('+', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(t => t.Trim())
+                        .Where(t => !string.IsNullOrEmpty(t))
+                        .ToList();
+                }
+
+                static string MapReactionTerm(string rawTerm)
+                {
+                    rawTerm = rawTerm.Trim();
+                    var m = System.Text.RegularExpressions.Regex.Match(rawTerm, @"^(\d+)?\s*(.+)$");
+                    if (m.Success)
+                    {
+                        var coeff = m.Groups[1].Value;
+                        var substance = m.Groups[2].Value.Trim();
+                        if (ChemicalSynonymMap.TryGetValue(substance, out var mapped))
+                        {
+                            return coeff + mapped;
+                        }
+                    }
+                    return rawTerm;
+                }
+
+                return rawTerms
+                    .Select(t => NormalizeChemical(MapReactionTerm(t)))
+                    .Where(t => !string.IsNullOrEmpty(t))
+                    .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+
+            var aLhs = ExtractTerms(partsA[0]);
+            var aRhs = ExtractTerms(partsA[1]);
+            var bLhs = ExtractTerms(partsB[0]);
+            var bRhs = ExtractTerms(partsB[1]);
+
+            if (aLhs.Count == 0 || bLhs.Count == 0 || aRhs.Count == 0 || bRhs.Count == 0) return false;
+
+            // 1. 同向反应物与生成物项完全等价（无序匹配）
+            if (aLhs.SequenceEqual(bLhs, StringComparer.OrdinalIgnoreCase) &&
+                aRhs.SequenceEqual(bRhs, StringComparer.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // 2. 双向可逆平衡反应对易匹配 (如 N2+3H2<=>2NH3 与 2NH3<=>N2+3H2)
+            bool isReversible = a.Contains("⇌") || b.Contains("⇌") || a.Contains("<=>") || b.Contains("<=>") || a.Contains("可逆");
+            if (isReversible &&
+                aLhs.SequenceEqual(bRhs, StringComparer.OrdinalIgnoreCase) &&
+                aRhs.SequenceEqual(bLhs, StringComparer.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         public static bool IsChemicalNomenclatureEquivalent(string a, string b)
@@ -4296,35 +4506,6 @@ namespace Northtropic.Services
                 return sLower;
             }
 
-            static string NormalizeChemical(string s)
-            {
-                var trimmed = s.Trim().ToLowerInvariant();
-                if (ChemicalSynonymMap.TryGetValue(trimmed, out var mappedFormula))
-                {
-                    s = mappedFormula;
-                }
-                // 统一 Unicode 离子电荷与角标
-                s = s.Replace("³⁺", "3+").Replace("²⁺", "2+").Replace("⁴⁺", "4+").Replace("⁺", "+")
-                     .Replace("³⁻", "3-").Replace("²⁻", "2-").Replace("⁴⁻", "4-").Replace("⁻", "-");
-                s = s.Replace('₀', '0').Replace('₁', '1').Replace('₂', '2').Replace('₃', '3').Replace('₄', '4')
-                     .Replace('₅', '5').Replace('₆', '6').Replace('₇', '7').Replace('₈', '8').Replace('₉', '9');
-                // 统一可逆反应符号
-                s = s.Replace("⇌", "<=>").Replace("⇄", "<=>").Replace("\\rightleftharpoons", "<=>").Replace("<==>", "<=>").Replace("<-->", "<=>");
-                // 剥离气体与沉淀箭头：↑, ↓, \uparrow, \downarrow, ^
-                s = s.Replace("↑", "").Replace("↓", "").Replace("\\uparrow", "").Replace("\\downarrow", "");
-                // 剥离化学物态标注: (s), (l), (g), (aq), (固), (液), (气), (水)
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"[\(（](?:s|l|g|aq|固|液|气|水)[\)）]", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                // Ca(OH)_2 -> ca(oh)2, H_2O -> h2o, CO_2 -> co2
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"_\{?(\d+)\}?", "$1");
-                // Fe^{3+} -> fe3+, Fe^3+ -> fe3+, SO4^{2-} -> so42-
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\^\{?(\d*[+-])\}?", "$1");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\^([0-9]*[+-])", "$1");
-                // 离子电荷多加号/多减号容错: Fe+++ -> fe3+, SO4-- -> so42-
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\+{2,}", m => $"{m.Length}+");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\-{2,}", m => $"{m.Length}-");
-                return s.ToLowerInvariant().Trim();
-            }
-
             var normUser = Normalize(user);
             var normCorrect = Normalize(correct);
 
@@ -4347,75 +4528,9 @@ namespace Northtropic.Services
             if (chemUser.Replace("->", "=").Replace("<=>", "=") == chemCorrect.Replace("->", "=").Replace("<=>", "=")) return true;
 
             // 化学反应方程式反应物/生成物次序对易等价匹配及电极反应移项: 如 2NaOH + CuSO4 = Cu(OH)2 + Na2SO4 与 CuSO4 + 2NaOH = Na2SO4 + Cu(OH)2, Zn - 2e- = Zn2+ 与 Zn = Zn2+ + 2e-
-            static bool CheckChemicalReactionCommutativeMatch(string u, string c)
-            {
-                string uNorm = NormalizeElectrochemicalReaction(u);
-                string cNorm = NormalizeElectrochemicalReaction(c);
-                var uParts = uNorm.Split('=', StringSplitOptions.RemoveEmptyEntries);
-                var cParts = cNorm.Split('=', StringSplitOptions.RemoveEmptyEntries);
-                if (uParts.Length == 2 && cParts.Length == 2)
-                {
-                    static List<string> ExtractReactionTerms(string side)
-                    {
-                        side = side.Trim();
-                        side = System.Text.RegularExpressions.Regex.Replace(side, @"([0-9]?[+-])\+", "$1 + ");
-                        side = System.Text.RegularExpressions.Regex.Replace(side, @"(?<=[a-zA-Z\)])\+(?=[0-9a-zA-Z])", " + ");
-                        side = System.Text.RegularExpressions.Regex.Replace(side, @"(?<=\d[+-])(?=[0-9a-zA-Z])", " + ");
-
-                        var rawTerms = System.Text.RegularExpressions.Regex.Split(side, @"\s+\+\s+")
-                            .Select(t => t.Trim())
-                            .Where(t => !string.IsNullOrEmpty(t))
-                            .ToList();
-
-                        if (rawTerms.Count == 1 && side.Contains('+') && !side.EndsWith("+"))
-                        {
-                            rawTerms = side.Split('+', StringSplitOptions.RemoveEmptyEntries)
-                                .Select(t => t.Trim())
-                                .Where(t => !string.IsNullOrEmpty(t))
-                                .ToList();
-                        }
-
-                        static string MapReactionTerm(string rawTerm)
-                        {
-                            rawTerm = rawTerm.Trim();
-                            var m = System.Text.RegularExpressions.Regex.Match(rawTerm, @"^(\d+)?\s*(.+)$");
-                            if (m.Success)
-                            {
-                                var coeff = m.Groups[1].Value;
-                                var substance = m.Groups[2].Value.Trim();
-                                if (ChemicalSynonymMap.TryGetValue(substance, out var mapped))
-                                {
-                                    return coeff + mapped;
-                                }
-                            }
-                            return rawTerm;
-                        }
-
-                        return rawTerms
-                                   .Select(t => NormalizeChemical(MapReactionTerm(t)))
-                                   .Where(t => !string.IsNullOrEmpty(t))
-                                   .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
-                                   .ToList();
-                    }
-
-                    var uLhs = ExtractReactionTerms(uParts[0]);
-                    var uRhs = ExtractReactionTerms(uParts[1]);
-                    var cLhs = ExtractReactionTerms(cParts[0]);
-                    var cRhs = ExtractReactionTerms(cParts[1]);
-
-                    if (uLhs.Count > 0 && cLhs.Count > 0 &&
-                        uLhs.SequenceEqual(cLhs, StringComparer.OrdinalIgnoreCase) &&
-                        uRhs.SequenceEqual(cRhs, StringComparer.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            if (CheckChemicalReactionCommutativeMatch(normUser, normCorrect) ||
-                CheckChemicalReactionCommutativeMatch(user, correct) ||
-                CheckChemicalReactionCommutativeMatch(chemUser, chemCorrect))
+            if (CheckChemicalEquationEquivalence(normUser, normCorrect) ||
+                CheckChemicalEquationEquivalence(user, correct) ||
+                CheckChemicalEquationEquivalence(chemUser, chemCorrect))
             {
                 return true;
             }
@@ -6661,6 +6776,13 @@ namespace Northtropic.Services
                 if (string.Equals(aboU, aboC, StringComparison.Ordinal)) return true;
             }
 
+            // 0.1 DNA 碱基互补配对规则等价: 如 A-T, C-G <=> A=T, C≡G <=> A-T、C-G <=> T-A, G-C <=> A配T, C配G
+            if (TryCanonicalizeDnaBasePairing(u, out var dnaU) &&
+                TryCanonicalizeDnaBasePairing(c, out var dnaC))
+            {
+                if (string.Equals(dnaU, dnaC, StringComparison.Ordinal)) return true;
+            }
+
             // 1. 杂交/测交亲本组合无序对等: 如 AaBb × aabb 与 aabb × AaBb
             string[] crossSeparators = new[] { "×", "*", " x ", " X " };
             foreach (var sep in crossSeparators)
@@ -6751,6 +6873,42 @@ namespace Northtropic.Services
                 canon = string.Concat(sorted);
                 return true;
             }
+            return false;
+        }
+
+        private static bool TryCanonicalizeDnaBasePairing(string s, out string canon)
+        {
+            canon = string.Empty;
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            string norm = s.Trim().ToUpperInvariant()
+                .Replace(" ", "").Replace("、", ",").Replace("；", ",").Replace(";", ",")
+                .Replace("和", ",").Replace("与", ",")
+                .Replace("≡", "-").Replace("=", "-").Replace(":", "-").Replace("配对", "-").Replace("配", "-");
+            norm = norm.Replace("--", "-");
+
+            var parts = norm.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2) return false;
+
+            var pairs = new List<string>();
+            foreach (var p in parts)
+            {
+                var sides = p.Split('-', StringSplitOptions.RemoveEmptyEntries);
+                if (sides.Length != 2) return false;
+                string b1 = sides[0].Trim();
+                string b2 = sides[1].Trim();
+                if (b1.Length != 1 || b2.Length != 1) return false;
+
+                string pairKey = string.CompareOrdinal(b1, b2) <= 0 ? $"{b1}-{b2}" : $"{b2}-{b1}";
+                pairs.Add(pairKey);
+            }
+
+            if (pairs.Count >= 2 && pairs.Contains("A-T") && pairs.Contains("C-G"))
+            {
+                pairs.Sort(StringComparer.Ordinal);
+                canon = string.Join(",", pairs);
+                return true;
+            }
+
             return false;
         }
 

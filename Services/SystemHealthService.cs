@@ -1839,7 +1839,9 @@ namespace Northtropic.Services
                     u.Role,
                     u.DailyTargetQuestions,
                     u.SessionTimeoutMinutes,
-                    u.Password
+                    u.Password,
+                    u.BindingCode,
+                    u.PhoneNumber
                 }).ToListAsync();
                 int invalidUsersCount = 0;
                 foreach (var u in users)
@@ -1850,6 +1852,10 @@ namespace Northtropic.Services
                         string.IsNullOrWhiteSpace(u.Password) ||
                         u.SessionTimeoutMinutes < 5 || u.SessionTimeoutMinutes > 1440;
                     bool invalidDailyTarget = u.DailyTargetQuestions < 5 || u.DailyTargetQuestions > 200;
+                    bool invalidPhone = !string.IsNullOrWhiteSpace(u.PhoneNumber) &&
+                        (u.PhoneNumber != u.PhoneNumber.Trim() || u.PhoneNumber.Contains("-") || u.PhoneNumber.Contains(" "));
+                    bool invalidBinding = u.Role == UserRole.Student &&
+                        (string.IsNullOrWhiteSpace(u.BindingCode) || u.BindingCode != u.BindingCode.Trim().ToUpperInvariant());
 
                     if (u.Exp < 0 || u.Coins < 0 || u.Level < 1 || expOverflown ||
                         u.CurrentStreak > u.TotalCorrect ||
@@ -1863,15 +1869,27 @@ namespace Northtropic.Services
                         string.IsNullOrWhiteSpace(u.ActiveTitle) ||
                         (u.AccountStatus == UserAccountStatus.Approved && !u.ApprovedAt.HasValue) ||
                         invalidLoginSecurity ||
-                        invalidDailyTarget)
+                        invalidDailyTarget ||
+                        invalidPhone ||
+                        invalidBinding)
                     {
                         invalidUsersCount++;
                     }
                 }
+
+                // 统计学生之间的 BindingCode 重复碰撞
+                var duplicateBindingGroups = users
+                    .Where(u => u.Role == UserRole.Student && !string.IsNullOrWhiteSpace(u.BindingCode))
+                    .GroupBy(u => u.BindingCode)
+                    .Where(g => g.Count() > 1)
+                    .ToList();
+                int duplicateBindingCodesCount = duplicateBindingGroups.Sum(g => g.Count() - 1);
+                invalidUsersCount += duplicateBindingCodesCount;
+
                 audit.TotalUsersWithInvalidBalances = invalidUsersCount;
                 if (audit.TotalUsersWithInvalidBalances > 0)
                 {
-                    audit.AuditDetails.Add($"发现 {audit.TotalUsersWithInvalidBalances} 个用户存在经验/金币异常、连击越界、答题计数倒挂、登录会话/安全态异常、过期Buff或审核时间脱节");
+                    audit.AuditDetails.Add($"发现 {audit.TotalUsersWithInvalidBalances} 个用户存在经验/金币异常、连击越界、答题计数倒挂、绑定码/手机号格式异常、登录会话/安全态异常、过期Buff或审核时间脱节");
                 }
 
                 // 15. StudyPlan Domain Invariants
@@ -2690,6 +2708,17 @@ namespace Northtropic.Services
                     }
                 }
 
+                // 规范化电话号码去除首尾空白与连字符
+                if (!string.IsNullOrWhiteSpace(user.PhoneNumber))
+                {
+                    var cleanedPhone = user.PhoneNumber.Trim().Replace("-", "").Replace(" ", "");
+                    if (cleanedPhone != user.PhoneNumber)
+                    {
+                        user.PhoneNumber = cleanedPhone;
+                        changed = true;
+                    }
+                }
+
                 // 规范化每日目标做题量
                 if (user.DailyTargetQuestions < 5)
                 {
@@ -3386,10 +3415,34 @@ namespace Northtropic.Services
                     q.GradeTarget = "通用";
                     modified = true;
                 }
-                if (q.Type == QuestionType.SingleChoice && string.IsNullOrWhiteSpace(q.CorrectAnswer))
+                if (q.Type == QuestionType.SingleChoice)
                 {
-                    q.CorrectAnswer = "A";
-                    modified = true;
+                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
+                    {
+                        q.CorrectAnswer = "A";
+                        modified = true;
+                    }
+                    else if (q.CorrectAnswer != q.CorrectAnswer.Trim().ToUpperInvariant())
+                    {
+                        q.CorrectAnswer = q.CorrectAnswer.Trim().ToUpperInvariant();
+                        modified = true;
+                    }
+                }
+                else if (q.Type == QuestionType.MultipleChoice)
+                {
+                    if (!string.IsNullOrWhiteSpace(q.CorrectAnswer) && q.CorrectAnswer != q.CorrectAnswer.Trim().ToUpperInvariant())
+                    {
+                        q.CorrectAnswer = q.CorrectAnswer.Trim().ToUpperInvariant();
+                        modified = true;
+                    }
+                }
+                else if (q.Type == QuestionType.FillInBlank)
+                {
+                    if (!string.IsNullOrWhiteSpace(q.CorrectAnswer) && q.CorrectAnswer != q.CorrectAnswer.Trim())
+                    {
+                        q.CorrectAnswer = q.CorrectAnswer.Trim();
+                        modified = true;
+                    }
                 }
 
                 if (modified && !choiceSet.Contains(q.Id))

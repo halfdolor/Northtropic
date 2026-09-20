@@ -75,6 +75,18 @@ namespace Northtropic.Tests
         [InlineData("P = UI", "P = IU", true)]
         [InlineData("P = I^2R", "i²r = p", true)]
         [InlineData("1/f = 1/u + 1/v", "1/u + 1/v = 1/f", true)]
+        [InlineData("F = G * M * m / r^2", "F = \\frac{GMm}{r^2}", true)]
+        [InlineData("F = G * m1 * m2 / r^2", "F = GMm/r^2", true)]
+        [InlineData("F = m * v^2 / r", "F = m * \\omega^2 * r", true)]
+        [InlineData("F = mr\\omega^2", "F = m * 4\\pi^2 * r / T^2", true)]
+        [InlineData("PV = nRT", "P = nRT/V", true)]
+        [InlineData("PV/T = nR", "PV/T = C", true)]
+        [InlineData("v = \\lambda * f", "v = \\lambda \\nu", true)]
+        [InlineData("\\lambda = v/f", "f = v/\\lambda", true)]
+        [InlineData("F = k * q1 * q2 / r^2", "F = kq1q2/r^2", true)]
+        [InlineData("Q = cm\\Delta t", "Q = cm(t - t0)", true)]
+        [InlineData("Q = cm(t2 - t1)", "Q = cm\\Delta t", true)]
+        [InlineData("F_{浮} = \\rho_{液} g V_{排}", "F = \\rho g V", true)]
         [InlineData("F = ma", "F = mg", false)]
         public void CheckPhysicsFormulaEquivalence_EvaluatesAccurately(string a, string b, bool expected)
         {
@@ -89,6 +101,10 @@ namespace Northtropic.Tests
         [InlineData("C_n H_{2n-2}", "CnH2n-2", true)]
         [InlineData("C_n H_{2n-6}", "CnH2n-6", true)]
         [InlineData("C_n H_{2n+2}O", "C_n H_{2n+1}OH", true)]
+        [InlineData("C_n H_{2n} O_2", "CnH2nO2", true)]
+        [InlineData("C_n H_{2n} O_2", "C_n H_{2n+1} COOH", true)]
+        [InlineData("C_n H_{2n} O", "CnH2nO", true)]
+        [InlineData("C_n H_{2n} O", "C_n H_{2n+1} CHO", true)]
         [InlineData("\\Delta H < 0", "ΔH < 0", true)]
         [InlineData("\\Delta H > 0", "ΔH > 0", true)]
         [InlineData("C_n H_{2n+2}", "C_n H_{2n}", false)]
@@ -246,6 +262,126 @@ namespace Northtropic.Tests
                 Assert.True(reloadedPlan.CompletedDate >= reloadedPlan.StartDate);
                 Assert.True(reloadedPlan.UpdatedAt >= reloadedPlan.CreatedAt);
                 Assert.True(reloadedHw.CompletedAt >= reloadedHw.CreatedAt);
+            }
+            finally
+            {
+                context.Dispose();
+                connection.Dispose();
+            }
+        }
+
+        [Theory]
+        [InlineData("2H2 + O2 = 2H2O", "O2 + 2H2 = 2H2O", true)]
+        [InlineData("2NaOH + CuSO4 = Cu(OH)2↓ + Na2SO4", "CuSO4 + 2NaOH = Na2SO4 + Cu(OH)2", true)]
+        [InlineData("CaCO3 + 2HCl = CaCl2 + H2O + CO2↑", "2HCl + CaCO3 = CO2 + H2O + CaCl2", true)]
+        [InlineData("N2 + 3H2 <=> 2NH3", "2NH3 <=> 3H2 + N2", true)]
+        [InlineData("Zn - 2e- = Zn2+", "Zn = Zn2+ + 2e-", true)]
+        [InlineData("2H2 + O2 = 2H2O", "2H2 + O2 = H2O", false)]
+        public void CheckChemicalEquationEquivalence_EvaluatesAccurately(string a, string b, bool expected)
+        {
+            var result = PracticeService.CheckChemicalEquationEquivalence(a, b);
+            Assert.Equal(expected, result);
+        }
+
+        [Theory]
+        [InlineData("A-T, C-G", "A=T, C≡G", true)]
+        [InlineData("T-A, G-C", "A-T、C-G", true)]
+        [InlineData("A配T, C配G", "A-T, C-G", true)]
+        [InlineData("A-T, C-G", "A-G, C-T", false)]
+        public void CheckGenotypeEquivalence_EvaluatesDnaBasePairing(string a, string b, bool expected)
+        {
+            var result = PracticeService.CheckGenotypeEquivalence(a, b);
+            Assert.Equal(expected, result);
+        }
+
+        [Fact]
+        public async Task SystemHealthService_HealGamificationInvariants_DeduplicatesBindingCode_AndCleansPhone()
+        {
+            var (context, connection) = TestDbContextFactory.CreateInMemoryContext();
+            try
+            {
+                var s1 = new User
+                {
+                    Id = Guid.NewGuid(),
+                    Username = "dup_student_1",
+                    Password = "hash",
+                    Role = UserRole.Student,
+                    BindingCode = "ST1234",
+                    PhoneNumber = " 138-0000-0001 "
+                };
+                var s2 = new User
+                {
+                    Id = Guid.NewGuid(),
+                    Username = "dup_student_2",
+                    Password = "hash",
+                    Role = UserRole.Student,
+                    BindingCode = "ST1234",
+                    PhoneNumber = "138-0000-0002"
+                };
+                context.Users.AddRange(s1, s2);
+                await context.SaveChangesAsync();
+
+                var healthService = new SystemHealthService(context, null);
+                var healed = await healthService.HealGamificationInvariantsAsync();
+
+                Assert.True(healed > 0);
+                var reloaded1 = await context.Users.FirstAsync(u => u.Id == s1.Id);
+                var reloaded2 = await context.Users.FirstAsync(u => u.Id == s2.Id);
+
+                Assert.NotEqual(reloaded1.BindingCode, reloaded2.BindingCode);
+                Assert.Equal("13800000001", reloaded1.PhoneNumber);
+                Assert.Equal("13800000002", reloaded2.PhoneNumber);
+            }
+            finally
+            {
+                context.Dispose();
+                connection.Dispose();
+            }
+        }
+
+        [Fact]
+        public async Task SystemHealthService_HealCorruptedQuestions_NormalizesAnswerCases()
+        {
+            var (context, connection) = TestDbContextFactory.CreateInMemoryContext();
+            try
+            {
+                var qSingle = new Question
+                {
+                    Id = Guid.NewGuid(),
+                    Stem = "测试单选",
+                    Type = QuestionType.SingleChoice,
+                    OptionsJson = "[\"A. 1\", \"B. 2\"]",
+                    CorrectAnswer = " b "
+                };
+                var qMulti = new Question
+                {
+                    Id = Guid.NewGuid(),
+                    Stem = "测试多选",
+                    Type = QuestionType.MultipleChoice,
+                    OptionsJson = "[\"A. 1\", \"B. 2\", \"C. 3\"]",
+                    CorrectAnswer = " a,b "
+                };
+                var qBlank = new Question
+                {
+                    Id = Guid.NewGuid(),
+                    Stem = "测试填空",
+                    Type = QuestionType.FillInBlank,
+                    CorrectAnswer = "  v = at + v0  "
+                };
+                context.Questions.AddRange(qSingle, qMulti, qBlank);
+                await context.SaveChangesAsync();
+
+                var healthService = new SystemHealthService(context, null);
+                var healed = await healthService.HealCorruptedQuestionsAsync();
+
+                Assert.True(healed > 0);
+                var reloadedSingle = await context.Questions.FirstAsync(q => q.Id == qSingle.Id);
+                var reloadedMulti = await context.Questions.FirstAsync(q => q.Id == qMulti.Id);
+                var reloadedBlank = await context.Questions.FirstAsync(q => q.Id == qBlank.Id);
+
+                Assert.Equal("B", reloadedSingle.CorrectAnswer);
+                Assert.Equal("A,B", reloadedMulti.CorrectAnswer);
+                Assert.Equal("v = at + v0", reloadedBlank.CorrectAnswer);
             }
             finally
             {
