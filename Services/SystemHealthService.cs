@@ -1818,14 +1818,19 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {duplicateGroups.Count} 组共 {audit.TotalDuplicateQuestions} 道题库重复试题冗余副本");
                 }
 
-                // 14. User Gamification & Balance Invariants (负资产、等级脱节、连击越界、过期Buff或审核状态不齐)
+                // 14. User Gamification & Balance Invariants (负资产、等级脱节、连击越界、答题计数倒挂、过期Buff或审核状态不齐)
                 var users = await db.Users.Select(u => new {
                     u.Id,
                     u.Exp,
                     u.Coins,
                     u.Level,
                     u.CurrentStreak,
+                    u.MaxCombo,
                     u.TotalCorrect,
+                    u.TotalAnswered,
+                    u.TodayAnsweredCount,
+                    u.TodayCountDate,
+                    u.Grade,
                     u.ExpBoostUntil,
                     u.GoldBoostUntil,
                     u.ActiveTitle,
@@ -1835,17 +1840,15 @@ namespace Northtropic.Services
                 int invalidUsersCount = 0;
                 foreach (var u in users)
                 {
-                    int expectedLevel = 1;
-                    int tempExp = Math.Max(0, u.Exp);
-                    int needed = GamificationService.CalculateExpNeeded(expectedLevel);
-                    while (tempExp >= needed)
-                    {
-                        tempExp -= needed;
-                        expectedLevel++;
-                        needed = GamificationService.CalculateExpNeeded(expectedLevel);
-                    }
-                    if (u.Exp < 0 || u.Coins < 0 || u.Level < 1 || (u.Exp >= 0 && u.Level != expectedLevel) ||
+                    int expNeeded = GamificationService.CalculateExpNeeded(u.Level);
+                    bool expOverflown = u.Exp >= expNeeded;
+                    if (u.Exp < 0 || u.Coins < 0 || u.Level < 1 || expOverflown ||
                         u.CurrentStreak > u.TotalCorrect ||
+                        u.MaxCombo < u.CurrentStreak ||
+                        u.TotalCorrect > u.TotalAnswered ||
+                        u.TotalAnswered < 0 || u.TotalCorrect < 0 ||
+                        (u.TodayCountDate.Date < DateTime.Today && u.TodayAnsweredCount > 0) ||
+                        string.IsNullOrWhiteSpace(u.Grade) ||
                         (u.ExpBoostUntil.HasValue && u.ExpBoostUntil.Value < DateTime.Now.AddDays(-30)) ||
                         (u.GoldBoostUntil.HasValue && u.GoldBoostUntil.Value < DateTime.Now.AddDays(-30)) ||
                         string.IsNullOrWhiteSpace(u.ActiveTitle) ||
@@ -1857,7 +1860,7 @@ namespace Northtropic.Services
                 audit.TotalUsersWithInvalidBalances = invalidUsersCount;
                 if (audit.TotalUsersWithInvalidBalances > 0)
                 {
-                    audit.AuditDetails.Add($"发现 {audit.TotalUsersWithInvalidBalances} 个用户存在经验/金币异常、连击越界、过期Buff或审核时间脱节");
+                    audit.AuditDetails.Add($"发现 {audit.TotalUsersWithInvalidBalances} 个用户存在经验/金币异常、连击越界、答题计数倒挂、过期Buff或审核时间脱节");
                 }
 
                 // 15. StudyPlan Domain Invariants
@@ -2547,6 +2550,22 @@ namespace Northtropic.Services
                     user.CurrentStreak = user.TotalCorrect;
                     changed = true;
                 }
+                if (user.MaxCombo < user.CurrentStreak)
+                {
+                    user.MaxCombo = user.CurrentStreak;
+                    changed = true;
+                }
+                if (user.TodayCountDate.Date < DateTime.Today && user.TodayAnsweredCount > 0)
+                {
+                    user.TodayAnsweredCount = 0;
+                    user.TodayCountDate = DateTime.Today;
+                    changed = true;
+                }
+                if (string.IsNullOrWhiteSpace(user.Grade))
+                {
+                    user.Grade = "初中二年级";
+                    changed = true;
+                }
 
                 int expNeeded = GamificationService.CalculateExpNeeded(user.Level);
                 while (user.Exp >= expNeeded)
@@ -2784,17 +2803,37 @@ namespace Northtropic.Services
                     changed = true;
                 }
 
-                // B. 已彻底掌握的题目，LastRevisedAt 不能为空
+                // B. 复练次数达到 3 次以上自动对齐掌握状态
+                if (item.RevisionCount >= 3 && !item.IsMastered)
+                {
+                    item.IsMastered = true;
+                    item.LastRevisedAt ??= DateTime.Now;
+                    changed = true;
+                }
+
+                // C. 已彻底掌握的题目，LastRevisedAt 不能为空
                 if (item.IsMastered && !item.LastRevisedAt.HasValue)
                 {
                     item.LastRevisedAt = item.CreatedAt != default ? item.CreatedAt : DateTime.Now;
                     changed = true;
                 }
 
-                // C. 错因归类清洗
+                // D. 错因归类清洗
                 if (string.IsNullOrWhiteSpace(item.ErrorReasonCategory))
                 {
                     item.ErrorReasonCategory = "未分类";
+                    changed = true;
+                }
+
+                // E. 字符串字段防 Null 健壮性
+                if (item.UserWrongAnswer == null)
+                {
+                    item.UserWrongAnswer = string.Empty;
+                    changed = true;
+                }
+                if (item.AiCustomAdvice == null)
+                {
+                    item.AiCustomAdvice = string.Empty;
                     changed = true;
                 }
 

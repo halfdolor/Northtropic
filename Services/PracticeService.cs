@@ -919,12 +919,17 @@ namespace Northtropic.Services
                     return $"三角角度与弧度制等价：已自动识别角度制 (如 30°、45°、90°) 与弧度制 (如 \\pi/6、\\pi/4、\\pi/2) 的精确数理等价对应，对应标准答案 [{correct}]";
                 }
 
-                // 国际单位制科学词头换算等价 (如 A与mA、kWh与度与J、h与min与s、kHz与Hz、kJ与J、kΩ与Ω、L与mL、mol/L与mmol/L等) 与物理工程量纲
+                // 国际单位制科学词头换算等价 (如 A与mA、kWh与度与J、h与min与s、kHz与Hz、kJ与J、kΩ与Ω、L与mL、mol/L与mmol/L、g/cm³与kg/m³等) 与物理工程量纲
                 if (CheckScientificUnitMultiplierEquivalence(user, correct) || CheckScientificUnitMultiplierEquivalence(normU, normC))
                 {
-                    return $"国际单位制科学词头换算等价（物理与工程量纲、化学量纲智能换算）：已自动对齐体积容积（L/mL/m³/dm³）、物质的量浓度（mol/L与mmol/L）、磁通量（Wb/Mx）、电感（H/mH）、电导（S/mS）、电流（A/mA/μA）、电能度数（kWh/度/J）、时间（h/min/s）、频率（Hz/kHz/MHz）、电容（F/uF/nF/pF）、速度（km/h与m/s）、功率（W/kW/MW）、压强（Pa/kPa/MPa）、电压、阻抗或力学等理化工程量纲智能换算，对应标准答案 [{correct}]";
+                    return $"国际单位制科学词头换算等价（物理与工程量纲、化学量纲智能换算）：已自动对齐体积容积（L/mL/m³/dm³）、物质的量浓度（mol/L与mmol/L）、密度（g/cm³与kg/m³）、磁通量（Wb/Mx）、电感（H/mH）、电导（S/mS）、电流（A/mA/μA）、电能度数（kWh/度/J）、时间（h/min/s）、频率（Hz/kHz/MHz）、电容（F/uF/nF/pF）、速度（km/h与m/s）、功率（W/kW/MW）、压强（Pa/kPa/MPa）、电压、阻抗或力学等理化工程量纲智能换算，对应标准答案 [{correct}]";
                 }
 
+                // 生物遗传学基因型等位基因与基因座置换等价 (如 AaBb <=> BbAa <=> aAbB, AaBbCc <=> CcBbAa, X^B X^b <=> X^b X^B)
+                if ((CheckGenotypeEquivalence(user, correct) || CheckGenotypeEquivalence(normU, normC)) && normU != normC)
+                {
+                    return $"生物遗传学基因型等价：已自动识别孟德尔遗传规律中独立遗传基因座（如 {user} 与 {correct}）的等位基因顺序与因式置换等价性，对应标准答案 [{correct}]";
+                }
 
                 // 复数代数形式等价 (z = a + bi, bi + a, 0 + bi 等，需包含虚数单位 i)
                 if ((normU.Contains("i") || normC.Contains("i")) &&
@@ -2733,7 +2738,24 @@ namespace Northtropic.Services
             ["萤石"] = "caf2", ["荧石"] = "caf2", ["氟化钙"] = "caf2",
             ["孔雀石"] = "cu2(oh)2co3", ["碱式碳酸铜"] = "cu2(oh)2co3",
             ["菱铁矿"] = "feco3", ["碳酸亚铁"] = "feco3",
-            ["黄铁矿"] = "fes2", ["二硫化亚铁"] = "fes2"
+            ["黄铁矿"] = "fes2", ["二硫化亚铁"] = "fes2",
+
+            // 生物高分子与关键生化代谢分子
+            ["三磷酸腺苷"] = "atp", ["atp"] = "atp",
+            ["二磷酸腺苷"] = "adp", ["adp"] = "adp",
+            ["一磷酸腺苷"] = "amp", ["amp"] = "amp",
+            ["脱氧核糖核酸"] = "dna", ["dna"] = "dna",
+            ["核糖核酸"] = "rna", ["rna"] = "rna",
+            ["信使核糖核酸"] = "mrna", ["mrna"] = "mrna",
+            ["转运核糖核酸"] = "trna", ["trna"] = "trna",
+            ["核糖体核糖核酸"] = "rrna", ["rrna"] = "rrna",
+            ["还原型辅酶ⅰ"] = "nadh", ["还原型辅酶i"] = "nadh", ["nadh"] = "nadh",
+            ["氧化型辅酶ⅰ"] = "nad+", ["氧化型辅酶i"] = "nad+", ["nad+"] = "nad+",
+            ["还原型辅酶ⅱ"] = "nadph", ["还原型辅酶ii"] = "nadph", ["nadph"] = "nadph",
+            ["氧化型辅酶ⅱ"] = "nadp+", ["氧化型辅酶ii"] = "nadp+", ["nadp+"] = "nadp+",
+            ["丙酮酸"] = "c3h4o3",
+            ["乳酸"] = "c3h6o3",
+            ["丙三醇"] = "c3h8o3", ["甘油"] = "c3h8o3"
         };
 
         public static readonly Dictionary<string, string> OrganicCondensedMap = new(StringComparer.OrdinalIgnoreCase)
@@ -5154,6 +5176,12 @@ namespace Northtropic.Services
                 }
             }
 
+            // 生物遗传学基因型等位基因与基因座置换等价 (如 AaBb <=> BbAa <=> aAbB, AaBbCc <=> CcBbAa, X^B X^b <=> X^b X^B)
+            if (CheckGenotypeEquivalence(user, correct) || CheckGenotypeEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
             // 规范化多元方程解集无序置换等价匹配: 如 "y=3,x=2" 与 "x=2,y=3"
             if (normUser.Contains(',') && normUser.Contains('=') && normCorrect.Contains(',') && normCorrect.Contains('='))
             {
@@ -6125,6 +6153,14 @@ namespace Northtropic.Services
                     (@"微西门子|微西", 1e-6, "conductance"),
                     (@"西门子|西", 1.0, "conductance"),
 
+                    // 密度 (g/cm³, kg/m³, g/mL, kg/L, g/L, t/m³ 等，以 kg/m³ 为基准单位 1.0)
+                    (@"g/cm\^3|g/cm³|g/cm3|g·cm\^\{-?3\}|g·cm\^-?3|g\*cm\^\{-?3\}|g\*cm\^-?3|克/立方厘米|克每立方厘米", 1000.0, "density"),
+                    (@"kg/l|kg/升|千克/升|公斤/升", 1000.0, "density"),
+                    (@"g/ml|g/毫升|克/毫升", 1000.0, "density"),
+                    (@"t/m\^3|t/m³|t/m3|吨/立方米", 1000.0, "density"),
+                    (@"g/l|g/升|克/升", 1.0, "density"),
+                    (@"kg/m\^3|kg/m³|kg/m3|kg·m\^\{-?3\}|kg·m\^-?3|kg\*m\^\{-?3\}|kg\*m\^-?3|千克/立方米|千克每立方米|公斤/立方米", 1.0, "density"),
+
                     // 物质的量浓度 (mol/L, mol/dm³, mmol/L, mol/m³)
                     (@"mol/l|mol/dm\^3|mol/dm³|mol/dm3|摩尔/升|摩尔每升", 1.0, "conc"),
                     (@"mmol/l|mmol/dm\^3|mmol/dm³|mmol/dm3|毫摩尔/升|毫摩尔每升", 1e-3, "conc"),
@@ -6222,6 +6258,114 @@ namespace Northtropic.Services
                 {
                     return true;
                 }
+            }
+
+            return false;
+        }
+
+        public static bool CheckGenotypeEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            u = u.Trim();
+            c = c.Trim();
+            if (string.Equals(u, c, StringComparison.OrdinalIgnoreCase)) return true;
+
+            // 1. 杂交/测交亲本组合无序对等: 如 AaBb × aabb 与 aabb × AaBb
+            string[] crossSeparators = new[] { "×", "*", " x ", " X " };
+            foreach (var sep in crossSeparators)
+            {
+                if (u.Contains(sep) && c.Contains(sep))
+                {
+                    var uParents = u.Split(new[] { sep }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToList();
+                    var cParents = c.Split(new[] { sep }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToList();
+                    if (uParents.Count == 2 && cParents.Count == 2)
+                    {
+                        bool matchDirect = CheckGenotypeEquivalence(uParents[0], cParents[0]) && CheckGenotypeEquivalence(uParents[1], cParents[1]);
+                        bool matchCross = CheckGenotypeEquivalence(uParents[0], cParents[1]) && CheckGenotypeEquivalence(uParents[1], cParents[0]);
+                        if (matchDirect || matchCross) return true;
+                    }
+                }
+            }
+
+            // 2. 伴性遗传基因型: 如 X^B X^b <=> X^b X^B, X^B Y <=> Y X^B, X^{B}X^{b} 等
+            static string NormalizeSexLinked(string s)
+            {
+                return s.Replace(" ", "").Replace("{", "").Replace("}", "");
+            }
+            string normSexU = NormalizeSexLinked(u);
+            string normSexC = NormalizeSexLinked(c);
+            if ((normSexU.Contains("X^") || normSexU.Contains("Y")) && (normSexC.Contains("X^") || normSexC.Contains("Y")))
+            {
+                var uChroms = ExtractChromosomes(normSexU);
+                var cChroms = ExtractChromosomes(normSexC);
+                if (uChroms.Count > 0 && uChroms.Count == cChroms.Count)
+                {
+                    var uSorted = uChroms.OrderBy(x => x, StringComparer.Ordinal).ToList();
+                    var cSorted = cChroms.OrderBy(x => x, StringComparer.Ordinal).ToList();
+                    if (uSorted.SequenceEqual(cSorted)) return true;
+                }
+            }
+
+            // 3. 孟德尔常染色体多基因座基因型 (二倍体或配子单倍体): 如 AaBb <=> BbAa <=> aAbB, AaBbCc <=> CcBbAa, AAbb <=> bbAA
+            if (TryCanonicalizeAutosomalGenotype(u, out var canonU) &&
+                TryCanonicalizeAutosomalGenotype(c, out var canonC))
+            {
+                if (string.Equals(canonU, canonC, StringComparison.Ordinal)) return true;
+            }
+
+            return false;
+        }
+
+        private static List<string> ExtractChromosomes(string s)
+        {
+            var matches = System.Text.RegularExpressions.Regex.Matches(s, @"(X(?:\^[^XY\s]+)?|Y(?:\^[^XY\s]+)?)");
+            var list = new List<string>();
+            int totalLen = 0;
+            foreach (System.Text.RegularExpressions.Match m in matches)
+            {
+                list.Add(m.Value);
+                totalLen += m.Length;
+            }
+            if (totalLen != s.Length) return new List<string>();
+            return list;
+        }
+
+        private static bool TryCanonicalizeAutosomalGenotype(string s, out string canon)
+        {
+            canon = string.Empty;
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            s = s.Trim().Replace(" ", "");
+            if (s.Length < 2 || s.Length > 16) return false;
+            foreach (char ch in s)
+            {
+                if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))) return false;
+            }
+
+            var groups = s.GroupBy(char.ToUpperInvariant).ToList();
+            if (groups.Count == 0) return false;
+
+            // 二倍体 (每个基因座 2 个等位基因, 如 AaBb, AABB, aabb, AaBbCc)
+            bool isDiploid = groups.All(g => g.Count() == 2);
+            if (isDiploid)
+            {
+                var loci = new List<string>();
+                foreach (var g in groups.OrderBy(g => g.Key))
+                {
+                    // 每一个基因座的两个等位基因按大写优先（显性在前）排序
+                    var alleles = g.OrderBy(ch => char.IsLower(ch)).ThenBy(ch => ch).ToArray();
+                    loci.Add(new string(alleles));
+                }
+                canon = string.Concat(loci);
+                return true;
+            }
+
+            // 配子单倍体 (每个基因座 1 个等位基因, 如 AB, Ab, aB, ab, ABC)
+            bool isHaploid = groups.All(g => g.Count() == 1);
+            if (isHaploid && groups.Count >= 2 && groups.Count <= 3)
+            {
+                var alleles = groups.OrderBy(g => g.Key).Select(g => g.First()).ToArray();
+                canon = new string(alleles);
+                return true;
             }
 
             return false;

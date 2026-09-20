@@ -197,11 +197,17 @@
                 {
                     <div class="pa-4 mt-4 glass-card" style="@(_evalResult.IsCorrect ? "border-color: rgba(34, 197, 94, 0.4); background: rgba(34, 197, 94, 0.1);" : "border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1);")">
                         <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
-                            <div class="d-flex align-center gap-2">
+                            <div class="d-flex align-center gap-2 flex-wrap">
                                 <MudIcon Icon="@(_evalResult.IsCorrect ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)" Color="@(_evalResult.IsCorrect ? Color.Success : Color.Error)" />
                                 <MudText Typo="Typo.subtitle1" Class="font-weight-bold">
                                     @(_evalResult.IsCorrect ? (_isVariantMode ? "🎉 厉害！变式题完美破解，掌握度达标！" : "🎉 恭喜！错题净化消灭成功！") : "❌ 仍然答错，建议使用下方苏格拉底模式引导思考！")
                                 </MudText>
+                                @if (_evalResult.IsEquivalentMatch)
+                                {
+                                    <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Verified" Class="font-weight-bold">
+                                        🎯 智能等价认可
+                                    </MudChip>
+                                }
                             </div>
                             <MudTooltip Text="🔊 语音朗读解析">
                                 <MudIconButton Icon="@Icons.Material.Filled.VolumeUp" Color="Color.Primary" Size="Size.Small" OnClick="SpeakAnalysisAsync" />
