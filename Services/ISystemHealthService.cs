@@ -228,6 +228,8 @@ namespace Northtropic.Services
         public int TotalInvalidAchievements { get; set; }
         public int TotalInvalidStudyPlanTasks { get; set; }
         public int TotalInvalidUserAchievements { get; set; }
+        public int TotalDesyncedPublishStatusQuestions { get; set; }
+        public int TotalMalformedChoiceQuestions { get; set; }
         public int OrphanErrorItemsCount => TotalOrphanErrorItems;
         public int OrphanPracticeRecordsCount => TotalOrphanPracticeRecords;
         public int OrphanFavoritesCount => TotalOrphanUserFavorites;
@@ -255,11 +257,13 @@ namespace Northtropic.Services
         public int InvalidAchievementsCount => TotalInvalidAchievements;
         public int InvalidStudyPlanTasksCount => TotalInvalidStudyPlanTasks;
         public int InvalidUserAchievementsCount => TotalInvalidUserAchievements;
+        public int DesyncedPublishStatusQuestionsCount => TotalDesyncedPublishStatusQuestions;
+        public int MalformedChoiceQuestionsCount => TotalMalformedChoiceQuestions;
         public int TotalIssuesCount => TotalOrphanErrorItems + TotalOrphanPracticeRecords + TotalOrphanUserFavorites + TotalOrphanHomeworkAssignments + TotalOrphanBindings + TotalOrphanStudyPlans + TotalOrphanStudyPlanTasks + TotalOrphanUserAchievements + TotalOrphanInsights + TotalOrphanLlmLogs + TotalCorruptedQuestions + TotalOrphanPrivateQuestions + TotalDanglingPublicQuestions + TotalInvalidStudyPlans + TotalInvalidBindings + TotalInvalidHomeworkAssignments + TotalInvalidPracticeRecords + TotalInvalidErrorItems + TotalDuplicateUserAchievements + TotalInvalidLlmLogs + TotalInvalidCurriculumConfigs + TotalInvalidInsights + TotalInvalidAchievements + TotalInvalidStudyPlanTasks + TotalInvalidUserAchievements;
-        public int TotalOptimizationCandidatesCount => TotalDuplicateQuestions + TotalUsersWithInvalidBalances + TotalInvalidStudyPlans + TotalInvalidBindings + TotalInvalidHomeworkAssignments + TotalDuplicateFavorites + TotalInvalidPracticeRecords + TotalInvalidErrorItems + TotalDuplicateUserAchievements + TotalInvalidLlmLogs + TotalInvalidCurriculumConfigs + TotalInvalidInsights + TotalInvalidAchievements + TotalInvalidStudyPlanTasks + TotalInvalidUserAchievements;
-        public int TotalComprehensiveAnomaliesCount => TotalIssuesCount + TotalUsersWithInvalidBalances + TotalDuplicateFavorites;
+        public int TotalOptimizationCandidatesCount => TotalDuplicateQuestions + TotalUsersWithInvalidBalances + TotalInvalidStudyPlans + TotalInvalidBindings + TotalInvalidHomeworkAssignments + TotalDuplicateFavorites + TotalInvalidPracticeRecords + TotalInvalidErrorItems + TotalDuplicateUserAchievements + TotalInvalidLlmLogs + TotalInvalidCurriculumConfigs + TotalInvalidInsights + TotalInvalidAchievements + TotalInvalidStudyPlanTasks + TotalInvalidUserAchievements + TotalDesyncedPublishStatusQuestions + TotalMalformedChoiceQuestions;
+        public int TotalComprehensiveAnomaliesCount => TotalIssuesCount + TotalUsersWithInvalidBalances + TotalDuplicateFavorites + TotalDesyncedPublishStatusQuestions + TotalMalformedChoiceQuestions;
         public bool IsHealthy => TotalIssuesCount == 0;
-        public bool IsStrictlyHealthy => TotalIssuesCount == 0 && TotalUsersWithInvalidBalances == 0 && TotalDuplicateFavorites == 0;
+        public bool IsStrictlyHealthy => TotalIssuesCount == 0 && TotalUsersWithInvalidBalances == 0 && TotalDuplicateFavorites == 0 && TotalDesyncedPublishStatusQuestions == 0 && TotalMalformedChoiceQuestions == 0;
         public List<string> AuditDetails { get; set; } = new();
     }
 

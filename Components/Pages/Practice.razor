@@ -945,6 +945,27 @@
                                     多空答题贴士：支持以 <b>分号 (；)</b>、<b>顿号 (、)</b> 或 <b>空格</b> 分隔各空（例如：<code>光合作用；蒸腾作用</code>），系统智能判分并支持合理顺序。
                                 </MudText>
                             </div>
+
+                            @if (!string.IsNullOrWhiteSpace(_textAnswer) && (_textAnswer.Contains(";") || _textAnswer.Contains("；") || _textAnswer.Contains("、") || _textAnswer.Contains("，") || _textAnswer.Contains(",")))
+                            {
+                                var blanks = _textAnswer.Split(new[] { ';', '；', '、', '，', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                                                        .Select(b => b.Trim())
+                                                        .Where(b => !string.IsNullOrEmpty(b))
+                                                        .ToList();
+                                if (blanks.Count > 1)
+                                {
+                                    <div class="d-flex align-center flex-wrap gap-1 mt-1 mb-2 px-2 py-1 rounded" style="background: rgba(99, 102, 241, 0.08); border: 1px dashed rgba(99, 102, 241, 0.35);">
+                                        <MudIcon Icon="@Icons.Material.Filled.Splitscreen" Size="Size.Small" Color="Color.Primary" />
+                                        <MudText Typo="Typo.caption" Color="Color.Primary" Style="font-weight: 600;">各空拆解预览：</MudText>
+                                        @for (int bIdx = 0; bIdx < blanks.Count; bIdx++)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined" Style="height: 20px; font-size: 0.72rem; padding: 0 6px;">
+                                                第 @(bIdx + 1) 空: @blanks[bIdx]
+                                            </MudChip>
+                                        }
+                                    </div>
+                                }
+                            }
                         }
 
                         <!-- KaTeX 理科公式实时渲染预览框 -->
@@ -1091,7 +1112,7 @@
                                  {
                                      <MudTooltip Text="@(!string.IsNullOrWhiteSpace(_lastResult.EquivalentMatchReason) ? _lastResult.EquivalentMatchReason : "经智能数理判题引擎校验，作答与标准答案完全等价！")" Placement="Placement.Top">
                                          <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Verified" Class="font-weight-bold" Style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.3)); border: 1px solid #10b981;">
-                                             🎯 智能等价：@(!string.IsNullOrWhiteSpace(_lastResult.EquivalentMatchReason) ? _lastResult.EquivalentMatchReason : "多形式精准匹配")
+                                             🎯 智能等价：@FormatChipReason(_lastResult.EquivalentMatchReason)
                                          </MudChip>
                                      </MudTooltip>
                                  }
@@ -3609,7 +3630,14 @@
         "\\times 10^{8}", "\\cdot", "\\emptyset", "\\frac{a}{b}", "\\sqrt{x}", "x^{n}", "\\Delta", "\\sin\\theta", "\\cos\\theta", "\\vec{v}"
     };
 
-    private readonly string[] _symbolCategories = new[] { "全部", "常用代数", "几何三角", "集合逻辑", "希腊字母", "理化符号" };
+    private static string FormatChipReason(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason)) return "多形式精准匹配";
+        var trimmed = reason.Trim();
+        return trimmed.Length > 20 ? trimmed.Substring(0, 18) + "..." : trimmed;
+    }
+
+    private readonly string[] _symbolCategories = new[] { "全部", "常用代数", "几何三角", "集合逻辑", "微积分/逻辑", "希腊字母", "理化符号" };
     private string _selectedSymbolCategory = "全部";
     private bool _symbolPanelExpanded = true;
 
@@ -3618,8 +3646,9 @@
         return category switch
         {
             "常用代数" => new[] { "π", "√", "²", "³", "±", "×", "÷", "·", "≈", "≠", "≤", "≥", "∞", "ln", "lg", "log₂", "\\log_a b", "\\frac{a}{b}", "\\sqrt{x}", "x^{n}", "\\Delta t" },
-            "几何三角" => new[] { "△", "∠", "⊥", "∥", "°", "∵", "∴", "sin", "cos", "tan", "\\sin\\theta", "\\cos\\theta", "\\vec{i}", "\\vec{j}", "\\vec{k}", "\\vec{v}", "\\|\\vec{a}\\|" },
-            "集合逻辑" => new[] { "∈", "∉", "⊆", "∪", "∩", "∅", "{", "}", "\\emptyset" },
+            "几何三角" => new[] { "△", "∠", "⊥", "∥", "°", "∵", "∴", "sin", "cos", "tan", "\\arcsin", "\\arccos", "\\arctan", "\\sin\\theta", "\\cos\\theta", "\\vec{i}", "\\vec{j}", "\\vec{k}", "\\vec{v}", "\\|\\vec{a}\\|" },
+            "集合逻辑" => new[] { "∈", "∉", "⊆", "⊂", "∪", "∩", "∅", "∁", "{", "}", "\\emptyset", "⇒", "⇔", "∧", "∨", "¬" },
+            "微积分/逻辑" => new[] { "\\int", "\\iint", "dx", "dt", "\\lim", "\\partial", "\\infty", "\\arcsin", "\\arccos", "\\arctan", "\\implies", "\\iff", "\\forall", "\\exists", "\\neg", "\\land", "\\lor" },
             "希腊字母" => new[] { "α", "β", "γ", "θ", "λ", "ρ", "Ω", "μ", "Δ", "ω", "η", "ν", "ε" },
             "理化符号" => new[] { "m/s", "m/s²", "g/cm³", "kW·h", "℃", "→", "⇌", "↑", "↓", "(s)", "(l)", "(g)", "(aq)", "H₂O", "CO₂", "NH₃", "Na₂O₂", "Fe³⁺", "SO₄²⁻", "CO₃²⁻", "NH₄⁺", "MnO₄⁻", "Ag⁺", "Cl⁻", "OH⁻", "Δt", "λ", "ρ", "μ", "ω" },
             _ => _quickMathSymbols

@@ -2172,6 +2172,45 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalInvalidUserAchievements} 条用户成就解锁记录存在时序漂移 (未来时间戳或非法历史纪元)");
                 }
 
+                // 28. Question Domain Invariants (题目公开可见性与发布状态对齐、单选/多选选项与答案格式标准化)
+                var questionInvariantsToCheck = await db.Questions
+                    .Select(q => new {
+                        q.Id,
+                        q.IsPublic,
+                        q.PublishStatus,
+                        q.Type,
+                        q.CorrectAnswer,
+                        q.OptionsJson
+                    })
+                    .ToListAsync();
+
+                int desyncedPublishQuestions = questionInvariantsToCheck.Count(q =>
+                    (q.IsPublic && q.PublishStatus == PublishStatusEnum.Private) ||
+                    (!q.IsPublic && q.PublishStatus == PublishStatusEnum.Approved)
+                );
+                audit.TotalDesyncedPublishStatusQuestions = desyncedPublishQuestions;
+                if (audit.TotalDesyncedPublishStatusQuestions > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalDesyncedPublishStatusQuestions} 道题目存在发布状态与公开可见性脱节 (IsPublic 与 PublishStatus 不一致)");
+                }
+
+                int malformedChoiceQuestions = questionInvariantsToCheck.Count(q =>
+                {
+                    if (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
+                    {
+                        var ans = q.CorrectAnswer?.Trim();
+                        if (string.IsNullOrEmpty(ans)) return false;
+                        if (ans.StartsWith("[") && ans.EndsWith("]")) return true;
+                        if (ans.EndsWith(".") || ans.EndsWith("、") || ans.EndsWith(";") || ans.EndsWith("；")) return true;
+                    }
+                    return false;
+                });
+                audit.TotalMalformedChoiceQuestions = malformedChoiceQuestions;
+                if (audit.TotalMalformedChoiceQuestions > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalMalformedChoiceQuestions} 道选择题存在选项或答案格式不变量异常 (包含非法 JSON 包裹、标点污染或空选项)");
+                }
+
                 if (audit.IsHealthy)
                 {
                     audit.AuditDetails.Add("✅ 数据库全库拓扑与业务外键完整性审计通过，未发现任何孤儿或格式损坏记录。");
@@ -2340,6 +2379,10 @@ namespace Northtropic.Services
                     foreach (var pubQ in danglingPublicQuestions)
                     {
                         pubQ.CreatedByUserId = null;
+                        if (pubQ.PublishStatus == PublishStatusEnum.Private)
+                        {
+                            pubQ.PublishStatus = PublishStatusEnum.Approved;
+                        }
                     }
                     result.SanitizedPublicQuestionsCount = danglingPublicQuestions.Count;
                 }
@@ -3415,6 +3458,19 @@ namespace Northtropic.Services
                     q.GradeTarget = "通用";
                     modified = true;
                 }
+
+                // 领域不变量：公开可见性与审批发布状态对齐自愈
+                if (q.IsPublic && q.PublishStatus == PublishStatusEnum.Private)
+                {
+                    q.PublishStatus = PublishStatusEnum.Approved;
+                    modified = true;
+                }
+                else if (!q.IsPublic && q.PublishStatus == PublishStatusEnum.Approved)
+                {
+                    q.IsPublic = true;
+                    modified = true;
+                }
+
                 if (q.Type == QuestionType.SingleChoice)
                 {
                     if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
@@ -3422,18 +3478,55 @@ namespace Northtropic.Services
                         q.CorrectAnswer = "A";
                         modified = true;
                     }
-                    else if (q.CorrectAnswer != q.CorrectAnswer.Trim().ToUpperInvariant())
+                    else
                     {
-                        q.CorrectAnswer = q.CorrectAnswer.Trim().ToUpperInvariant();
-                        modified = true;
+                        var raw = q.CorrectAnswer.Trim();
+                        if (raw.StartsWith("[") && raw.EndsWith("]"))
+                        {
+                            raw = raw.Trim('[', ']', '"', '\'', ' ');
+                        }
+                        raw = raw.TrimEnd('.', '、', ';', '；', ' ', ')', '）');
+                        raw = raw.TrimStart('(', '（');
+                        raw = raw.ToUpperInvariant();
+                        if (raw.Length == 1 && raw[0] >= '1' && raw[0] <= '9')
+                        {
+                            raw = ((char)('A' + (raw[0] - '1'))).ToString();
+                        }
+                        if (q.CorrectAnswer != raw)
+                        {
+                            q.CorrectAnswer = raw;
+                            modified = true;
+                        }
                     }
                 }
                 else if (q.Type == QuestionType.MultipleChoice)
                 {
-                    if (!string.IsNullOrWhiteSpace(q.CorrectAnswer) && q.CorrectAnswer != q.CorrectAnswer.Trim().ToUpperInvariant())
+                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
                     {
-                        q.CorrectAnswer = q.CorrectAnswer.Trim().ToUpperInvariant();
+                        q.CorrectAnswer = "AB";
                         modified = true;
+                    }
+                    else
+                    {
+                        var raw = q.CorrectAnswer.Trim();
+                        if (raw.StartsWith("[") && raw.EndsWith("]"))
+                        {
+                            raw = raw.Trim('[', ']', ' ');
+                            raw = raw.Replace("\"", "").Replace("'", "").Replace("、", ",");
+                            raw = System.Text.RegularExpressions.Regex.Replace(raw, @"\s*,\s*", ",");
+                            raw = raw.Trim(' ', ',');
+                            raw = raw.ToUpperInvariant();
+                        }
+                        else
+                        {
+                            raw = raw.TrimEnd('.', '、', ';', '；', ' ');
+                            raw = raw.ToUpperInvariant();
+                        }
+                        if (q.CorrectAnswer != raw)
+                        {
+                            q.CorrectAnswer = raw;
+                            modified = true;
+                        }
                     }
                 }
                 else if (q.Type == QuestionType.FillInBlank)

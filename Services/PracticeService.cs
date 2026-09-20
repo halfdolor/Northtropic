@@ -743,6 +743,26 @@ namespace Northtropic.Services
                     return $"化学热化学方程式等价：已自动识别化学反应物与生成物化学计量、聚集状态及焓变 ΔH（单位与数值）的科学等价性，对应标准方程式 [{correct}]";
                 }
 
+                // 数理逻辑命题连结符与蕴涵等价 (如 P \implies Q vs P => Q, P \iff Q vs P <=> Q)
+                if (user.Contains("\\implies") || correct.Contains("\\implies") || user.Contains("=>") || correct.Contains("=>") ||
+                    user.Contains("\\iff") || correct.Contains("\\iff") || user.Contains("<=>") || correct.Contains("<=>") ||
+                    user.Contains("\\land") || correct.Contains("\\land") || user.Contains("\\lor") || correct.Contains("\\lor") ||
+                    user.Contains("\\neg") || correct.Contains("\\neg"))
+                {
+                    return $"数理逻辑命题等价：已自动识别命题连结符（蕴涵 ⇒、等价 ⇔、合取 ∧、析取 ∨、非 ¬ 等）的符号等价性，对应标准答案 [{correct}]";
+                }
+
+                // 反三角函数记号等价 (如 \arcsin(x) vs \sin^{-1}(x) vs asin(x))
+                if (normU.Contains("arcsin") || normC.Contains("arcsin") || normU.Contains("arccos") || normC.Contains("arccos") ||
+                    normU.Contains("arctan") || normC.Contains("arctan") || normU.Contains("arccot") || normC.Contains("arccot") ||
+                    normU.Contains("asin") || normC.Contains("asin") || normU.Contains("acos") || normC.Contains("acos") ||
+                    normU.Contains("atan") || normC.Contains("atan") || normU.Contains("sin^-1") || normC.Contains("sin^-1") ||
+                    normU.Contains("cos^-1") || normC.Contains("cos^-1") || normU.Contains("tan^-1") || normC.Contains("tan^-1"))
+                {
+                    return $"反三角函数表达等价：已自动识别 arcsin/arccos/arctan 与 sin^-1/cos^-1/tan^-1 等逆三角记号的数学等价性，对应标准答案 [{correct}]";
+                }
+
+
                 // 化学可逆反应与反应式等价
                 if (user.Contains("⇌") || correct.Contains("⇌") || user.Contains("\\rightleftharpoons") || correct.Contains("\\rightleftharpoons") ||
                     user.Contains("<=>") || correct.Contains("<=>") || user.Contains("<->") || correct.Contains("<->"))
@@ -940,7 +960,7 @@ namespace Northtropic.Services
                 // 国际单位制科学词头换算等价 (如 A与mA、kWh与度与J、h与min与s、kHz与Hz、kJ与J、kΩ与Ω、L与mL、mol/L与mmol/L、g/cm³与kg/m³等) 与物理工程量纲
                 if (CheckScientificUnitMultiplierEquivalence(user, correct) || CheckScientificUnitMultiplierEquivalence(normU, normC))
                 {
-                    return $"国际单位制科学词头换算等价（物理与工程量纲、理化科学量纲与单位换算等价、化学量纲智能换算）：已自动对齐体积容积（L/mL/m³/dm³）、物质的量浓度（mol/L与mmol/L）、密度（g/cm³与kg/m³）、热学比热容与潜热、磁感应强度与电场强度、磁通量（Wb/Mx）、电感（H/mH）、电导（S/mS）、电流（A/mA/μA）、电能度数（kWh/度/J）、时间（h/min/s）、频率（Hz/kHz/MHz）、电容（F/uF/nF/pF）、速度（km/h与m/s）、功率（W/kW/MW）、压强（Pa/kPa/MPa）、电压、阻抗或力学等理化工程量纲智能换算，对应标准答案 [{correct}]";
+                    return $"国际单位制科学词头换算等价（物理与工程量纲、理化科学量纲与单位换算等价、物理电磁/频率/能量单位智能对齐等价、化学量纲智能换算）：已自动对齐特斯拉 (T <=> Wb/m²)、频率 (Hz <=> s⁻¹)、电能 (kWh <=> J)、电子伏能级 (eV <=> J)、体积容积（L/mL/m³/dm³）、物质的量浓度（mol/L与mmol/L）、密度（g/cm³与kg/m³）、热学比热容与潜热、磁感应强度与电场强度、磁通量（Wb/Mx）、电感（H/mH）、电导（S/mS）、电流（A/mA/μA）、电能度数（kWh/度/J）、时间（h/min/s）、频率（Hz/kHz/MHz）、电容（F/uF/nF/pF）、速度（km/h与m/s）、功率（W/kW/MW）、压强（Pa/kPa/MPa）、电压、阻抗或力学等理化工程量纲智能换算，对应标准答案 [{correct}]";
                 }
 
                 // 生物遗传学基因型等位基因与基因座置换等价 (如 AaBb <=> BbAa <=> aAbB, AaBbCc <=> CcBbAa, X^B X^b <=> X^b X^B, I^A I^B <=> I^B I^A)
@@ -3896,6 +3916,14 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:stackrel|overset)\s*\{[^}]*\}\s*(?:\{=+\}|={1,2})", "=");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:xrightarrow|xlongequal|xrightleftharpoons)(?:\[[^\]]*\]|\{[^}]*\})*", "->");
                 s = s.Replace("\\rightleftharpoons", "=").Replace("\\longrightarrow", "->").Replace("⇌", "=").Replace("⇄", "=");
+                // 数理逻辑命题连结符与蕴涵/充要等价解构 (\implies, \iff, \to, \rightarrow, \leftrightarrow, \land, \lor, \neg 等)
+                s = s.Replace("\\implies", "=>").Replace("\\Rightarrow", "=>").Replace("⟹", "=>").Replace("⇒", "=>");
+                s = s.Replace("\\iff", "<=>").Replace("\\Leftrightarrow", "<=>").Replace("⟺", "<=>").Replace("⇔", "<=>");
+                s = s.Replace("\\leftrightarrow", "<->").Replace("↔", "<->");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<!\^)(?:\\rightarrow|\\to|→)", "->");
+                s = s.Replace("\\land", "^").Replace("\\wedge", "^").Replace("∧", "^");
+                s = s.Replace("\\lor", "v").Replace("\\vee", "v").Replace("∨", "v");
+                s = s.Replace("\\neg", "!").Replace("\\lnot", "!").Replace("¬", "!");
                 // 剥离气体与沉淀箭头 (支持 ↑, ↓, \uparrow, \downarrow)
                 s = s.Replace("↑", "").Replace("↓", "").Replace("\\uparrow", "").Replace("\\downarrow", "");
                 // 剥离化学物态标注: (s), (l), (g), (aq), (固), (液), (气), (水)
@@ -3952,7 +3980,7 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:vec|overrightarrow|overline)\s*\{([^}]+)\}", "$1");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:vec|overrightarrow|overline)\s+([a-zA-Z])\b", "$1");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=^|[^a-zA-Z0-9\u4e00-\u9fa5])向量\s*([a-zA-Z]+)", "$1");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"([a-zA-Z]+)\^\\rightarrow|([a-zA-Z]+)\^\{\\rightarrow\}", "$1$2");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"([a-zA-Z]+)\^(?:\\rightarrow|->)|([a-zA-Z]+)\^\{\s*(?:\\rightarrow|->)\s*\}", "$1$2");
                 // 粗体/黑板粗体数学符号解构: \mathbb{R} -> R, \mathbf{a} -> a, \boldsymbol{a} -> a, \bm{a} -> a
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(?:mathbb|mathbf|boldsymbol|bm|mathrm|mathit)\s*\{([^}]+)\}", "$1");
                 // 反三角函数与高阶三角记法预解构 (在负幂展开前处理，防止 \sin^{-1} 误解构为 1/sin 或 csc)
@@ -6504,7 +6532,8 @@ namespace Northtropic.Services
 
             // 磁学磁感应强度特斯拉 (T) 语境预处理，避免与质量单位吨 (t) 混淆
             bool isMagneticContext = System.Text.RegularExpressions.Regex.IsMatch(u, @"(?:特斯拉|高斯|gauss|gs|毫特|mT|Wb/m|韦伯)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
-                                     System.Text.RegularExpressions.Regex.IsMatch(c, @"(?:特斯拉|高斯|gauss|gs|毫特|mT|Wb/m|韦伯)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                                     System.Text.RegularExpressions.Regex.IsMatch(c, @"(?:特斯拉|高斯|gauss|gs|毫特|mT|Wb/m|韦伯)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
+                                     (System.Text.RegularExpressions.Regex.IsMatch(u, @"(?<=\d)\s*T\b") && System.Text.RegularExpressions.Regex.IsMatch(c, @"(?<=\d)\s*T\b"));
             if (isMagneticContext)
             {
                 u = System.Text.RegularExpressions.Regex.Replace(u, @"(?<=\d)\s*T\b", "特斯拉");
@@ -6559,9 +6588,9 @@ namespace Northtropic.Services
                     ("ghz|吉赫", 1e9, "freq"),
                     ("mhz|兆赫", 1e6, "freq"),
                     ("khz|千赫", 1e3, "freq"),
-                    ("hz|赫兹|赫", 1.0, "freq"),
+                    (@"hz|赫兹|赫|s\^\{-1\}|s\^-1|1/s|次/秒|每秒", 1.0, "freq"),
 
-                    // 电能与功实用单位 (1 kWh = 1 度 = 3.6e6 J)
+                    // 电能与功实用单位 (1 kWh = 1 度 = 3.6e6 J, 1 eV = 1.602176634e-19 J)
                     (@"mwh|mw·h|mw\*h|兆瓦时", 3.6e9, "energy"),
                     (@"kwh|kw·h|kw\*h|kw\s*h|千瓦·时|千瓦\*时|千瓦时|度", 3.6e6, "energy"),
                     (@"wh|w·h|w\*h|瓦时", 3600.0, "energy"),
@@ -6570,6 +6599,9 @@ namespace Northtropic.Services
                     ("mj|兆焦", 1e6, "energy"),
                     ("kj|千焦", 1e3, "energy"),
                     ("j|焦耳|焦", 1.0, "energy"),
+                    (@"mev|兆电子伏|兆电子伏特", 1.6e-13, "energy"),
+                    (@"kev|千电子伏|千电子伏特", 1.6e-16, "energy"),
+                    (@"ev|电子伏|电子伏特", 1.602176634e-19, "energy"),
 
                     // 电学电阻
                     (@"g\\omega|gω|gΩ|gomega", 1e9, "res"),
@@ -6615,9 +6647,10 @@ namespace Northtropic.Services
                     (@"kv/m|千伏/米|千伏每米", 1000.0, "efield"),
                     (@"v/m|伏/米|伏每米|n/c|牛/库|牛顿每库仑|牛每库", 1.0, "efield"),
 
-                    // 磁学磁感应强度 (T, mT, Wb/m^2, Gs, Gauss)
+                    // 磁学磁感应强度 (T, mT, Wb/m^2, Gs, Gauss, N/(A·m))
                     (@"wb/m\^2|wb/m²|wb/m2|韦伯/平方米|韦伯每平方米", 1.0, "mag"),
                     ("mt|毫特", 1e-3, "mag"),
+                    (@"n/\(?\s*a\s*[\*·]?\s*m\s*\)?|牛顿每安培米|牛/\(?安·米\)?", 1.0, "mag"),
                     ("特斯拉|特|tesla", 1.0, "mag"),
                     (@"gauss|高斯|gs", 1e-4, "mag"),
 

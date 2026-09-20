@@ -1017,9 +1017,11 @@
                                             <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="DeduplicateQuestionsAsync" Disabled="@_isDeduplicatingQuestions" Class="font-weight-bold justify-start">
                                                 @(_isDeduplicatingQuestions ? "去重自愈中..." : "🔄 题库去重与重定向")
                                             </MudButton>
-                                            <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.BuildCircle" OnClick="HealCorruptedQuestionsAsync" Disabled="@_isHealingCorruptedQuestions" Class="font-weight-bold justify-start">
-                                                @(_isHealingCorruptedQuestions ? "自愈中..." : "🩺 试题选项与破损自愈")
-                                            </MudButton>
+                                            <MudTooltip Text="修复题库选项JSON损坏、格式残缺及公开可见性与发布状态脱节的不变量" Placement="Placement.Top">
+                                                <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.BuildCircle" OnClick="HealCorruptedQuestionsAsync" Disabled="@_isHealingCorruptedQuestions" Class="font-weight-bold justify-start">
+                                                    @(_isHealingCorruptedQuestions ? "自愈中..." : "🩺 试题选项与发布态自愈")
+                                                </MudButton>
+                                            </MudTooltip>
                                             <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick="HealErrorBookInvariantsAsync" Disabled="@_isHealingErrorBook" Class="font-weight-bold justify-start">
                                                 @(_isHealingErrorBook ? "自愈中..." : "🩺 错题副本不变量自愈")
                                             </MudButton>
@@ -1275,6 +1277,22 @@
                                             <div class="mud-text-secondary" style="font-size: 0.72rem;">成就定义异常</div>
                                             <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.InvalidAchievementsCount > 0 ? "#ef4444" : "#10b981");">
                                                 @_dataIntegrityAudit.InvalidAchievementsCount
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">发布状态脱节试题</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalDesyncedPublishStatusQuestions > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.TotalDesyncedPublishStatusQuestions
+                                            </div>
+                                        </div>
+                                    </MudItem>
+                                    <MudItem xs="6" sm="4" md="2">
+                                        <div class="pa-2 rounded text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                                            <div class="mud-text-secondary" style="font-size: 0.72rem;">选项格式损坏试题</div>
+                                            <div class="font-weight-bold" style="font-size: 1.1rem; color: @(_dataIntegrityAudit.TotalMalformedChoiceQuestions > 0 ? "#ef4444" : "#10b981");">
+                                                @_dataIntegrityAudit.TotalMalformedChoiceQuestions
                                             </div>
                                         </div>
                                     </MudItem>
