@@ -2106,6 +2106,54 @@ namespace Northtropic.Services
                     audit.AuditDetails.Add($"发现 {audit.TotalInvalidAchievements} 项成就基础定义不变量异常 (包含负数奖励、空标识/标题或重复Code定义)");
                 }
 
+                // 26. StudyPlanTask Domain Invariants (任务目标非法、完成量倒挂、完成状态与时间戳脱节或创建/完成时间倒挂)
+                var tasksToCheck = await db.StudyPlanTasks
+                    .Select(t => new {
+                        t.Id,
+                        t.TargetCount,
+                        t.CompletedCount,
+                        t.IsCompleted,
+                        t.CompletedAt,
+                        t.CreatedAt,
+                        t.Title,
+                        t.Subject,
+                        t.Category,
+                        t.TargetAccuracy
+                    })
+                    .ToListAsync();
+                int anomalousTasksCount = tasksToCheck.Count(t =>
+                    t.TargetCount < 1 ||
+                    t.CompletedCount < 0 ||
+                    t.CompletedCount > t.TargetCount ||
+                    (t.IsCompleted && t.CompletedCount < t.TargetCount) ||
+                    (!t.IsCompleted && t.CompletedCount >= t.TargetCount) ||
+                    (t.IsCompleted && !t.CompletedAt.HasValue) ||
+                    (!t.IsCompleted && t.CompletedAt.HasValue) ||
+                    (t.CompletedAt.HasValue && t.CompletedAt.Value > DateTime.Now.AddDays(1)) ||
+                    (t.CompletedAt.HasValue && t.CompletedAt.Value < t.CreatedAt) ||
+                    string.IsNullOrWhiteSpace(t.Title) ||
+                    t.TargetAccuracy < 0.0 || t.TargetAccuracy > 100.0
+                );
+                audit.TotalInvalidStudyPlanTasks = anomalousTasksCount;
+                if (audit.TotalInvalidStudyPlanTasks > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidStudyPlanTasks} 项学习计划任务领域不变量异常 (包含负数/超额完成量、完成状态脱节或时间戳倒挂)");
+                }
+
+                // 27. UserAchievement Domain Invariants (成就解锁时间戳时序漂移)
+                var userAchievementsToCheck = await db.UserAchievements
+                    .Select(ua => new { ua.Id, ua.UnlockedAt })
+                    .ToListAsync();
+                int anomalousUserAchsCount = userAchievementsToCheck.Count(ua =>
+                    ua.UnlockedAt > DateTime.Now.AddDays(1) ||
+                    ua.UnlockedAt < new DateTime(2020, 1, 1)
+                );
+                audit.TotalInvalidUserAchievements = anomalousUserAchsCount;
+                if (audit.TotalInvalidUserAchievements > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalInvalidUserAchievements} 条用户成就解锁记录存在时序漂移 (未来时间戳或非法历史纪元)");
+                }
+
                 if (audit.IsHealthy)
                 {
                     audit.AuditDetails.Add("✅ 数据库全库拓扑与业务外键完整性审计通过，未发现任何孤儿或格式损坏记录。");
@@ -3425,6 +3473,16 @@ namespace Northtropic.Services
                 if (result.HealedAchievementsCount > 0)
                     result.OperationsExecuted.Add($"成就目录定义自愈: 合并修复 {result.HealedAchievementsCount} 项成就定义与关联重定向");
 
+                // 16. 学习任务领域不变量与父级计划状态自愈
+                result.HealedStudyPlanTasksCount = await HealStudyPlanTaskInvariantsAsync();
+                if (result.HealedStudyPlanTasksCount > 0)
+                    result.OperationsExecuted.Add($"学习计划任务自愈: 修正并闭环 {result.HealedStudyPlanTasksCount} 项任务目标与计划状态");
+
+                // 17. 用户成就状态与时序漂移自愈
+                result.HealedUserAchievementStatesCount = await HealUserAchievementStateInvariantsAsync();
+                if (result.HealedUserAchievementStatesCount > 0)
+                    result.OperationsExecuted.Add($"用户成就状态时序自愈: 校准修复 {result.HealedUserAchievementStatesCount} 项成就时间戳漂移");
+
                 sw.Stop();
                 result.ElapsedMilliseconds = sw.Elapsed.TotalMilliseconds;
                 result.Success = true;
@@ -3706,6 +3764,17 @@ namespace Northtropic.Services
                 if (ins.FailureReasonsCsv == null) { ins.FailureReasonsCsv = string.Empty; changed = true; }
                 if (ins.SuccessExperiencesCsv == null) { ins.SuccessExperiencesCsv = string.Empty; changed = true; }
 
+                if (ins.AnalyzedAt > DateTime.Now)
+                {
+                    ins.AnalyzedAt = DateTime.Now;
+                    changed = true;
+                }
+                else if (ins.AnalyzedAt < new DateTime(2020, 1, 1))
+                {
+                    ins.AnalyzedAt = DateTime.Now;
+                    changed = true;
+                }
+
                 if (changed) healedCount++;
             }
 
@@ -3861,6 +3930,177 @@ namespace Northtropic.Services
             {
                 await db.SaveChangesAsync();
                 RecordArchitectureEvent("HealAchievements", "Success", $"自愈纠偏 {healedCount} 项成就目录基础定义不变量与重复定义合并");
+            }
+
+            return healedCount;
+        }
+
+        public async Task<int> HealStudyPlanTaskInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            var tasks = await db.StudyPlanTasks.ToListAsync();
+            var studyPlans = await db.StudyPlans.Include(p => p.Tasks).ToListAsync();
+            int healedCount = 0;
+
+            foreach (var task in tasks)
+            {
+                bool changed = false;
+
+                // 1. 目标量校验 (最少 1 道题，最多 1000 道题)
+                if (task.TargetCount < 1)
+                {
+                    task.TargetCount = 10;
+                    changed = true;
+                }
+                else if (task.TargetCount > 1000)
+                {
+                    task.TargetCount = 1000;
+                    changed = true;
+                }
+
+                // 2. 完成量范围纠偏
+                if (task.CompletedCount < 0)
+                {
+                    task.CompletedCount = 0;
+                    changed = true;
+                }
+                else if (task.CompletedCount > task.TargetCount)
+                {
+                    task.CompletedCount = task.TargetCount;
+                    changed = true;
+                }
+
+                // 3. 期望达标率区间收敛
+                if (task.TargetAccuracy < 50.0 || task.TargetAccuracy > 100.0)
+                {
+                    task.TargetAccuracy = Math.Clamp(task.TargetAccuracy, 50.0, 100.0);
+                    changed = true;
+                }
+
+                // 4. 完成状态与完成量、时间戳闭环对齐
+                if (task.CompletedCount >= task.TargetCount)
+                {
+                    if (!task.IsCompleted)
+                    {
+                        task.IsCompleted = true;
+                        changed = true;
+                    }
+                    if (!task.CompletedAt.HasValue)
+                    {
+                        task.CompletedAt = DateTime.Now;
+                        changed = true;
+                    }
+                }
+                else if (task.IsCompleted)
+                {
+                    // 标记为完成但完成量不足，收敛对齐完成量
+                    task.CompletedCount = task.TargetCount;
+                    if (!task.CompletedAt.HasValue)
+                    {
+                        task.CompletedAt = DateTime.Now;
+                    }
+                    changed = true;
+                }
+                else if (!task.IsCompleted && task.CompletedAt.HasValue)
+                {
+                    task.CompletedAt = null;
+                    changed = true;
+                }
+
+                // 5. 时间戳时序对齐（创建时间与完成时间均不得晚于当前时间，完成时间不得早于创建时间）
+                if (task.CreatedAt > DateTime.Now)
+                {
+                    task.CreatedAt = DateTime.Now;
+                    changed = true;
+                }
+
+                if (task.CompletedAt.HasValue)
+                {
+                    if (task.CompletedAt.Value > DateTime.Now)
+                    {
+                        task.CompletedAt = DateTime.Now;
+                        changed = true;
+                    }
+                    else if (task.CompletedAt.Value < task.CreatedAt)
+                    {
+                        task.CompletedAt = task.CreatedAt;
+                        changed = true;
+                    }
+                }
+
+                // 6. 基础文本元数据清洗
+                if (string.IsNullOrWhiteSpace(task.Title))
+                {
+                    task.Title = "专项学习任务";
+                    changed = true;
+                }
+                if (string.IsNullOrWhiteSpace(task.Subject))
+                {
+                    task.Subject = "综合学科";
+                    changed = true;
+                }
+                if (string.IsNullOrWhiteSpace(task.Category))
+                {
+                    task.Category = "基础专练";
+                    changed = true;
+                }
+
+                if (changed) healedCount++;
+            }
+
+            // 7. 联动宿主 StudyPlan：若计划下全部任务均已完成，自动闭环宿主计划状态
+            foreach (var plan in studyPlans)
+            {
+                if (plan.Tasks.Count > 0 && plan.Tasks.All(t => t.IsCompleted) && plan.Status == StudyPlanStatus.Active)
+                {
+                    plan.Status = StudyPlanStatus.Completed;
+                    plan.CompletedDate ??= DateTime.Now;
+                    healedCount++;
+                }
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("HealStudyPlanTasks", "Success", $"自愈纠偏 {healedCount} 项学习计划任务领域不变量并闭环父级计划状态");
+            }
+
+            return healedCount;
+        }
+
+        public async Task<int> HealUserAchievementStateInvariantsAsync()
+        {
+            await using var dbScope = await CreateDbScopeAsync();
+            var db = dbScope.Context;
+
+            var userAchievements = await db.UserAchievements.ToListAsync();
+            int healedCount = 0;
+
+            foreach (var ua in userAchievements)
+            {
+                bool changed = false;
+
+                // 纠偏时间戳未来漂移或历史非法纪元
+                if (ua.UnlockedAt > DateTime.Now)
+                {
+                    ua.UnlockedAt = DateTime.Now;
+                    changed = true;
+                }
+                else if (ua.UnlockedAt < new DateTime(2020, 1, 1))
+                {
+                    ua.UnlockedAt = DateTime.Now;
+                    changed = true;
+                }
+
+                if (changed) healedCount++;
+            }
+
+            if (healedCount > 0)
+            {
+                await db.SaveChangesAsync();
+                RecordArchitectureEvent("HealUserAchievementStates", "Success", $"自愈校准 {healedCount} 条用户成就解锁时间戳与时序漂移");
             }
 
             return healedCount;

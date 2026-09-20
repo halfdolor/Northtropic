@@ -919,6 +919,24 @@ namespace Northtropic.Services
                     return $"三角角度与弧度制等价：已自动识别角度制 (如 30°、45°、90°) 与弧度制 (如 \\pi/6、\\pi/4、\\pi/2) 的精确数理等价对应，对应标准答案 [{correct}]";
                 }
 
+                // 天文与光学前沿量纲换算等价 (光年 ly、秒差距 pc、天文单位 au、埃米 Å、屈光度 D 等)
+                bool isAstroOrOptics = user.Contains("ly", StringComparison.OrdinalIgnoreCase) || user.Contains("光年") ||
+                                       user.Contains("pc", StringComparison.OrdinalIgnoreCase) || user.Contains("秒差距") ||
+                                       user.Contains("au", StringComparison.OrdinalIgnoreCase) || user.Contains("天文单位") ||
+                                       user.Contains("埃") || user.Contains("Å") || user.Contains("å") || user.Contains("屈光度") ||
+                                       user.Contains("lx", StringComparison.OrdinalIgnoreCase) || user.Contains("勒克斯") ||
+                                       correct.Contains("ly", StringComparison.OrdinalIgnoreCase) || correct.Contains("光年") ||
+                                       correct.Contains("pc", StringComparison.OrdinalIgnoreCase) || correct.Contains("秒差距") ||
+                                       correct.Contains("au", StringComparison.OrdinalIgnoreCase) || correct.Contains("天文单位") ||
+                                       correct.Contains("埃") || correct.Contains("Å") || correct.Contains("å") || correct.Contains("屈光度") ||
+                                       correct.Contains("lx", StringComparison.OrdinalIgnoreCase) || correct.Contains("勒克斯");
+
+                if (isAstroOrOptics &&
+                    (CheckScientificUnitMultiplierEquivalence(user, correct) || CheckScientificUnitMultiplierEquivalence(normU, normC)))
+                {
+                    return $"天文与光学工程量纲等价：已自动对齐宏观天文距离（光年 ly、秒差距 pc、天文单位 AU）与微观光学（埃米 Å、纳米 nm、照度 lx、屈光度 D）工程量纲换算及科学容差，对应标准表达 [{correct}]";
+                }
+
                 // 国际单位制科学词头换算等价 (如 A与mA、kWh与度与J、h与min与s、kHz与Hz、kJ与J、kΩ与Ω、L与mL、mol/L与mmol/L、g/cm³与kg/m³等) 与物理工程量纲
                 if (CheckScientificUnitMultiplierEquivalence(user, correct) || CheckScientificUnitMultiplierEquivalence(normU, normC))
                 {
@@ -937,20 +955,20 @@ namespace Northtropic.Services
                     return $"数学排列组合记号等价：已自动识别排列组合记号（C/A/P/组合数展开）的数理等价性，对应标准表达 [{correct}]";
                 }
 
-                // 复数代数形式等价 (z = a + bi, bi + a, 0 + bi 等，需包含虚数单位 i)
-                if ((normU.Contains("i") || normC.Contains("i")) &&
+                // 复数代数形式等价 (z = a + bi, bi + a, 0 + bi 等，需包含虚数单位 i 或工程虚数单位 j)
+                if ((normU.Contains("i") || normC.Contains("i") || normU.Contains("j") || normC.Contains("j")) &&
                     TryParseComplex(normU, out var cruR, out var cruI) &&
                     TryParseComplex(normC, out var crcR, out var crcI) &&
                     AreNumbersClose(cruR, crcR) && AreNumbersClose(cruI, crcI) && normU != normC)
                 {
-                    return $"复数代数形式等价：已自动识别复数 z=a+bi 的实部、虚部与加法交换律表达，对应标准答案 [{correct}]";
+                    return $"复数代数形式等价：已自动识别复数 z=a+bi 的实部、虚部与加法交换律表达（支持 a+bi <=> bi+a、纯虚数与工程虚数单位 j/i 容错），对应标准答案 [{correct}]";
                 }
 
-                // 空间直角坐标/向量等价 ((x,y,z) vs 方程组 vs 向量)
-                if ((user.Contains("\\vec") || correct.Contains("\\vec") || normU.Count(c => c == ',') == 2 || normC.Count(c => c == ',') == 2) &&
+                // 空间直角坐标/基底向量/零向量等价 ((x,y,z) vs 方程组 vs 向量)
+                if ((user.Contains("\\vec") || correct.Contains("\\vec") || normU.Count(c => c == ',') == 2 || normC.Count(c => c == ',') == 2 || user.Contains("(0,") || correct.Contains("(0,")) &&
                     (CheckCoordinateEquationMatch(normU, normC) || CheckCoordinateEquationMatch(normC, normU)))
                 {
-                    return $"空间直角坐标/向量等价：已自动识别空间直角坐标 (x,y,z) 与方程组/向量记号的几何等价性，对应标准答案 [{correct}]";
+                    return $"空间直角坐标/向量等价：已自动识别空间直角坐标 (x,y,z) 与基底向量、零向量及方程组记号的几何等价性，对应标准答案 [{correct}]";
                 }
 
                 // 1. 方程组与多元解集等价 (包含逗号或换行分隔的多元方程、cases环境、或二维坐标点)
@@ -994,7 +1012,7 @@ namespace Northtropic.Services
                 // 4. 有机化学结构简式与分子式等价
                 if (IsOrganicStructureEquivalent(user, correct) || IsOrganicStructureEquivalent(normU, normC))
                 {
-                    return $"有机化学结构简式与分子式等价：已识别结构简式、示性式与分子式（如 CH2=CH2 与 C2H4，CH3CH2OH 与 C2H5OH）的化学等价性，对应标准答案 [{correct}]";
+                    return $"有机化学结构简式与分子式等价：已识别结构简式、示性式与分子式（如 CH2=CH2 与 C2H4，CH3CH2OH 与 C2H5OH，CH3COOH 与 C2H4O2，(CH3)2CO 与 C3H6O）的化学等价性，对应标准答案 [{correct}]";
                 }
 
                 // 5. 比例与比值形式等价 (如 3:4 vs 3比4 vs 3/4)
@@ -2234,11 +2252,22 @@ namespace Northtropic.Services
             if (string.IsNullOrWhiteSpace(s)) return false;
 
             s = s.Trim().Replace(" ", "").Replace("（", "(").Replace("）", ")");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"^[zZ]\s*=\s*", "");
             if (s.Contains('=') || s.Contains('[') || s.Contains(']') || s.Contains('{') || s.Contains('}'))
             {
                 return false;
             }
 
+            s = s.Replace("\\mathrm{i}", "i").Replace("\\text{i}", "i").Replace("\\mathbf{i}", "i").Replace("\\hat{i}", "i")
+                 .Replace("\\mathrm{j}", "j").Replace("\\text{j}", "j").Replace("\\mathbf{j}", "j").Replace("\\hat{j}", "j");
+
+            // 工程电工学与复数虚数单位 j <=> i 容错 (非向量环境下)
+            if (!s.Contains('k') && !s.Contains("\\vec") && !s.Contains("\\mathbf") && !(s.Contains('i') && s.Contains('j')))
+            {
+                s = s.Replace("j", "i");
+            }
+
+            s = s.Replace("i*", "i").Replace("*i", "i");
             bool hasI = System.Text.RegularExpressions.Regex.IsMatch(s, @"(?<![a-zA-Z])i(?![a-zA-Z])");
 
             if (!hasI)
@@ -2252,7 +2281,6 @@ namespace Northtropic.Services
                 return false;
             }
 
-            s = s.Replace("i*", "i").Replace("*i", "i");
             var matches = System.Text.RegularExpressions.Regex.Matches(s, @"([+-]?)([^+-]+)");
             if (matches.Count == 0) return false;
 
@@ -2413,6 +2441,11 @@ namespace Northtropic.Services
             // 排除含有方括号的区间表示或包含集合并集运算符的表达式
             if (u.Contains("[") || u.Contains("]") || c.Contains("[") || c.Contains("]")) return false;
             if (u.Contains("∪") || u.Contains("\\cup") || u.Contains("并") || c.Contains("∪") || c.Contains("\\cup") || c.Contains("并")) return false;
+
+            // 零向量记号等价: \vec{0} <=> \mathbf{0} <=> 0 <=> (0,0) <=> (0,0,0) <=> 零向量
+            bool uIsZero = u == "\\vec{0}" || u == "\\mathbf{0}" || u == "0" || u == "零向量" || u == "(0,0)" || u == "(0,0,0)" || u == "(0, 0)" || u == "(0, 0, 0)";
+            bool cIsZero = c == "\\vec{0}" || c == "\\mathbf{0}" || c == "0" || c == "零向量" || c == "(0,0)" || c == "(0,0,0)" || c == "(0, 0)" || c == "(0, 0, 0)";
+            if (uIsZero && cIsZero) return true;
 
             // 至少有一方必须是坐标元组形式 (a, b) 或 (a, b, c)
             bool uIsTuple = u.StartsWith("(") && u.EndsWith(")");
@@ -2778,6 +2811,7 @@ namespace Northtropic.Services
             ["c2h5oh"] = "c2h5oh",
             ["c2h6o"] = "c2h5oh",
             ["ch3cooh"] = "ch3cooh",
+            ["ch3co2h"] = "ch3cooh",
             ["c2h4o2"] = "ch3cooh",
             ["hac"] = "ch3cooh",
             ["ch3cho"] = "c2h4o",
@@ -2788,8 +2822,26 @@ namespace Northtropic.Services
             ["ch2o2"] = "ch2o2",
             ["ch3cooch2ch3"] = "ch3cooc2h5",
             ["ch3cooc2h5"] = "ch3cooc2h5",
+            ["ch3co2c2h5"] = "ch3cooc2h5",
             ["c4h8o2"] = "ch3cooc2h5",
-            ["ch3och3"] = "c2h6o"
+            ["ch3och3"] = "c2h6o",
+            ["ch3coch3"] = "c3h6o",
+            ["(ch3)2co"] = "c3h6o",
+            ["c3h6o"] = "c3h6o",
+            ["ch3ch2och2ch3"] = "c4h10o",
+            ["c2h5oc2h5"] = "c4h10o",
+            ["(c2h5)2o"] = "c4h10o",
+            ["c4h10o"] = "c4h10o",
+            ["c6h6"] = "c6h6",
+            ["c6h5oh"] = "c6h6o",
+            ["c6h5ch3"] = "c7h8",
+            ["ch3oh"] = "ch4o",
+            ["ch4o"] = "ch4o",
+            ["c3h8"] = "c3h8",
+            ["ch3ch2ch3"] = "c3h8",
+            ["c4h10"] = "c4h10",
+            ["ch3ch2ch2ch3"] = "c4h10",
+            ["ch3(ch2)2ch3"] = "c4h10"
         };
 
         public static bool IsOrganicStructureEquivalent(string a, string b)
@@ -2799,26 +2851,62 @@ namespace Northtropic.Services
             var normB = b.Trim();
             if (string.Equals(normA, normB, StringComparison.OrdinalIgnoreCase)) return true;
 
-            var mapA = OrganicCondensedMap.TryGetValue(normA, out var mA) ? mA : normA;
-            var mapB = OrganicCondensedMap.TryGetValue(normB, out var mB) ? mB : normB;
+            static string CleanOrganicBonds(string s)
+            {
+                s = s.Replace(" ", "");
+                // 去除连接字母/基团的单键连字符: CH3-CH2-OH -> CH3CH2OH, CH3-COOH -> CH3COOH
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=[a-zA-Z0-9\)])-(?=[a-zA-Z\(])", "");
+                return s;
+            }
+
+            var cleanA = CleanOrganicBonds(normA);
+            var cleanB = CleanOrganicBonds(normB);
+            if (string.Equals(cleanA, cleanB, StringComparison.OrdinalIgnoreCase)) return true;
+
+            var mapA = OrganicCondensedMap.TryGetValue(cleanA, out var mA) ? mA : (OrganicCondensedMap.TryGetValue(normA, out var mA0) ? mA0 : cleanA);
+            var mapB = OrganicCondensedMap.TryGetValue(cleanB, out var mB) ? mB : (OrganicCondensedMap.TryGetValue(normB, out var mB0) ? mB0 : cleanB);
             if (string.Equals(mapA, mapB, StringComparison.OrdinalIgnoreCase)) return true;
 
             static string? ComputeMolecularFormula(string formula)
             {
                 string clean = formula.Replace("=", "").Replace("-", "").Replace("≡", "").Replace("~", "").Replace(" ", "");
-                clean = clean.Replace("(", "").Replace(")", "").Replace("[", "").Replace("]", "");
+                clean = clean.Replace("[", "(").Replace("]", ")");
                 if (string.IsNullOrWhiteSpace(clean)) return null;
 
-                var matches = System.Text.RegularExpressions.Regex.Matches(clean, @"([A-Z][a-z]?)(\d*)");
+                // 展开带倍数的括号基团: 如 (CH3)2CO -> CH3CH3CO, (C2H5)2O -> C2H5C2H5O
+                int maxExp = 5;
+                while (maxExp-- > 0)
+                {
+                    var parenMatch = System.Text.RegularExpressions.Regex.Match(clean, @"\(([A-Za-z0-9]+)\)(\d+)");
+                    if (!parenMatch.Success) break;
+                    string inner = parenMatch.Groups[1].Value;
+                    int repeat = int.Parse(parenMatch.Groups[2].Value);
+                    var sbRep = new System.Text.StringBuilder();
+                    for (int i = 0; i < repeat; i++) sbRep.Append(inner);
+                    clean = clean.Substring(0, parenMatch.Index) + sbRep.ToString() + clean.Substring(parenMatch.Index + parenMatch.Length);
+                }
+                clean = clean.Replace("(", "").Replace(")", "");
+
+                bool hasUpper = clean.Any(char.IsUpper);
+                System.Text.RegularExpressions.MatchCollection matches;
+                if (hasUpper)
+                {
+                    matches = System.Text.RegularExpressions.Regex.Matches(clean, @"([A-Z][a-z]?)(\d*)");
+                }
+                else
+                {
+                    matches = System.Text.RegularExpressions.Regex.Matches(clean, @"(cl|br|na|fe|cu|zn|al|mg|ca|ba|ag|pb|c|h|o|n|s|p|f|k|i)(\d*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                }
+
                 if (matches.Count == 0) return null;
 
                 int matchedLength = matches.Cast<System.Text.RegularExpressions.Match>().Sum(m => m.Length);
                 if (matchedLength != clean.Length) return null;
 
-                var counts = new SortedDictionary<string, int>(StringComparer.Ordinal);
+                var counts = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 foreach (System.Text.RegularExpressions.Match m in matches)
                 {
-                    string element = m.Groups[1].Value;
+                    string element = m.Groups[1].Value.ToUpperInvariant();
                     int count = string.IsNullOrEmpty(m.Groups[2].Value) ? 1 : int.Parse(m.Groups[2].Value);
                     counts[element] = counts.GetValueOrDefault(element, 0) + count;
                 }
@@ -2841,8 +2929,8 @@ namespace Northtropic.Services
                 return sb.ToString();
             }
 
-            var fA = ComputeMolecularFormula(normA);
-            var fB = ComputeMolecularFormula(normB);
+            var fA = ComputeMolecularFormula(cleanA) ?? ComputeMolecularFormula(normA);
+            var fB = ComputeMolecularFormula(cleanB) ?? ComputeMolecularFormula(normB);
             return fA != null && fB != null && string.Equals(fA, fB, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -3879,8 +3967,17 @@ namespace Northtropic.Services
                 sLower = sLower.Replace("坎德拉", "cd");
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*(?:cd|坎德拉|坎)\b", "cd");
 
-                // 微观长度与波长单位: nm <=> 纳米; um <=> 微米; pm <=> 皮米
-                sLower = sLower.Replace("纳米", "nm").Replace("微米", "um").Replace("皮米", "pm").Replace("μm", "um");
+                // 微观长度与波长单位: nm <=> 纳米; um <=> 微米; pm <=> 皮米; 埃 <=> å <=> Å <=> angstrom
+                sLower = sLower.Replace("纳米", "nm").Replace("微米", "um").Replace("皮米", "pm").Replace("μm", "um")
+                               .Replace("埃米", "å").Replace("埃", "å").Replace("angstrom", "å").Replace("ångström", "å");
+
+                // 天文长度单位: ly <=> 光年; pc <=> 秒差距; kpc <=> 千秒差距; mpc <=> 百万秒差距; au <=> 天文单位
+                sLower = sLower.Replace("光年", "ly")
+                               .Replace("百万秒差距", "mpc").Replace("千秒差距", "kpc").Replace("秒差距", "pc")
+                               .Replace("天文单位", "au");
+
+                // 光学与照度单位: 屈光度 <=> d; lx <=> lux <=> 勒克斯 <=> 勒
+                sLower = sLower.Replace("屈光度", "d").Replace("勒克斯", "lx").Replace("lux", "lx");
 
                 // 放射性核素活度与辐射剂量: Bq <=> 贝克勒尔 <=> 贝克; Gy <=> 戈瑞; Sv <=> 希沃特
                 sLower = sLower.Replace("贝克勒尔", "bq").Replace("贝克", "bq").Replace("戈瑞", "gy").Replace("希沃特", "sv");
@@ -3902,6 +3999,8 @@ namespace Northtropic.Services
                     sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d|\))j(?=$|[+\-,\)\s;=<>])", "i");
                     sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\bj(?=\d)", "i");
                 }
+                // 复数乘法符号容错: 4*i -> 4i, 3*j -> 3i
+                sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"(?<=\d)\s*\*\s*([ij])\b", "$1");
 
                 // 反三角函数规范化: 如 \arcsin, \sin^{-1}, asin -> arcsin; \arccos, \cos^{-1}, acos -> arccos; \arctan, \tan^{-1}, atan -> arctan
                 sLower = System.Text.RegularExpressions.Regex.Replace(sLower, @"\\?(?:arcsin|asin)\b|\\?sin\^\{\s*-1\s*\}|\\?sin\^-1\b", "arcsin");
@@ -6234,12 +6333,25 @@ namespace Northtropic.Services
                     ("hp|马力", 735.0, "power"),
                     ("w|瓦特|瓦", 1.0, "power"),
 
-                    // 长度
+                    // 长度与距离 (宏观天文学尺度至微观原子尺度)
+                    (@"mpc|百万秒差距", 3.08567758e22, "len"),
+                    (@"kpc|千秒差距", 3.08567758e19, "len"),
+                    (@"pc|秒差距", 3.08567758e16, "len"),
+                    (@"ly|光年", 9.46073e15, "len"),
+                    (@"au|天文单位", 1.4959787e11, "len"),
                     ("km|千米|公里", 1e3, "len"),
                     ("dm|分米", 0.1, "len"),
                     ("cm|厘米", 0.01, "len"),
                     ("mm|毫米", 0.001, "len"),
+                    (@"um|μm|\\mu\s*m|微米", 1e-6, "len"),
+                    ("nm|纳米", 1e-9, "len"),
+                    (@"angstrom|ångström|埃米|埃|å|Å", 1e-10, "len"),
+                    ("pm|皮米", 1e-12, "len"),
                     ("m|米", 1.0, "len"),
+
+                    // 光学照度与光通量
+                    (@"lx|lux|勒克斯|勒", 1.0, "illuminance"),
+                    (@"lm|lumen|流明", 1.0, "luminous_flux"),
 
                     // 质量
                     ("t|吨", 1e3, "mass"),
@@ -6280,6 +6392,7 @@ namespace Northtropic.Services
                 double relTol = fam switch
                 {
                     "press" => 0.015, // 压强允许 1.5% 相对容差 (兼容 1.01x10^5 Pa / 101.3 kPa 与 101325 Pa)
+                    "len" when maxVal > 1e10 => 0.025, // 天文距离允许 2.5% 相对容差 (兼容教材约算: 1.5e11 m vs 1.496e11 m AU, 9.46e15 m vs 9.4607e15 m ly, 3.26 ly vs 1 pc)
                     _ => 2e-3         // 通用单位允许 0.2% 相对容差
                 };
                 return (diff / maxVal) <= relTol;
