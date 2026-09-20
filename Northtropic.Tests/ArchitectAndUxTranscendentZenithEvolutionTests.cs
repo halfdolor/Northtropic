@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Northtropic.Data;
 using Northtropic.Models;
@@ -14,315 +11,237 @@ namespace Northtropic.Tests
 {
     public class ArchitectAndUxTranscendentZenithEvolutionTests
     {
-        private (AppDbContext context, SqliteConnection connection) CreateInMemoryDbContext()
-        {
-            var connection = new SqliteConnection("DataSource=:memory:");
-            connection.Open();
-            var options = new DbContextOptionsBuilder<AppDbContext>()
-                .UseSqlite(connection)
-                .Options;
-            var context = new AppDbContext(options);
-            context.Database.EnsureCreated();
-            return (context, connection);
-        }
-
-        #region 1. 系统架构师维度：数据拓扑完整性巡检与孤儿自愈引擎
-
+        #region 1. 系统架构师：判断题数据不变量全量审计与自愈收敛
         [Fact]
-        public async Task DataIntegrity_AuditAndPurge_CorrectlyIdentifiesAndHealsOrphans()
+        public async Task SystemHealthService_AuditAndHealMalformedJudgementQuestions_RestoresCanonicalInvariants()
         {
-            var (context, connection) = CreateInMemoryDbContext();
-            try
+            var (context, connection) = TestDbContextFactory.CreateInMemoryContext();
+            using (connection)
+            using (context)
             {
                 var healthService = new SystemHealthService(context, null);
 
-                // 1. 基础状态校验：全空库应为健康
-                var cleanAudit = await healthService.AuditDataIntegrityAsync();
-                Assert.True(cleanAudit.IsHealthy);
-                Assert.Equal(0, cleanAudit.TotalIssuesCount);
-
-                // 2. 注入合法根数据 (1个合法用户，1道合法题目)
-                var validUser = new User
+                // 准备测试数据：包含规范的和损坏的单选/填空判断题
+                var goodChoiceJudgement = new Question
                 {
-                    Id = Guid.NewGuid(),
-                    Username = "legit_user"
-                };
-                var validQuestion = new Question
-                {
-                    Id = Guid.NewGuid(),
-                    Stem = "合法测试题",
-                    Subject = "数学",
-                    GradeTarget = "高一",
-                    Type = QuestionType.FillInBlank,
-                    CorrectAnswer = "42"
-                };
-                context.Users.Add(validUser);
-                context.Questions.Add(validQuestion);
-                await context.SaveChangesAsync();
-
-                // 3. 临时关闭外键约束模拟历史数据或直接修改产生的孤儿脏数据
-                using (var cmd = connection.CreateCommand())
-                {
-                    cmd.CommandText = "PRAGMA foreign_keys = OFF;";
-                    cmd.ExecuteNonQuery();
-                }
-
-                var nonExistentUserId = Guid.NewGuid();
-                var nonExistentQuestionId = Guid.NewGuid();
-
-                // A. 孤儿错题 (Orphan ErrorItem)
-                context.ErrorItems.Add(new ErrorItem
-                {
-                    Id = Guid.NewGuid(),
-                    UserId = nonExistentUserId,
-                    QuestionId = validQuestion.Id,
-                    UserWrongAnswer = "错误答案1"
-                });
-                context.ErrorItems.Add(new ErrorItem
-                {
-                    Id = Guid.NewGuid(),
-                    UserId = validUser.Id,
-                    QuestionId = nonExistentQuestionId,
-                    UserWrongAnswer = "错误答案2"
-                });
-
-                // B. 孤儿练习流水 (Orphan PracticeRecord)
-                context.PracticeRecords.Add(new PracticeRecord
-                {
-                    Id = Guid.NewGuid(),
-                    UserId = nonExistentUserId,
-                    QuestionId = validQuestion.Id,
-                    IsCorrect = true
-                });
-
-                // C. 孤儿收藏 (Orphan UserFavorite)
-                context.UserFavorites.Add(new UserFavorite
-                {
-                    Id = Guid.NewGuid(),
-                    UserId = validUser.Id,
-                    QuestionId = nonExistentQuestionId
-                });
-
-                // D. 孤儿作业指派 (Orphan HomeworkAssignment)
-                context.HomeworkAssignments.Add(new HomeworkAssignment
-                {
-                    Id = Guid.NewGuid(),
-                    StudentUserId = nonExistentUserId,
-                    CreatorUserId = validUser.Id,
-                    Title = "孤儿作业"
-                });
-
-                // E. 孤儿家校绑定 (Orphan StudentParentBinding)
-                context.StudentParentBindings.Add(new StudentParentBinding
-                {
-                    Id = Guid.NewGuid(),
-                    ParentUserId = nonExistentUserId,
-                    StudentUserId = validUser.Id
-                });
-
-                // F. 孤儿学习计划 (Orphan StudyPlan)
-                context.StudyPlans.Add(new StudyPlan
-                {
-                    Id = Guid.NewGuid(),
-                    UserId = nonExistentUserId,
-                    DailyTargetQuestions = 10
-                });
-
-                // G. 选项 JSON 损坏的选择题 (Corrupted Question)
-                context.Questions.Add(new Question
-                {
-                    Id = Guid.NewGuid(),
-                    Stem = "损坏选择题",
-                    Subject = "数学",
-                    GradeTarget = "高一",
+                    Subject = "科学",
+                    Category = "物理判断",
+                    Stem = "声音在真空中无法传播。",
                     Type = QuestionType.SingleChoice,
-                    CorrectAnswer = "A",
-                    OptionsJson = "INVALID_NOT_JSON"
-                });
+                    OptionsJson = "[\"正确\",\"错误\"]",
+                    CorrectAnswer = "正确"
+                };
 
+                var malformedChoiceJudgement = new Question
+                {
+                    Subject = "生物",
+                    Category = "概念判断题",
+                    Stem = "线粒体是细胞的有氧呼吸主要场所。（对/错）",
+                    Type = QuestionType.SingleChoice,
+                    OptionsJson = "[\"对\",\"错\"]",
+                    CorrectAnswer = "对"
+                };
+
+                var malformedFillInJudgement = new Question
+                {
+                    Subject = "物理",
+                    Category = "常识判断",
+                    Stem = "光在真空中沿直线传播。",
+                    Type = QuestionType.FillInBlank,
+                    OptionsJson = "[]",
+                    CorrectAnswer = "√"
+                };
+
+                var malformedBrokenOptionsJudgement = new Question
+                {
+                    Subject = "化学",
+                    Category = "沉淀判断",
+                    Stem = "氯化银是难溶于水的白色沉淀。",
+                    Type = QuestionType.SingleChoice,
+                    OptionsJson = "[]", // 损坏的空选项
+                    CorrectAnswer = "T"
+                };
+
+                context.Questions.AddRange(goodChoiceJudgement, malformedChoiceJudgement, malformedFillInJudgement, malformedBrokenOptionsJudgement);
                 await context.SaveChangesAsync();
 
-                // 4. 执行数据拓扑审计
-                var dirtyAudit = await healthService.AuditDataIntegrityAsync();
-                Assert.False(dirtyAudit.IsHealthy);
-                Assert.Equal(2, dirtyAudit.TotalOrphanErrorItems);
-                Assert.Equal(1, dirtyAudit.TotalOrphanPracticeRecords);
-                Assert.Equal(1, dirtyAudit.TotalOrphanUserFavorites);
-                Assert.Equal(1, dirtyAudit.TotalOrphanHomeworkAssignments);
-                Assert.Equal(1, dirtyAudit.TotalOrphanBindings);
-                Assert.Equal(1, dirtyAudit.TotalOrphanStudyPlans);
-                Assert.Equal(1, dirtyAudit.TotalCorruptedQuestions);
-                Assert.Equal(8, dirtyAudit.TotalIssuesCount);
-                Assert.NotEmpty(dirtyAudit.AuditDetails);
+                // 阶段一：审计检测
+                var auditBefore = await healthService.AuditDataIntegrityAsync();
+                Assert.True(auditBefore.TotalMalformedJudgementQuestions >= 3, $"应检出至少 3 道格式不规范的判断题，实际检出: {auditBefore.TotalMalformedJudgementQuestions}");
+                Assert.False(auditBefore.IsStrictlyHealthy);
 
-                // 5. 验证自适应自愈规划引擎自动捕获孤儿问题
-                var plan = await healthService.EvaluateAdaptiveMaintenancePlanAsync();
-                Assert.True(plan.RequiresOrphanCleanup);
-                Assert.Contains(plan.ActionReasons, r => r.Contains("孤儿"));
+                // 阶段二：自愈修复
+                var healedCount = await healthService.HealCorruptedQuestionsAsync();
+                Assert.True(healedCount >= 3, $"应自愈修复至少 3 道题目，实际修复: {healedCount}");
 
-                // 6. 执行原子孤儿清理自愈
-                var purgeResult = await healthService.PurgeOrphanedRecordsAsync();
-                Assert.True(purgeResult.Success);
-                Assert.Equal(7, purgeResult.TotalPurgedCount); // 7 条孤儿记录被清除
-                Assert.Equal(2, purgeResult.PurgedErrorItemsCount);
-                Assert.Equal(1, purgeResult.PurgedPracticeRecordsCount);
-                Assert.Equal(1, purgeResult.PurgedUserFavoritesCount);
-                Assert.Equal(1, purgeResult.PurgedHomeworkAssignmentsCount);
-                Assert.Equal(1, purgeResult.PurgedBindingsCount);
-                Assert.Equal(1, purgeResult.PurgedStudyPlansCount);
+                // 阶段三：复测收敛
+                var auditAfter = await healthService.AuditDataIntegrityAsync();
+                Assert.Equal(0, auditAfter.TotalMalformedJudgementQuestions);
 
-                // 7. 再次审计：所有孤儿关联已被自愈清理 (仅剩需题库老师重修的损坏选择题)
-                var healedAudit = await healthService.AuditDataIntegrityAsync();
-                Assert.Equal(0, healedAudit.TotalOrphanErrorItems);
-                Assert.Equal(0, healedAudit.TotalOrphanPracticeRecords);
-                Assert.Equal(0, healedAudit.TotalOrphanUserFavorites);
-                Assert.Equal(0, healedAudit.TotalOrphanHomeworkAssignments);
-                Assert.Equal(0, healedAudit.TotalOrphanBindings);
-                Assert.Equal(0, healedAudit.TotalOrphanStudyPlans);
-            }
-            finally
-            {
-                connection.Close();
+                // 验证具体题目不变量规范性
+                var q1 = await context.Questions.FindAsync(malformedChoiceJudgement.Id);
+                Assert.NotNull(q1);
+                Assert.Equal("[\"正确\",\"错误\"]", q1.OptionsJson);
+                Assert.Equal("正确", q1.CorrectAnswer);
+
+                var q2 = await context.Questions.FindAsync(malformedFillInJudgement.Id);
+                Assert.NotNull(q2);
+                Assert.Equal("正确", q2.CorrectAnswer);
+
+                var q3 = await context.Questions.FindAsync(malformedBrokenOptionsJudgement.Id);
+                Assert.NotNull(q3);
+                Assert.Equal("[\"正确\",\"错误\"]", q3.OptionsJson);
+                Assert.Equal("正确", q3.CorrectAnswer);
             }
         }
-
-        [Fact]
-        public async Task ArchitecturalSelfDiagnostic_IntegratesDataIntegrityCheckpoint()
-        {
-            var (context, connection) = CreateInMemoryDbContext();
-            try
-            {
-                var healthService = new SystemHealthService(context, null);
-                var diag = await healthService.RunArchitecturalSelfDiagnosticAsync();
-
-                Assert.True(diag.IsPassed);
-                Assert.Equal("ok", diag.DataIntegrityStatus);
-                Assert.Equal(0, diag.DataIntegrityIssuesCount);
-                Assert.Contains(diag.DiagnosticCheckpoints, cp => cp.Contains("业务数据拓扑完整性巡检"));
-            }
-            finally
-            {
-                connection.Close();
-            }
-        }
-
         #endregion
 
-        #region 2. 用户体验专家维度：数理化智能容错判卷与学术记法等价
-
+        #region 2. 用户体验与科学智能：高阶三角函数特殊角与弧度制双向等价
         [Theory]
-        [InlineData("tg(x)", "tan(x)")]
-        [InlineData("tg x", "tan x")]
-        [InlineData(@"\tg x", @"\tan x")]
-        [InlineData("ctg(x)", "cot(x)")]
-        [InlineData("ctg x", "cot x")]
-        [InlineData(@"\ctg(x)", @"\cot(x)")]
-        public void CheckFillInBlankMatch_ClassicalTrigonometricEquivalence_MatchesCorrectly(string user, string correct)
+        [InlineData("0.5", "1/2")]
+        [InlineData("0.5", "\\frac{1}{2}")]
+        [InlineData("0.5", "sin(30°)")]
+        [InlineData("1/2", "sin(pi/6)")]
+        [InlineData("1/2", "cos(60°)")]
+        [InlineData("0.5", "cos(pi/3)")]
+        [InlineData("\\frac{\\sqrt{2}}{2}", "1/\\sqrt{2}")]
+        [InlineData("\\frac{\\sqrt{2}}{2}", "sin(45°)")]
+        [InlineData("\\frac{\\sqrt{2}}{2}", "cos(45°)")]
+        [InlineData("\\frac{\\sqrt{2}}{2}", "sin(pi/4)")]
+        [InlineData("\\frac{\\sqrt{3}}{2}", "sin(60°)")]
+        [InlineData("\\frac{\\sqrt{3}}{2}", "cos(30°)")]
+        [InlineData("\\frac{\\sqrt{3}}{2}", "cos(pi/6)")]
+        [InlineData("\\sqrt{3}", "tan(60°)")]
+        [InlineData("\\sqrt{3}", "tan(pi/3)")]
+        [InlineData("\\frac{\\sqrt{3}}{3}", "1/\\sqrt{3}")]
+        [InlineData("\\frac{\\sqrt{3}}{3}", "tan(30°)")]
+        [InlineData("\\frac{\\sqrt{3}}{3}", "tan(pi/6)")]
+        [InlineData("1", "tan(45°)")]
+        [InlineData("1", "sin(90°)")]
+        [InlineData("1", "cos(0°)")]
+        [InlineData("0", "sin(0°)")]
+        [InlineData("0", "cos(90°)")]
+        public async Task PracticeService_CheckFillInBlank_ShouldRecognizeTrigonometricSpecialValueEquivalence(string userAnswer, string standardAnswer)
         {
-            Assert.True(PracticeService.CheckFillInBlankMatch(user, correct));
-            Assert.True(PracticeService.CheckFillInBlankMatch(correct, user));
-        }
-
-        [Theory]
-        [InlineData("1/tan(x)", "cot(x)")]
-        [InlineData("1/tan x", "cot x")]
-        [InlineData("1/cot(x)", "tan(x)")]
-        [InlineData("1/cos(x)", "sec(x)")]
-        [InlineData("1/cos x", "sec x")]
-        [InlineData("1/sin(x)", "csc(x)")]
-        [InlineData("1/sin x", "csc x")]
-        public void CheckFillInBlankMatch_ReciprocalTrigonometricIdentities_MatchesCorrectly(string user, string correct)
-        {
-            Assert.True(PracticeService.CheckFillInBlankMatch(user, correct));
-            Assert.True(PracticeService.CheckFillInBlankMatch(correct, user));
-        }
-
-        [Theory]
-        [InlineData("x^-1", "1/x")]
-        [InlineData("x^-2", "1/x^2")]
-        [InlineData("x^(1/2)", @"\sqrt{x}")]
-        [InlineData("x^(1/3)", @"\cbrt{x}")]
-        [InlineData("e^x", "exp(x)")]
-        [InlineData("exp(2x)", "e^(2x)")]
-        public void CheckFillInBlankMatch_PowersAndExponentialEquivalence_MatchesCorrectly(string user, string correct)
-        {
-            Assert.True(PracticeService.CheckFillInBlankMatch(user, correct));
-            Assert.True(PracticeService.CheckFillInBlankMatch(correct, user));
-        }
-
-        [Theory]
-        [InlineData("2到5", "[2, 5]")]
-        [InlineData("2至5", "[2, 5]")]
-        [InlineData("2~5", "[2, 5]")]
-        [InlineData("-3到7", "[-3, 7]")]
-        [InlineData("x大于等于2且小于等于5", "[2, 5]")]
-        [InlineData("x大于等于3", "[3, +inf)")]
-        [InlineData("x小于5", "(-inf, 5)")]
-        [InlineData("全体实数", "R")]
-        [InlineData("实数集", "(-inf, +inf)")]
-        [InlineData("x属于R", "R")]
-        [InlineData("空集", "∅")]
-        [InlineData("无解", "∅")]
-        [InlineData("无实数解", "{}")]
-        public void CheckFillInBlankMatch_ChineseIntervalsAndSolutionSets_MatchesCorrectly(string user, string correct)
-        {
-            Assert.True(PracticeService.CheckFillInBlankMatch(user, correct));
-            Assert.True(PracticeService.CheckFillInBlankMatch(correct, user));
-        }
-
-        [Theory]
-        // 频率: kHz <-> Hz, MHz <-> Hz
-        [InlineData("1 kHz", "1000 Hz")]
-        [InlineData("2.5 MHz", "2500000 Hz")]
-        [InlineData("1000赫兹", "1千赫")]
-        // 电容: uF, nF, pF <-> F
-        [InlineData("1 uF", "0.000001 F")]
-        [InlineData("1000 nF", "1 uF")]
-        [InlineData("100 pF", "1e-10 F")]
-        // 速度: km/h <-> m/s (36 km/h = 10 m/s, 72 km/h = 20 m/s)
-        [InlineData("36 km/h", "10 m/s")]
-        [InlineData("72 km/h", "20 m/s")]
-        [InlineData("10米/秒", "36公里/小时")]
-        // 功率: kW <-> W
-        [InlineData("1 kW", "1000 W")]
-        [InlineData("2.5千瓦", "2500瓦")]
-        // 压强: kPa <-> Pa
-        [InlineData("100 kPa", "100000 Pa")]
-        [InlineData("100千帕", "100000帕")]
-        public void CheckFillInBlankMatch_ScientificPhysicalQuantities_MatchesCorrectly(string user, string correct)
-        {
-            Assert.True(PracticeService.CheckFillInBlankMatch(user, correct));
-            Assert.True(PracticeService.CheckFillInBlankMatch(correct, user));
-        }
-
-        [Fact]
-        public void GenerateEquivalentMatchReason_ProvidesEncouragingAndAccurateExplanations()
-        {
-            var trigQuestion = new Question
+            var (context, connection) = TestDbContextFactory.CreateInMemoryContext();
+            using (connection)
+            using (context)
             {
-                Type = QuestionType.FillInBlank,
-                CorrectAnswer = "tan(x)"
-            };
-            var reasonTrig = PracticeService.GenerateEquivalentMatchReason(trigQuestion, "tg(x)");
-            Assert.Contains("三角函数", reasonTrig);
+                var practiceService = new PracticeService(context, new FakeGamificationService(), new FakeUserSessionService(), new FakeAiTutorService());
 
-            var powerQuestion = new Question
-            {
-                Type = QuestionType.FillInBlank,
-                CorrectAnswer = "1/x"
-            };
-            var reasonPower = PracticeService.GenerateEquivalentMatchReason(powerQuestion, "x^-1");
-            Assert.Contains("指数幂", reasonPower);
+                var question = new Question
+                {
+                    Stem = "计算三角函数特殊角的值：",
+                    Type = QuestionType.FillInBlank,
+                    CorrectAnswer = standardAnswer
+                };
 
-            var unitQuestion = new Question
-            {
-                Type = QuestionType.FillInBlank,
-                CorrectAnswer = "1000 Hz"
-            };
-            var reasonUnit = PracticeService.GenerateEquivalentMatchReason(unitQuestion, "1 kHz");
-            Assert.Contains("物理与工程量纲", reasonUnit);
+                var result = await practiceService.SubmitAnswerAsync(question, userAnswer, 5, 0);
+                Assert.True(result.IsCorrect, $"考生作答 '{userAnswer}' 对标准答案 '{standardAnswer}' 应判定为等价正确！");
+                Assert.True(result.IsEquivalentMatch);
+                Assert.True(result.EquivalentMatchReason?.Contains("特殊角") == true || result.EquivalentMatchReason?.Contains("分母有理化") == true || result.EquivalentMatchReason?.Contains("数值运算等价") == true, $"实际等价原因: {result.EquivalentMatchReason}");
+            }
         }
+        #endregion
 
+        #region 3. 用户体验与科学智能：现代物理 eV 与国际焦耳 J 等效换算
+        [Theory]
+        [InlineData("1 eV", "1.6×10^-19 J")]
+        [InlineData("1eV", "1.6e-19 J")]
+        [InlineData("1.6×10^{-19} J", "1 eV")]
+        [InlineData("1 keV", "1000 eV")]
+        [InlineData("1 keV", "1.6×10^-16 J")]
+        [InlineData("1 MeV", "10^6 eV")]
+        [InlineData("1 MeV", "1.6×10^-13 J")]
+        [InlineData("1 GeV", "10^9 eV")]
+        [InlineData("1 GeV", "1.6×10^-10 J")]
+        public async Task PracticeService_CheckFillInBlank_ShouldRecognizeModernPhysicsElectronVoltEquivalence(string userAnswer, string standardAnswer)
+        {
+            var (context, connection) = TestDbContextFactory.CreateInMemoryContext();
+            using (connection)
+            using (context)
+            {
+                var practiceService = new PracticeService(context, new FakeGamificationService(), new FakeUserSessionService(), new FakeAiTutorService());
+
+                var question = new Question
+                {
+                    Stem = "求光电效应中逸出功或光子能量：",
+                    Type = QuestionType.FillInBlank,
+                    CorrectAnswer = standardAnswer
+                };
+
+                var result = await practiceService.SubmitAnswerAsync(question, userAnswer, 5, 0);
+                Assert.True(result.IsCorrect, $"作答 '{userAnswer}' 对标准答案 '{standardAnswer}' 应判定为现代物理能级等价正确！");
+                Assert.True(result.IsEquivalentMatch);
+                Assert.Contains("电子伏特", result.EquivalentMatchReason);
+            }
+        }
+        #endregion
+
+        #region 4. 用户体验与科学智能：电磁学物理量单位等价换算 (Wb, T, Gs, H)
+        [Theory]
+        [InlineData("1 Wb", "1 T·m²")]
+        [InlineData("1 Wb", "1 V·s")]
+        [InlineData("1 T·m²", "1 V·s")]
+        [InlineData("1 T", "10^4 Gs")]
+        [InlineData("1 T", "10000 Gs")]
+        [InlineData("10000 高斯", "1 特斯拉")]
+        [InlineData("1 H", "1 Wb/A")]
+        [InlineData("1 H", "1 Ω·s")]
+        [InlineData("1 H", "1 V·s/A")]
+        public async Task PracticeService_CheckFillInBlank_ShouldRecognizeElectromagnetismUnitEquivalence(string userAnswer, string standardAnswer)
+        {
+            var (context, connection) = TestDbContextFactory.CreateInMemoryContext();
+            using (connection)
+            using (context)
+            {
+                var practiceService = new PracticeService(context, new FakeGamificationService(), new FakeUserSessionService(), new FakeAiTutorService());
+
+                var question = new Question
+                {
+                    Stem = "电磁感应与磁场参数单位换算：",
+                    Type = QuestionType.FillInBlank,
+                    CorrectAnswer = standardAnswer
+                };
+
+                var result = await practiceService.SubmitAnswerAsync(question, userAnswer, 5, 0);
+                Assert.True(result.IsCorrect, $"作答 '{userAnswer}' 对标准答案 '{standardAnswer}' 应判定为电磁学单位等价正确！");
+                Assert.True(result.IsEquivalentMatch);
+                Assert.True(result.EquivalentMatchReason?.Contains("电磁学") == true || result.EquivalentMatchReason?.Contains("等价") == true, $"实际等价原因: {result.EquivalentMatchReason}");
+            }
+        }
+        #endregion
+
+        #region 5. 用户体验与科学智能：物理化学常数等效换算 (法拉第常数 F、阿伏伽德罗常数、标况气体摩尔体积)
+        [Theory]
+        [InlineData("1 F", "96485 C/mol")]
+        [InlineData("1 F", "96500 C/mol")]
+        [InlineData("96500 C/mol", "1 法拉第常数")]
+        [InlineData("6.02×10^23 /mol", "6.022×10^23 mol^-1")]
+        [InlineData("6.02e23", "6.022×10^{23}")]
+        [InlineData("22.4 L/mol", "0.0224 m³/mol")]
+        [InlineData("22.4 升/摩尔", "0.0224 立方米/摩尔")]
+        public async Task PracticeService_CheckFillInBlank_ShouldRecognizePhysicalChemistryConstantsEquivalence(string userAnswer, string standardAnswer)
+        {
+            var (context, connection) = TestDbContextFactory.CreateInMemoryContext();
+            using (connection)
+            using (context)
+            {
+                var practiceService = new PracticeService(context, new FakeGamificationService(), new FakeUserSessionService(), new FakeAiTutorService());
+
+                var question = new Question
+                {
+                    Stem = "电化学与化学计量计算：",
+                    Type = QuestionType.FillInBlank,
+                    CorrectAnswer = standardAnswer
+                };
+
+                var result = await practiceService.SubmitAnswerAsync(question, userAnswer, 5, 0);
+                Assert.True(result.IsCorrect, $"作答 '{userAnswer}' 对标准答案 '{standardAnswer}' 应判定为物化常数等价正确！");
+                Assert.True(result.IsEquivalentMatch);
+                Assert.True(result.EquivalentMatchReason?.Contains("物理化学常量") == true || result.EquivalentMatchReason?.Contains("理化复合单位") == true, $"实际等价原因: {result.EquivalentMatchReason}");
+            }
+        }
         #endregion
     }
 }

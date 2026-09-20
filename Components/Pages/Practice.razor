@@ -1615,7 +1615,38 @@
             {
                 <MudExpansionPanels MultiExpansion="true" Elevation="0" Class="my-2">
                     <MudExpansionPanel Text="📋 本卷作答明细与解析回顾 (点击展开)" Style="background: rgba(var(--mud-palette-surface-rgb), 0.5); border-radius: 8px; border: 1px solid rgba(var(--mud-palette-lines-default-rgb), 0.15);">
+                        <!-- 智能多维筛选 Chips -->
+                        <div class="d-flex align-center gap-2 flex-wrap mb-3 pt-1">
+                            <MudChip T="string" Size="Size.Small" 
+                                     Color="@(_victoryReviewFilter == "all" ? Color.Primary : Color.Default)" 
+                                     Variant="@(_victoryReviewFilter == "all" ? Variant.Filled : Variant.Outlined)"
+                                     OnClick="@(() => _victoryReviewFilter = "all")">
+                                全部试题 (@_questions.Count)
+                            </MudChip>
+                            <MudChip T="string" Size="Size.Small" 
+                                     Color="@(_victoryReviewFilter == "wrong" ? Color.Error : Color.Default)" 
+                                     Variant="@(_victoryReviewFilter == "wrong" ? Variant.Filled : Variant.Outlined)"
+                                     OnClick="@(() => _victoryReviewFilter = "wrong")">
+                                错题重点 (@GetSessionWrongCount())
+                            </MudChip>
+                            <MudChip T="string" Size="Size.Small" 
+                                     Color="@(_victoryReviewFilter == "equivalent" ? Color.Success : Color.Default)" 
+                                     Variant="@(_victoryReviewFilter == "equivalent" ? Variant.Filled : Variant.Outlined)"
+                                     OnClick="@(() => _victoryReviewFilter = "equivalent")">
+                                🎯 智能等价 (@GetSessionEquivalentCount())
+                            </MudChip>
+                            <MudChip T="string" Size="Size.Small" 
+                                     Color="@(_victoryReviewFilter == "correct" ? Color.Info : Color.Default)" 
+                                     Variant="@(_victoryReviewFilter == "correct" ? Variant.Filled : Variant.Outlined)"
+                                     OnClick="@(() => _victoryReviewFilter = "correct")">
+                                完全正确 (@GetSessionCorrectCount())
+                            </MudChip>
+                        </div>
+
                         <div class="d-flex flex-column gap-3 py-2">
+                            @{
+                                int renderedReviewCount = 0;
+                            }
                             @for (int i = 0; i < _questions.Count; i++)
                             {
                                 int qIndex = i + 1;
@@ -1625,6 +1656,13 @@
                                     : (_instantEvalResults.TryGetValue(qIndex, out var ie) ? ie : null);
                                 bool hasResult = eval != null;
                                 bool isCorrect = eval?.IsCorrect == true;
+                                bool isEquiv = eval?.IsEquivalentMatch == true;
+
+                                if (_victoryReviewFilter == "wrong" && (hasResult && isCorrect)) continue;
+                                if (_victoryReviewFilter == "equivalent" && !isEquiv) continue;
+                                if (_victoryReviewFilter == "correct" && (!hasResult || !isCorrect)) continue;
+
+                                renderedReviewCount++;
 
                                 <div class="pa-3 rounded-lg" style="background: rgba(var(--mud-palette-surface-rgb), 0.7); border-left: 4px solid @(hasResult ? (isCorrect ? "var(--mud-palette-success)" : "var(--mud-palette-error)") : "var(--mud-palette-lines-default)"); border-top: 1px solid rgba(var(--mud-palette-lines-default-rgb), 0.1); border-right: 1px solid rgba(var(--mud-palette-lines-default-rgb), 0.1); border-bottom: 1px solid rgba(var(--mud-palette-lines-default-rgb), 0.1);">
                                     <div class="d-flex align-center justify-space-between flex-wrap gap-1 mb-1">
@@ -1634,6 +1672,12 @@
                                                 <MudChip T="string" Size="Size.Small" Color="@(isCorrect ? Color.Success : Color.Error)" Variant="Variant.Filled">
                                                     第 @qIndex 题 · @(isCorrect ? "正确" : "错误")
                                                 </MudChip>
+                                                @if (isEquiv)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.CheckCircle">
+                                                        🎯 智能等价认可
+                                                    </MudChip>
+                                                }
                                             }
                                             else
                                             {
@@ -1642,6 +1686,21 @@
                                                 </MudChip>
                                             }
                                             <span class="text-caption mud-text-secondary">[@q.Subject - @q.Category]</span>
+                                        </div>
+                                        <div class="d-flex align-center gap-1">
+                                            <MudTooltip Text="一键复制本题题干与解析到剪贴板">
+                                                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small" Color="Color.Default"
+                                                               OnClick="@(() => CopyReviewQuestionToClipboard(q, eval?.UserAnswer, eval?.EquivalentMatchReason))" />
+                                            </MudTooltip>
+                                            @if (!isCorrect)
+                                            {
+                                                <MudTooltip Text="针对本题呼叫 AI 导师进行深度点拨">
+                                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Psychology"
+                                                               OnClick="@(() => OpenAiTutorForSpecificQuestion(q, eval?.UserAnswer))">
+                                                        AI 点拨
+                                                    </MudButton>
+                                                </MudTooltip>
+                                            }
                                         </div>
                                     </div>
                                     <MudText Typo="Typo.body2" Class="font-weight-medium my-1">
@@ -1676,6 +1735,12 @@
                                             </div>
                                         }
                                     </div>
+                                </div>
+                            }
+                            @if (renderedReviewCount == 0)
+                            {
+                                <div class="py-4 text-center mud-text-secondary text-caption">
+                                    当前筛选维度下暂无匹配试题
                                 </div>
                             }
                         </div>
@@ -1911,10 +1976,12 @@
     private int _sessionCarelessCount = 0;
     private int _sessionStrugglingCount = 0;
     private string _sessionPaceAdvice = string.Empty;
+    private string _victoryReviewFilter = "all";
 
     // AI Modal State
     private bool _aiDialogVisible = false;
     private bool _aiLoading = false;
+    private Question? _activeAiQuestion;
     private AiExplanationResult? _aiResult;
     private string _userPrompt = string.Empty;
     private string _aiAnswer = string.Empty;
@@ -3344,6 +3411,24 @@
         return Math.Max(0, _questions.Count - _sessionCorrectCount);
     }
 
+    private int GetSessionEquivalentCount()
+    {
+        if (_evalMode.Contains("整卷统一"))
+        {
+            return _paperEvalResults.Values.Count(r => r.IsEquivalentMatch);
+        }
+        return _instantEvalResults.Values.Count(r => r.IsEquivalentMatch);
+    }
+
+    private int GetSessionCorrectCount()
+    {
+        if (_evalMode.Contains("整卷统一"))
+        {
+            return _paperEvalResults.Values.Count(r => r.IsCorrect);
+        }
+        return _instantEvalResults.Values.Count(r => r.IsCorrect);
+    }
+
     private string GetQuestionMatrixTooltip(int qNum)
     {
         if (qNum < 1 || qNum > _questions.Count) return $"第 {qNum} 题";
@@ -3610,30 +3695,35 @@
     private async Task ToggleModalSocraticModeAsync()
     {
         _useSocraticMode = !_useSocraticMode;
-        await LoadAiTutorDataAsync();
+        await LoadAiTutorDataAsync(_activeAiQuestion);
     }
 
-    private async Task LoadAiTutorDataAsync()
+    private async Task LoadAiTutorDataAsync(Question? targetQuestion = null, string? specificWrongAnswer = null)
     {
-        if (CurrentQuestion == null) return;
+        if (targetQuestion != null)
+        {
+            _activeAiQuestion = targetQuestion;
+        }
+        var q = _activeAiQuestion ?? CurrentQuestion;
+        if (q == null) return;
         _aiLoading = true;
         await InvokeAsync(StateHasChanged);
 
         try
         {
-            string? wrongAnswer = _lastResult?.IsCorrect == false ? GetFinalUserAnswer() : null;
+            string? wrongAnswer = specificWrongAnswer ?? (_lastResult?.IsCorrect == false ? GetFinalUserAnswer() : null);
             if (_currentUser != null)
             {
-                _prerequisiteWarnings = await StudentEvolutionService.TraceWeakPrerequisitesAsync(_currentUser.Id, CurrentQuestion.Subject, CurrentQuestion.Category);
+                _prerequisiteWarnings = await StudentEvolutionService.TraceWeakPrerequisitesAsync(_currentUser.Id, q.Subject, q.Category);
             }
 
             if (_useSocraticMode)
             {
-                _socraticResult = await AiTutorService.GetSocraticGuidanceAsync(CurrentQuestion, wrongAnswer);
+                _socraticResult = await AiTutorService.GetSocraticGuidanceAsync(q, wrongAnswer);
             }
             else
             {
-                _aiResult = await AiTutorService.GetExplanationAsync(CurrentQuestion, wrongAnswer);
+                _aiResult = await AiTutorService.GetExplanationAsync(q, wrongAnswer);
             }
         }
         finally
@@ -3645,10 +3735,54 @@
 
     private async Task OpenAiTutorModal()
     {
+        _activeAiQuestion = CurrentQuestion;
         _aiDialogVisible = true;
         _aiAnswer = string.Empty;
         _userPrompt = string.Empty;
-        await LoadAiTutorDataAsync();
+        await LoadAiTutorDataAsync(_activeAiQuestion);
+    }
+
+    private async Task OpenAiTutorForSpecificQuestion(Question q, string? userAnswer)
+    {
+        _activeAiQuestion = q;
+        _aiDialogVisible = true;
+        _aiAnswer = string.Empty;
+        _userPrompt = string.Empty;
+        await LoadAiTutorDataAsync(q, userAnswer);
+    }
+
+    private async Task CopyReviewQuestionToClipboard(Question q, string? userAnswer, string? equivalentReason)
+    {
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"### [{q.Subject} - {q.Category}] {q.TypeDisplayName}");
+            sb.AppendLine(q.Stem);
+            sb.AppendLine();
+            if (!string.IsNullOrWhiteSpace(userAnswer))
+            {
+                sb.AppendLine($"- **考生作答**: {userAnswer}");
+            }
+            if (!string.IsNullOrWhiteSpace(q.CorrectAnswer))
+            {
+                sb.AppendLine($"- **标准答案**: {q.CorrectAnswer}");
+            }
+            if (!string.IsNullOrWhiteSpace(equivalentReason))
+            {
+                sb.AppendLine($"- **智能等价认可**: {equivalentReason}");
+            }
+            if (!string.IsNullOrWhiteSpace(q.StandardAnalysis))
+            {
+                sb.AppendLine($"- **解析**: {q.StandardAnalysis}");
+            }
+
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString().TrimEnd());
+            Snackbar.Add("📋 试题与详细解析已成功复制到系统剪贴板！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"复制失败: {ex.Message}", Severity.Warning);
+        }
     }
 
     [JSInvokable]
@@ -3710,7 +3844,8 @@
 
         try
         {
-            string context = $"题目学科：{CurrentQuestion.Subject}\n考点：{CurrentQuestion.Category}\n题干：{CurrentQuestion.Stem}\n正确答案：{CurrentQuestion.CorrectAnswer}";
+            var targetQ = _activeAiQuestion ?? CurrentQuestion;
+            string context = $"题目学科：{targetQ.Subject}\n考点：{targetQ.Category}\n题干：{targetQ.Stem}\n正确答案：{targetQ.CorrectAnswer}";
             _aiAnswer = await AiTutorService.AskAiTutorAsync(context, _userPrompt);
         }
         catch (Exception ex)

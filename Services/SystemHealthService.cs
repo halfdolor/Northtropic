@@ -2179,6 +2179,8 @@ namespace Northtropic.Services
                         q.IsPublic,
                         q.PublishStatus,
                         q.Type,
+                        q.Category,
+                        q.Stem,
                         q.CorrectAnswer,
                         q.OptionsJson
                     })
@@ -2196,6 +2198,7 @@ namespace Northtropic.Services
 
                 int malformedChoiceQuestions = questionInvariantsToCheck.Count(q =>
                 {
+                    if (IsJudgementQuestion(q.Category, q.Stem, q.Type, q.OptionsJson, q.CorrectAnswer)) return false;
                     if (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
                     {
                         var ans = q.CorrectAnswer?.Trim();
@@ -2228,6 +2231,30 @@ namespace Northtropic.Services
                 if (audit.TotalMalformedChoiceQuestions > 0)
                 {
                     audit.AuditDetails.Add($"发现 {audit.TotalMalformedChoiceQuestions} 道选择题存在选项或答案格式不变量异常 (包含非法 JSON 包裹、标点污染或空选项)");
+                }
+
+                int malformedJudgementQuestions = questionInvariantsToCheck.Count(q =>
+                {
+                    if (!IsJudgementQuestion(q.Category, q.Stem, q.Type, q.OptionsJson, q.CorrectAnswer)) return false;
+                    var ans = q.CorrectAnswer?.Trim();
+                    if (string.IsNullOrEmpty(ans)) return true;
+                    if (ans != "正确" && ans != "错误") return true;
+                    if (q.Type == QuestionType.SingleChoice)
+                    {
+                        if (string.IsNullOrWhiteSpace(q.OptionsJson) || q.OptionsJson.Trim() == "[]") return true;
+                        try
+                        {
+                            var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                            if (opts == null || opts.Count != 2 || !opts.Contains("正确") || !opts.Contains("错误")) return true;
+                        }
+                        catch { return true; }
+                    }
+                    return false;
+                });
+                audit.TotalMalformedJudgementQuestions = malformedJudgementQuestions;
+                if (audit.TotalMalformedJudgementQuestions > 0)
+                {
+                    audit.AuditDetails.Add($"发现 {audit.TotalMalformedJudgementQuestions} 道判断题存在选项或答案格式不变量异常 (包含未规范为「正确/错误」的自然语言答案或破损选项)");
                 }
 
                 if (audit.IsHealthy)
@@ -3498,7 +3525,65 @@ namespace Northtropic.Services
                     modified = true;
                 }
 
-                if (q.Type == QuestionType.SingleChoice)
+                if (IsJudgementQuestion(q))
+                {
+                    if (q.Type == QuestionType.SingleChoice)
+                    {
+                        bool needOptionsHeal = false;
+                        if (string.IsNullOrWhiteSpace(q.OptionsJson) || q.OptionsJson.Trim() == "[]")
+                        {
+                            needOptionsHeal = true;
+                        }
+                        else
+                        {
+                            try
+                            {
+                                var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                                if (opts == null || opts.Count != 2 || !opts.Contains("正确") || !opts.Contains("错误"))
+                                    needOptionsHeal = true;
+                            }
+                            catch { needOptionsHeal = true; }
+                        }
+                        if (needOptionsHeal)
+                        {
+                            q.OptionsJson = "[\"正确\",\"错误\"]";
+                            modified = true;
+                        }
+                    }
+                    else
+                    {
+                        if (!string.IsNullOrWhiteSpace(q.OptionsJson) && q.OptionsJson.Trim() != "[]")
+                        {
+                            q.OptionsJson = "[]";
+                            modified = true;
+                        }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
+                    {
+                        q.CorrectAnswer = "正确";
+                        modified = true;
+                    }
+                    else
+                    {
+                        string normalized;
+                        if (PracticeService.TryNormalizeJudgement(q.CorrectAnswer, out var isTrue))
+                        {
+                            normalized = isTrue ? "正确" : "错误";
+                        }
+                        else
+                        {
+                            normalized = "正确";
+                        }
+
+                        if (q.CorrectAnswer != normalized)
+                        {
+                            q.CorrectAnswer = normalized;
+                            modified = true;
+                        }
+                    }
+                }
+                else if (q.Type == QuestionType.SingleChoice)
                 {
                     bool needOptionsHeal = false;
                     if (string.IsNullOrWhiteSpace(q.OptionsJson) || q.OptionsJson.Trim() == "[]")
@@ -4363,6 +4448,41 @@ namespace Northtropic.Services
             }
 
             return healedCount;
+        }
+
+        public static bool IsJudgementQuestion(string? category, string? stem, QuestionType type, string? optionsJson, string? correctAnswer)
+        {
+            var cat = category ?? "";
+            var st = stem ?? "";
+            if (cat.Contains("判断") || st.Contains("判断") || st.Contains("对/错") || st.Contains("正确/错误"))
+            {
+                return true;
+            }
+            if (type == QuestionType.SingleChoice && !string.IsNullOrWhiteSpace(optionsJson))
+            {
+                try
+                {
+                    var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(optionsJson);
+                    if (opts != null && opts.Count == 2 &&
+                        opts.Any(o => PracticeService.TryNormalizeJudgement(o, out var v) && v) &&
+                        opts.Any(o => PracticeService.TryNormalizeJudgement(o, out var v) && !v))
+                    {
+                        return true;
+                    }
+                }
+                catch { }
+            }
+            if (PracticeService.TryNormalizeJudgement(correctAnswer ?? "", out _))
+            {
+                if (type == QuestionType.FillInBlank) return true;
+            }
+            return false;
+        }
+
+        public static bool IsJudgementQuestion(Question q)
+        {
+            if (q == null) return false;
+            return IsJudgementQuestion(q.Category, q.Stem, q.Type, q.OptionsJson, q.CorrectAnswer);
         }
     }
 }

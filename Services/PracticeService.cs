@@ -718,6 +718,30 @@ namespace Northtropic.Services
                 var normU = user.Replace(" ", "").ToLowerInvariant();
                 var normC = correct.Replace(" ", "").ToLowerInvariant();
 
+                // 特殊角三角函数精确值与弧度制双向等价
+                if (CheckTrigonometricSpecialValueEquivalence(user, correct) || CheckTrigonometricSpecialValueEquivalence(normU, normC))
+                {
+                    return $"特殊角三角函数精确值等价：已自动识别特殊角（如 30°/45°/60° 或对应弧度制）三角函数的无理数/精确分数/小数表达，对应标准答案 [{correct}]";
+                }
+
+                // 近代量子物理与微观能量电子伏特换算等价
+                if (CheckModernPhysicsAndElectronVoltEquivalence(user, correct) || CheckModernPhysicsAndElectronVoltEquivalence(normU, normC))
+                {
+                    return $"近代物理与微观能量单位等价：已自动识别电子伏特（eV/keV/MeV/GeV）与国际单位焦耳（J）之间的科学计数换算，对应标准答案 [{correct}]";
+                }
+
+                // 电磁学国际单位导出等价
+                if (CheckElectromagnetismUnitEquivalence(user, correct) || CheckElectromagnetismUnitEquivalence(normU, normC))
+                {
+                    return $"电磁学国际单位导出等价：已自动识别磁通量（Wb <=> T·m² <=> V·s）、磁感应强度（T <=> 10^4 Gs）或自感系数（H <=> Wb/A <=> Ω·s）单位科学等价性，对应标准答案 [{correct}]";
+                }
+
+                // 物理化学常量与标况体积等价
+                if (CheckPhysicalChemistryConstantsEquivalence(user, correct) || CheckPhysicalChemistryConstantsEquivalence(normU, normC))
+                {
+                    return $"物理化学常量与标况体积等价：已自动识别法拉第常数、阿伏伽德罗常数或标况气体摩尔体积（22.4 L/mol <=> 0.0224 m³/mol）等量关系，对应标准答案 [{correct}]";
+                }
+
                 // 化学离子符号书写与上下标、电荷次序等价 (如 Fe^{3+} vs Fe3+ vs Fe^+3, SO_4^{2-} vs SO42- vs SO4^2-)
                 if (CheckChemicalIonEquivalence(user, correct) || CheckChemicalIonEquivalence(normU, normC))
                 {
@@ -5719,6 +5743,30 @@ namespace Northtropic.Services
                 return true;
             }
 
+            // 特殊角三角函数精确值与弧度制双向等价 (如 \sin(30^\circ) <=> 0.5 <=> 1/2, \tan(45^\circ) <=> 1, \cos(45^\circ) <=> \frac{\sqrt{2}}{2})
+            if (CheckTrigonometricSpecialValueEquivalence(user, correct) || CheckTrigonometricSpecialValueEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
+            // 近代量子物理与微观能量电子伏特换算等价 (如 1 eV <=> 1.6*10^-19 J, 1 MeV <=> 1.6*10^-13 J)
+            if (CheckModernPhysicsAndElectronVoltEquivalence(user, correct) || CheckModernPhysicsAndElectronVoltEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
+            // 电磁学国际单位导出等价 (如 1 Wb <=> 1 T*m^2 <=> 1 V*s, 1 T <=> 10^4 Gs, 1 H <=> 1 Wb/A <=> 1 ohm*s)
+            if (CheckElectromagnetismUnitEquivalence(user, correct) || CheckElectromagnetismUnitEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
+            // 物理化学常量与标况体积等价 (如 1 F <=> 96485 C/mol, 6.02*10^23 <=> 6.022*10^23, 22.4 L/mol <=> 0.0224 m^3/mol)
+            if (CheckPhysicalChemistryConstantsEquivalence(user, correct) || CheckPhysicalChemistryConstantsEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
             // 规范化多元方程解集无序置换等价匹配: 如 "y=3,x=2" 与 "x=2,y=3"
             if (normUser.Contains(',') && normUser.Contains('=') && normCorrect.Contains(',') && normCorrect.Contains('='))
             {
@@ -7353,6 +7401,361 @@ namespace Northtropic.Services
                     return true;
                 }
             }
+
+            return false;
+        }
+
+        public static bool CheckTrigonometricSpecialValueEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            u = u.Trim();
+            c = c.Trim();
+
+            // 必须至少有一方包含三角函数或角度/弧度特征，以防误伤其他普通代数或常量
+            bool hasTrigHint = System.Text.RegularExpressions.Regex.IsMatch(u, @"(sin|cos|tan|cot|deg|°|rad|\\pi|\bpi\b)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
+                               System.Text.RegularExpressions.Regex.IsMatch(c, @"(sin|cos|tan|cot|deg|°|rad|\\pi|\bpi\b)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!hasTrigHint) return false;
+
+            static bool TryEvaluateTrigExprOrConstant(string s, out double val)
+            {
+                val = 0;
+                if (string.IsNullOrWhiteSpace(s)) return false;
+                var raw = s.Trim().ToLowerInvariant()
+                    .Replace(" ", "")
+                    .Replace("\\mathrm", "").Replace("\\text", "")
+                    .Replace("{", "(").Replace("}", ")")
+                    .Replace("（", "(").Replace("）", ")")
+                    .Replace("°", "deg").Replace("^\\circ", "deg").Replace("\\circ", "deg")
+                    .Replace("度", "deg");
+
+                // Check direct known exact numeric / radical expressions first
+                if (raw == "0" || raw == "+0" || raw == "-0") { val = 0; return true; }
+                if (raw == "1" || raw == "+1") { val = 1; return true; }
+                if (raw == "-1") { val = -1; return true; }
+                if (raw == "0.5" || raw == "1/2" || raw == "\\frac(1)(2)") { val = 0.5; return true; }
+                if (raw == "-0.5" || raw == "-1/2" || raw == "-\\frac(1)(2)") { val = -0.5; return true; }
+                if (raw == "sqrt(2)/2" || raw == "\\frac(sqrt(2))(2)" || raw == "1/sqrt(2)" || raw == "\\frac(1)(sqrt(2))" ||
+                    raw == "\\sqrt(2)/2" || raw == "\\frac(\\sqrt(2))(2)")
+                {
+                    val = Math.Sqrt(2.0) / 2.0; return true;
+                }
+                if (raw == "-sqrt(2)/2" || raw == "-\\frac(sqrt(2))(2)" || raw == "-1/sqrt(2)" || raw == "-\\frac(1)(sqrt(2))")
+                {
+                    val = -Math.Sqrt(2.0) / 2.0; return true;
+                }
+                if (raw == "sqrt(3)/2" || raw == "\\frac(sqrt(3))(2)" || raw == "\\sqrt(3)/2" || raw == "\\frac(\\sqrt(3))(2)")
+                {
+                    val = Math.Sqrt(3.0) / 2.0; return true;
+                }
+                if (raw == "-sqrt(3)/2" || raw == "-\\frac(sqrt(3))(2)" || raw == "-\\sqrt(3)/2")
+                {
+                    val = -Math.Sqrt(3.0) / 2.0; return true;
+                }
+                if (raw == "sqrt(3)/3" || raw == "\\frac(sqrt(3))(3)" || raw == "1/sqrt(3)" || raw == "\\frac(1)(sqrt(3))" ||
+                    raw == "\\sqrt(3)/3" || raw == "\\frac(\\sqrt(3))(3)")
+                {
+                    val = Math.Sqrt(3.0) / 3.0; return true;
+                }
+                if (raw == "sqrt(3)" || raw == "\\sqrt(3)" || raw == "\\sqrt3")
+                {
+                    val = Math.Sqrt(3.0); return true;
+                }
+                if (raw == "-sqrt(3)" || raw == "-\\sqrt(3)")
+                {
+                    val = -Math.Sqrt(3.0); return true;
+                }
+
+                if (double.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedNum))
+                {
+                    val = parsedNum;
+                    return true;
+                }
+
+                // Check trig function pattern: sin(...), cos(...), tan(...)
+                var m = System.Text.RegularExpressions.Regex.Match(raw, @"^\\?(sin|cos|tan)(?:\(([^()]+)\)|([a-z0-9\\]+))$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (m.Success)
+                {
+                    var func = m.Groups[1].Value.ToLowerInvariant();
+                    var arg = !string.IsNullOrEmpty(m.Groups[2].Value) ? m.Groups[2].Value : m.Groups[3].Value;
+                    arg = arg.Trim();
+
+                    double rad = 0;
+                    bool recognizedAngle = false;
+
+                    if (arg == "0" || arg == "0deg") { rad = 0; recognizedAngle = true; }
+                    else if (arg == "30deg" || arg == "30") { rad = Math.PI / 6.0; recognizedAngle = true; }
+                    else if (arg == "45deg" || arg == "45") { rad = Math.PI / 4.0; recognizedAngle = true; }
+                    else if (arg == "60deg" || arg == "60") { rad = Math.PI / 3.0; recognizedAngle = true; }
+                    else if (arg == "90deg" || arg == "90") { rad = Math.PI / 2.0; recognizedAngle = true; }
+                    else if (arg == "180deg" || arg == "180") { rad = Math.PI; recognizedAngle = true; }
+                    else if (arg == "\\pi/6" || arg == "pi/6" || arg == "\\frac(\\pi)(6)" || arg == "\\frac(pi)(6)") { rad = Math.PI / 6.0; recognizedAngle = true; }
+                    else if (arg == "\\pi/4" || arg == "pi/4" || arg == "\\frac(\\pi)(4)" || arg == "\\frac(pi)(4)") { rad = Math.PI / 4.0; recognizedAngle = true; }
+                    else if (arg == "\\pi/3" || arg == "pi/3" || arg == "\\frac(\\pi)(3)" || arg == "\\frac(pi)(3)") { rad = Math.PI / 3.0; recognizedAngle = true; }
+                    else if (arg == "\\pi/2" || arg == "pi/2" || arg == "\\frac(\\pi)(2)" || arg == "\\frac(pi)(2)") { rad = Math.PI / 2.0; recognizedAngle = true; }
+                    else if (arg == "\\pi" || arg == "pi" || arg == "π") { rad = Math.PI; recognizedAngle = true; }
+
+                    if (recognizedAngle)
+                    {
+                        if (func == "sin") val = Math.Sin(rad);
+                        else if (func == "cos") val = Math.Cos(rad);
+                        else if (func == "tan") val = Math.Tan(rad);
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            if (TryEvaluateTrigExprOrConstant(u, out var valU) && TryEvaluateTrigExprOrConstant(c, out var valC))
+            {
+                if (Math.Abs(valU - valC) < 1e-4) return true;
+            }
+
+            return false;
+        }
+
+        public static bool CheckModernPhysicsAndElectronVoltEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            u = u.Trim();
+            c = c.Trim();
+
+            bool hasEnergyHint = System.Text.RegularExpressions.Regex.IsMatch(u, @"(ev|kev|mev|gev|电子伏|焦)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
+                                 System.Text.RegularExpressions.Regex.IsMatch(c, @"(ev|kev|mev|gev|电子伏|焦)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!hasEnergyHint) return false;
+
+            static bool TryParseEnergyInJoules(string s, out double joules)
+            {
+                joules = 0;
+                if (string.IsNullOrWhiteSpace(s)) return false;
+                var raw = s.Trim().ToLowerInvariant()
+                    .Replace(" ", "")
+                    .Replace("\\times", "*").Replace("×", "*").Replace("·", "*")
+                    .Replace("焦耳", "j").Replace("焦", "j")
+                    .Replace("电子伏特", "ev").Replace("电子伏", "ev")
+                    .Replace("千电子伏", "kev").Replace("兆电子伏", "mev").Replace("吉电子伏", "gev");
+
+                double unitFactor = 0;
+                string numPart = raw;
+
+                if (raw.EndsWith("gev")) { unitFactor = 1.602176634e-10; numPart = raw.Substring(0, raw.Length - 3); }
+                else if (raw.EndsWith("mev")) { unitFactor = 1.602176634e-13; numPart = raw.Substring(0, raw.Length - 3); }
+                else if (raw.EndsWith("kev")) { unitFactor = 1.602176634e-16; numPart = raw.Substring(0, raw.Length - 3); }
+                else if (raw.EndsWith("ev")) { unitFactor = 1.602176634e-19; numPart = raw.Substring(0, raw.Length - 2); }
+                else if (raw.EndsWith("kj")) { unitFactor = 1000.0; numPart = raw.Substring(0, raw.Length - 2); }
+                else if (raw.EndsWith("j")) { unitFactor = 1.0; numPart = raw.Substring(0, raw.Length - 1); }
+                else return false;
+
+                numPart = numPart.Trim().TrimEnd('*');
+                if (string.IsNullOrEmpty(numPart)) numPart = "1";
+
+                // Parse number including scientific notation e.g. 1.6*10^-19 or 1.6e-19 or 10^3 or 10^6
+                if (numPart.StartsWith("10^") || numPart.StartsWith("10^{"))
+                {
+                    var expStr = numPart.Replace("10^{", "").Replace("10^", "").Replace("}", "").Replace(")", "");
+                    if (double.TryParse(expStr, out var expVal))
+                    {
+                        joules = Math.Pow(10, expVal) * unitFactor;
+                        return true;
+                    }
+                }
+
+                var sciMatch = System.Text.RegularExpressions.Regex.Match(numPart, @"^([+-]?\d+(?:\.\d+)?)\*10\^\{?([+-]?\d+)\}?$");
+                if (sciMatch.Success)
+                {
+                    var baseNum = double.Parse(sciMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+                    var expNum = double.Parse(sciMatch.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
+                    joules = baseNum * Math.Pow(10, expNum) * unitFactor;
+                    return true;
+                }
+
+                if (double.TryParse(numPart, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedVal))
+                {
+                    joules = parsedVal * unitFactor;
+                    return true;
+                }
+
+                return false;
+            }
+
+            if (TryParseEnergyInJoules(u, out var jU) && TryParseEnergyInJoules(c, out var jC))
+            {
+                if (jU > 0 && jC > 0)
+                {
+                    double relDiff = Math.Abs(jU - jC) / Math.Max(jU, jC);
+                    if (relDiff < 0.02) return true; // within 2% margin (handles 1.6 vs 1.602)
+                }
+            }
+
+            return false;
+        }
+
+        public static bool CheckElectromagnetismUnitEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            u = u.Trim();
+            c = c.Trim();
+
+            bool hasEmHint = System.Text.RegularExpressions.Regex.IsMatch(u, @"(wb|t|gs|h|ohm|\\omega|特斯拉|韦伯|亨利|高斯|贝斯)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
+                             System.Text.RegularExpressions.Regex.IsMatch(c, @"(wb|t|gs|h|ohm|\\omega|特斯拉|韦伯|亨利|高斯|贝斯)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!hasEmHint) return false;
+
+            static string NormalizeEmUnit(string s)
+            {
+                return s.Trim().ToLowerInvariant()
+                    .Replace(" ", "")
+                    .Replace("\\cdot", "*").Replace("·", "*").Replace("×", "*").Replace("•", "*")
+                    .Replace("²", "^2").Replace("m²", "m^2").Replace("米^2", "m^2").Replace("平方米", "m^2")
+                    .Replace("特斯拉", "t").Replace("韦伯", "wb").Replace("亨利", "h").Replace("高斯", "gs")
+                    .Replace("伏特", "v").Replace("伏", "v").Replace("秒", "s").Replace("安培", "a").Replace("安", "a")
+                    .Replace("\\omega", "ohm").Replace("欧姆", "ohm").Replace("欧", "ohm").Replace("omega", "ohm");
+            }
+
+            var nU = NormalizeEmUnit(u);
+            var nC = NormalizeEmUnit(c);
+
+            // Magnetic flux: Wb <=> T*m^2 <=> V*s
+            static bool TryParseFlux(string s, out double val)
+            {
+                val = 0;
+                if (string.IsNullOrWhiteSpace(s)) return false;
+                if (s.EndsWith("wb"))
+                {
+                    var numStr = s.Substring(0, s.Length - 2);
+                    val = string.IsNullOrEmpty(numStr) ? 1.0 : (double.TryParse(numStr, out var v) ? v : 0);
+                    return val != 0;
+                }
+                if (s.EndsWith("t*m^2") || s.EndsWith("t*m2") || s.EndsWith("tm^2"))
+                {
+                    var numStr = System.Text.RegularExpressions.Regex.Replace(s, @"t\*?m\^?2$", "");
+                    val = string.IsNullOrEmpty(numStr) ? 1.0 : (double.TryParse(numStr, out var v) ? v : 0);
+                    return val != 0;
+                }
+                if (s.EndsWith("v*s") || s.EndsWith("vs"))
+                {
+                    var numStr = System.Text.RegularExpressions.Regex.Replace(s, @"v\*?s$", "");
+                    val = string.IsNullOrEmpty(numStr) ? 1.0 : (double.TryParse(numStr, out var v) ? v : 0);
+                    return val != 0;
+                }
+                return false;
+            }
+
+            if (TryParseFlux(nU, out var fU) && TryParseFlux(nC, out var fC))
+            {
+                if (Math.Abs(fU - fC) < 1e-6) return true;
+            }
+
+            // Magnetic field: 1 T <=> 10000 Gs <=> 10^4 Gs
+            static bool TryParseTesla(string s, out double tesla)
+            {
+                tesla = 0;
+                if (s.EndsWith("gs"))
+                {
+                    var numStr = s.Substring(0, s.Length - 2).TrimEnd('*');
+                    if (numStr == "10^4" || numStr == "10^{4}") { tesla = 1.0; return true; }
+                    if (double.TryParse(numStr, out var gs)) { tesla = gs * 1e-4; return true; }
+                }
+                if (s.EndsWith("t") && !s.EndsWith("mt"))
+                {
+                    var numStr = s.Substring(0, s.Length - 1).TrimEnd('*');
+                    if (string.IsNullOrEmpty(numStr)) { tesla = 1.0; return true; }
+                    if (numStr == "10^-4" || numStr == "10^{-4}") { tesla = 1e-4; return true; }
+                    if (double.TryParse(numStr, out var t)) { tesla = t; return true; }
+                }
+                return false;
+            }
+
+            if (TryParseTesla(nU, out var tU) && TryParseTesla(nC, out var tC))
+            {
+                if (tU > 0 && tC > 0 && Math.Abs(tU - tC) / Math.Max(tU, tC) < 1e-4) return true;
+            }
+
+            // Inductance: 1 H <=> 1 Wb/A <=> 1 ohm*s
+            static bool TryParseHenry(string s, out double henry)
+            {
+                henry = 0;
+                if (s.EndsWith("h") && !s.EndsWith("ohm*s") && !s.EndsWith("km/h"))
+                {
+                    var numStr = s.Substring(0, s.Length - 1);
+                    henry = string.IsNullOrEmpty(numStr) ? 1.0 : (double.TryParse(numStr, out var v) ? v : 0);
+                    return henry != 0;
+                }
+                if (s.EndsWith("wb/a"))
+                {
+                    var numStr = s.Substring(0, s.Length - 4);
+                    henry = string.IsNullOrEmpty(numStr) ? 1.0 : (double.TryParse(numStr, out var v) ? v : 0);
+                    return henry != 0;
+                }
+                if (s.EndsWith("ohm*s") || s.EndsWith("ohm·s"))
+                {
+                    var numStr = System.Text.RegularExpressions.Regex.Replace(s, @"ohm[\*·]?s$", "");
+                    henry = string.IsNullOrEmpty(numStr) ? 1.0 : (double.TryParse(numStr, out var v) ? v : 0);
+                    return henry != 0;
+                }
+                return false;
+            }
+
+            if (TryParseHenry(nU, out var hU) && TryParseHenry(nC, out var hC))
+            {
+                if (Math.Abs(hU - hC) < 1e-6) return true;
+            }
+
+            return false;
+        }
+
+        public static bool CheckPhysicalChemistryConstantsEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            u = u.Trim();
+            c = c.Trim();
+
+            bool hasPchemHint = System.Text.RegularExpressions.Regex.IsMatch(u, @"(法拉第|mol|摩尔|22\.4|0\.0224|6\.02|6\.022|96485|96500|\bf\b)", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
+                                System.Text.RegularExpressions.Regex.IsMatch(c, @"(法拉第|mol|摩尔|22\.4|0\.0224|6\.02|6\.022|96485|96500|\bf\b)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!hasPchemHint) return false;
+
+            static string CleanPchem(string s)
+            {
+                return s.Trim().ToLowerInvariant()
+                    .Replace(" ", "")
+                    .Replace("\\times", "*").Replace("×", "*").Replace("·", "*")
+                    .Replace("库仑/摩尔", "c/mol").Replace("库/摩尔", "c/mol").Replace("c·mol^-1", "c/mol").Replace("c*mol^-1", "c/mol")
+                    .Replace("升/摩尔", "l/mol").Replace("l·mol^-1", "l/mol").Replace("l*mol^-1", "l/mol")
+                    .Replace("立方米/摩尔", "m^3/mol").Replace("m³", "m^3").Replace("m^3*mol^-1", "m^3/mol")
+                    .Replace("摩尔^-1", "mol^-1").Replace("/摩尔", "/mol").Replace("每摩尔", "/mol");
+            }
+
+            var nU = CleanPchem(u);
+            var nC = CleanPchem(c);
+
+            // 1. Faraday constant: 1 F <=> 96485 C/mol <=> 96500 C/mol
+            static bool IsFaraday(string s)
+            {
+                if (s == "1f" || s == "f" || s == "法拉第常数") return true;
+                if (s == "96485c/mol" || s == "96500c/mol" || s == "96485" || s == "96500") return true;
+                return false;
+            }
+            if (IsFaraday(nU) && IsFaraday(nC)) return true;
+
+            // 2. Avogadro constant: 6.02*10^23 <=> 6.022*10^23 (with or without /mol, mol^-1, or n_a)
+            static bool IsAvogadro(string s)
+            {
+                if (s == "n_a" || s == "na" || s == "阿伏加德罗常数" || s == "阿伏伽德罗常数") return true;
+                var raw = s.Replace("/mol", "").Replace("mol^-1", "").Replace("mol", "");
+                if (raw == "6.02*10^23" || raw == "6.02*10^{23}" || raw == "6.022*10^23" || raw == "6.022*10^{23}" ||
+                    raw == "6.02e23" || raw == "6.022e23") return true;
+                return false;
+            }
+            if (IsAvogadro(nU) && IsAvogadro(nC)) return true;
+
+            // 3. Molar gas volume: 22.4 L/mol <=> 0.0224 m^3/mol <=> 2.24*10^-2 m^3/mol
+            static bool IsMolarVolumeStp(string s)
+            {
+                if (s == "22.4l/mol" || s == "22.4l" || s == "22.4" || s == "22.4升/摩尔") return true;
+                if (s == "0.0224m^3/mol" || s == "0.0224m^3" || s == "0.0224" ||
+                    s == "2.24*10^-2m^3/mol" || s == "2.24*10^{-2}m^3/mol") return true;
+                return false;
+            }
+            if (IsMolarVolumeStp(nU) && IsMolarVolumeStp(nC)) return true;
 
             return false;
         }
