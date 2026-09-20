@@ -978,13 +978,13 @@
                             <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
                                 <div class="d-flex align-center gap-2">
                                     <MudIcon Icon="@Icons.Material.Filled.FactCheck" Color="Color.Success" />
-                                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold">数据拓扑完整性体检与孤儿自愈</MudText>
+                                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold">数据拓扑完整性体检与领域自愈驾驶舱</MudText>
                                     @if (_dataIntegrityAudit != null)
                                     {
                                         <MudChip T="string"
-                                                 Color="@(_dataIntegrityAudit.IsHealthy ? Color.Success : Color.Warning)"
+                                                 Color="@(_dataIntegrityAudit.IsStrictlyHealthy ? Color.Success : (_dataIntegrityAudit.IsHealthy ? Color.Info : Color.Warning))"
                                                  Size="Size.Small" Variant="Variant.Filled" Class="font-weight-bold">
-                                            @(_dataIntegrityAudit.IsHealthy ? "拓扑无暇 (0 孤儿)" : $"发现 {_dataIntegrityAudit.TotalIssuesCount} 项孤儿异常")
+                                            @(_dataIntegrityAudit.IsStrictlyHealthy ? "系统纯净 (0 异常)" : (_dataIntegrityAudit.IsHealthy ? $"拓扑合规 (待优化 {_dataIntegrityAudit.TotalComprehensiveAnomaliesCount} 项)" : $"发现 {_dataIntegrityAudit.TotalIssuesCount} 项孤儿异常"))
                                         </MudChip>
                                     }
                                 </div>
@@ -1001,56 +1001,95 @@
                                             @(_isPurgingOrphans ? "自愈清理中..." : "🧹 彻底自愈清理孤儿记录")
                                         </MudButton>
                                     }
-                                    @if (_dataIntegrityAudit != null && _dataIntegrityAudit.DuplicateQuestionsCount > 0)
-                                    {
-                                        <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="DeduplicateQuestionsAsync" Disabled="@_isDeduplicatingQuestions" Class="font-weight-bold">
-                                            @(_isDeduplicatingQuestions ? "去重自愈中..." : "🔄 题库去重与重定向")
-                                        </MudButton>
-                                    }
-                                    <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.BuildCircle" OnClick="HealCorruptedQuestionsAsync" Disabled="@_isHealingCorruptedQuestions" Class="font-weight-bold">
-                                        @(_isHealingCorruptedQuestions ? "自愈中..." : "🩺 试题选项与破损自愈")
-                                    </MudButton>
-                                    @if (_dataIntegrityAudit != null && _dataIntegrityAudit.UsersWithInvalidBalancesCount > 0)
-                                    {
-                                        <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Balance" OnClick="HealGamificationInvariantsAsync" Disabled="@_isHealingBalances" Class="font-weight-bold">
-                                            @(_isHealingBalances ? "校准中..." : "⚖️ 校准资产与等级")
-                                        </MudButton>
-                                    }
-                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick="HealErrorBookInvariantsAsync" Disabled="@_isHealingErrorBook" Class="font-weight-bold">
-                                        @(_isHealingErrorBook ? "自愈中..." : "🩺 自愈错题副本不变量")
-                                    </MudButton>
-                                    <MudButton Variant="Variant.Filled" Color="Color.Tertiary" Size="Size.Small" StartIcon="@Icons.Material.Filled.AssignmentTurnedIn" OnClick="HealStudyPlanInvariantsAsync" Disabled="@_isHealingStudyPlans" Class="font-weight-bold">
-                                        @(_isHealingStudyPlans ? "自愈中..." : "🎯 自愈学习计划不变量")
-                                    </MudButton>
-                                    <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" StartIcon="@Icons.Material.Filled.TaskAlt" OnClick="HealHomeworkAssignmentInvariantsAsync" Disabled="@_isHealingHomeworkAssignments" Class="font-weight-bold">
-                                        @(_isHealingHomeworkAssignments ? "自愈中..." : "📝 自愈作业分配不变量")
-                                    </MudButton>
-                                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.FamilyRestroom" OnClick="HealStudentParentBindingInvariantsAsync" Disabled="@_isHealingBindings" Class="font-weight-bold">
-                                        @(_isHealingBindings ? "自愈中..." : "👨‍👩‍👧 自愈家校监护绑定")
-                                    </MudButton>
-                                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.BookmarkRemove" OnClick="HealUserFavoriteInvariantsAsync" Disabled="@_isHealingFavorites" Class="font-weight-bold">
-                                        @(_isHealingFavorites ? "自愈中..." : "⭐ 自愈收藏冗余副本")
-                                    </MudButton>
-                                    <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.HistoryEdu" OnClick="HealPracticeRecordsAsync" Disabled="@_isHealingPracticeRecords" Class="font-weight-bold">
-                                        @(_isHealingPracticeRecords ? "自愈中..." : "🩺 自愈答题流水不变量")
-                                    </MudButton>
-                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.MilitaryTech" OnClick="HealUserAchievementsAsync" Disabled="@_isHealingUserAchievements" Class="font-weight-bold">
-                                        @(_isHealingUserAchievements ? "自愈中..." : "🏆 自愈成就重复副本")
-                                    </MudButton>
-                                    <MudButton Variant="Variant.Filled" Color="Color.Tertiary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Psychology" OnClick="HealLlmLogsAsync" Disabled="@_isHealingLlmLogs" Class="font-weight-bold">
-                                        @(_isHealingLlmLogs ? "自愈中..." : "🧠 自愈推理日志不变量")
-                                    </MudButton>
-                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.MenuBook" OnClick="HealCurriculumSubjectConfigsAsync" Disabled="@_isHealingCurriculumConfigs" Class="font-weight-bold">
-                                        @(_isHealingCurriculumConfigs ? "自愈中..." : "📚 自愈课程考点配置")
-                                    </MudButton>
-                                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Insights" OnClick="HealClosedLoopInsightsAsync" Disabled="@_isHealingInsights" Class="font-weight-bold">
-                                        @(_isHealingInsights ? "自愈中..." : "🧬 自愈学情闭环洞察")
-                                    </MudButton>
-                                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.WorkspacePremium" OnClick="HealAchievementsAsync" Disabled="@_isHealingAchievements" Class="font-weight-bold">
-                                        @(_isHealingAchievements ? "自愈中..." : "🎖️ 自愈成就定义不变量")
-                                    </MudButton>
                                 </div>
                             </div>
+
+                            <!-- 模块化自愈驾驶舱: 题库核心资产、学员进阶闭环、体系规范日志 -->
+                            <MudGrid Spacing="2" Class="mb-3">
+                                <!-- 1. 核心数据与题库资产 -->
+                                <MudItem xs="12" md="4">
+                                    <div class="pa-3 rounded-lg h-100" style="background: rgba(var(--mud-palette-surface-rgb), 0.45); border: 1px solid rgba(59, 130, 246, 0.2);">
+                                        <div class="d-flex align-center gap-1 mb-2">
+                                            <MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Small" Color="Color.Primary" />
+                                            <MudText Typo="Typo.body2" Class="font-weight-bold" Color="Color.Primary">核心题库与数据拓扑</MudText>
+                                        </div>
+                                        <div class="d-flex flex-column gap-2">
+                                            <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="DeduplicateQuestionsAsync" Disabled="@_isDeduplicatingQuestions" Class="font-weight-bold justify-start">
+                                                @(_isDeduplicatingQuestions ? "去重自愈中..." : "🔄 题库去重与重定向")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.BuildCircle" OnClick="HealCorruptedQuestionsAsync" Disabled="@_isHealingCorruptedQuestions" Class="font-weight-bold justify-start">
+                                                @(_isHealingCorruptedQuestions ? "自愈中..." : "🩺 试题选项与破损自愈")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick="HealErrorBookInvariantsAsync" Disabled="@_isHealingErrorBook" Class="font-weight-bold justify-start">
+                                                @(_isHealingErrorBook ? "自愈中..." : "🩺 错题副本不变量自愈")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.BookmarkRemove" OnClick="HealUserFavoriteInvariantsAsync" Disabled="@_isHealingFavorites" Class="font-weight-bold justify-start">
+                                                @(_isHealingFavorites ? "自愈中..." : "⭐ 收藏冗余副本去重")
+                                            </MudButton>
+                                        </div>
+                                    </div>
+                                </MudItem>
+
+                                <!-- 2. 学员成长与教学闭环 -->
+                                <MudItem xs="12" md="4">
+                                    <div class="pa-3 rounded-lg h-100" style="background: rgba(var(--mud-palette-surface-rgb), 0.45); border: 1px solid rgba(16, 185, 129, 0.2);">
+                                        <div class="d-flex align-center gap-1 mb-2">
+                                            <MudIcon Icon="@Icons.Material.Filled.School" Size="Size.Small" Color="Color.Success" />
+                                            <MudText Typo="Typo.body2" Class="font-weight-bold" Color="Color.Success">学员进阶与教学闭环</MudText>
+                                        </div>
+                                        <div class="d-flex flex-column gap-2">
+                                            <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.Balance" OnClick="HealGamificationInvariantsAsync" Disabled="@_isHealingBalances" Class="font-weight-bold justify-start">
+                                                @(_isHealingBalances ? "校准中..." : "⚖️ 校准资产与等级不变量")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Tertiary" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.AssignmentTurnedIn" OnClick="HealStudyPlanInvariantsAsync" Disabled="@_isHealingStudyPlans" Class="font-weight-bold justify-start">
+                                                @(_isHealingStudyPlans ? "自愈中..." : "🎯 学习计划总体不变量")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.FormatListNumbered" OnClick="HealStudyPlanTaskInvariantsAsync" Disabled="@_isHealingStudyPlanTasks" Class="font-weight-bold justify-start">
+                                                @(_isHealingStudyPlanTasks ? "自愈中..." : "📋 学习计划子任务对齐")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.TaskAlt" OnClick="HealHomeworkAssignmentInvariantsAsync" Disabled="@_isHealingHomeworkAssignments" Class="font-weight-bold justify-start">
+                                                @(_isHealingHomeworkAssignments ? "自愈中..." : "📝 作业分配闭环不变量")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.FamilyRestroom" OnClick="HealStudentParentBindingInvariantsAsync" Disabled="@_isHealingBindings" Class="font-weight-bold justify-start">
+                                                @(_isHealingBindings ? "自愈中..." : "👨‍👩‍👧 家校监护绑定自愈")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Dark" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.Insights" OnClick="HealClosedLoopInsightsAsync" Disabled="@_isHealingInsights" Class="font-weight-bold justify-start">
+                                                @(_isHealingInsights ? "自愈中..." : "🧬 学情闭环演进洞察")
+                                            </MudButton>
+                                        </div>
+                                    </div>
+                                </MudItem>
+
+                                <!-- 3. 体系规范与系统日志 -->
+                                <MudItem xs="12" md="4">
+                                    <div class="pa-3 rounded-lg h-100" style="background: rgba(var(--mud-palette-surface-rgb), 0.45); border: 1px solid rgba(245, 158, 11, 0.2);">
+                                        <div class="d-flex align-center gap-1 mb-2">
+                                            <MudIcon Icon="@Icons.Material.Filled.Rule" Size="Size.Small" Color="Color.Warning" />
+                                            <MudText Typo="Typo.body2" Class="font-weight-bold" Color="Color.Warning">体系规范与系统日志</MudText>
+                                        </div>
+                                        <div class="d-flex flex-column gap-2">
+                                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.MenuBook" OnClick="HealCurriculumSubjectConfigsAsync" Disabled="@_isHealingCurriculumConfigs" Class="font-weight-bold justify-start">
+                                                @(_isHealingCurriculumConfigs ? "自愈中..." : "📚 课程学科考点配置")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.WorkspacePremium" OnClick="HealAchievementsAsync" Disabled="@_isHealingAchievements" Class="font-weight-bold justify-start">
+                                                @(_isHealingAchievements ? "自愈中..." : "🎖️ 成就基础定义自愈")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.MilitaryTech" OnClick="HealUserAchievementsAsync" Disabled="@_isHealingUserAchievements" Class="font-weight-bold justify-start">
+                                                @(_isHealingUserAchievements ? "自愈中..." : "🏆 用户成就副本去重")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.Schedule" OnClick="HealUserAchievementStateInvariantsAsync" Disabled="@_isHealingUserAchievementStates" Class="font-weight-bold justify-start">
+                                                @(_isHealingUserAchievementStates ? "自愈中..." : "⏱️ 成就解锁时序纠偏")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.HistoryEdu" OnClick="HealPracticeRecordsAsync" Disabled="@_isHealingPracticeRecords" Class="font-weight-bold justify-start">
+                                                @(_isHealingPracticeRecords ? "自愈中..." : "🩺 答题流水记录自愈")
+                                            </MudButton>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Tertiary" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Filled.Psychology" OnClick="HealLlmLogsAsync" Disabled="@_isHealingLlmLogs" Class="font-weight-bold justify-start">
+                                                @(_isHealingLlmLogs ? "自愈中..." : "🧠 推理日志不变量自愈")
+                                            </MudButton>
+                                        </div>
+                                    </div>
+                                </MudItem>
+                            </MudGrid>
 
                             @if (_healAllInvariantsResult != null)
                             {
@@ -1510,6 +1549,8 @@
     private bool _isHealingCurriculumConfigs = false;
     private bool _isHealingInsights = false;
     private bool _isHealingAchievements = false;
+    private bool _isHealingStudyPlanTasks = false;
+    private bool _isHealingUserAchievementStates = false;
     private bool _isHealingAllInvariants = false;
     private DataIntegrityHealAllResultDto? _healAllInvariantsResult;
 
@@ -2341,6 +2382,52 @@
         finally
         {
             _isHealingAchievements = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HealStudyPlanTaskInvariantsAsync()
+    {
+        _isHealingStudyPlanTasks = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealStudyPlanTaskInvariantsAsync();
+            Snackbar.Add($"📋 学习计划子任务状态对齐完成：成功校准 {healedCount} 项子任务领域不变量！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+            FilterTelemetryEvents();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"计划子任务自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingStudyPlanTasks = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HealUserAchievementStateInvariantsAsync()
+    {
+        _isHealingUserAchievementStates = true;
+        StateHasChanged();
+        try
+        {
+            var healedCount = await SystemHealthService.HealUserAchievementStateInvariantsAsync();
+            Snackbar.Add($"⏱️ 用户成就解锁时序与条件纠偏完成：成功校准 {healedCount} 项成就状态不变量！", Severity.Success);
+            _dataIntegrityAudit = await SystemHealthService.AuditDataIntegrityAsync();
+            _healthDto = await SystemHealthService.GetSystemHealthAsync();
+            FilterTelemetryEvents();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"成就状态自愈异常: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isHealingUserAchievementStates = false;
             StateHasChanged();
         }
     }

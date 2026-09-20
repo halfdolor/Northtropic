@@ -2874,6 +2874,12 @@ namespace Northtropic.Services
                     changed = true;
                 }
 
+                if (h.CompletedAt.HasValue && h.CompletedAt.Value < h.CreatedAt)
+                {
+                    h.CompletedAt = h.CreatedAt;
+                    changed = true;
+                }
+
                 if (changed) healedCount++;
             }
 
@@ -3100,6 +3106,18 @@ namespace Northtropic.Services
                 else if (plan.Status == StudyPlanStatus.Active && !allTasksCompleted && plan.CompletedDate != null)
                 {
                     plan.CompletedDate = null;
+                    planModified = true;
+                }
+
+                if (plan.CompletedDate.HasValue && plan.CompletedDate.Value < plan.StartDate)
+                {
+                    plan.CompletedDate = plan.StartDate;
+                    planModified = true;
+                }
+
+                if (plan.UpdatedAt < plan.CreatedAt)
+                {
+                    plan.UpdatedAt = plan.CreatedAt;
                     planModified = true;
                 }
 
@@ -3629,6 +3647,25 @@ namespace Northtropic.Services
                     cfg.TopicsJson = System.Text.Json.JsonSerializer.Serialize(defaultTopics);
                     cfg.UpdatedAt = DateTime.Now;
                     healedCount++;
+                }
+                else
+                {
+                    var cleanedTopics = topics
+                        .Where(t => !string.IsNullOrWhiteSpace(t))
+                        .Select(t => t.Trim())
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    if (!cleanedTopics.Any(t => t.Equals("全部", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        cleanedTopics.Insert(0, "全部");
+                    }
+                    var cleanJson = System.Text.Json.JsonSerializer.Serialize(cleanedTopics);
+                    if (cleanJson != cfg.TopicsJson)
+                    {
+                        cfg.TopicsJson = cleanJson;
+                        cfg.UpdatedAt = DateTime.Now;
+                        healedCount++;
+                    }
                 }
             }
 

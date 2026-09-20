@@ -257,7 +257,9 @@ namespace Northtropic.Services
         public int InvalidUserAchievementsCount => TotalInvalidUserAchievements;
         public int TotalIssuesCount => TotalOrphanErrorItems + TotalOrphanPracticeRecords + TotalOrphanUserFavorites + TotalOrphanHomeworkAssignments + TotalOrphanBindings + TotalOrphanStudyPlans + TotalOrphanStudyPlanTasks + TotalOrphanUserAchievements + TotalOrphanInsights + TotalOrphanLlmLogs + TotalCorruptedQuestions + TotalOrphanPrivateQuestions + TotalDanglingPublicQuestions + TotalInvalidStudyPlans + TotalInvalidBindings + TotalInvalidHomeworkAssignments + TotalInvalidPracticeRecords + TotalInvalidErrorItems + TotalDuplicateUserAchievements + TotalInvalidLlmLogs + TotalInvalidCurriculumConfigs + TotalInvalidInsights + TotalInvalidAchievements + TotalInvalidStudyPlanTasks + TotalInvalidUserAchievements;
         public int TotalOptimizationCandidatesCount => TotalDuplicateQuestions + TotalUsersWithInvalidBalances + TotalInvalidStudyPlans + TotalInvalidBindings + TotalInvalidHomeworkAssignments + TotalDuplicateFavorites + TotalInvalidPracticeRecords + TotalInvalidErrorItems + TotalDuplicateUserAchievements + TotalInvalidLlmLogs + TotalInvalidCurriculumConfigs + TotalInvalidInsights + TotalInvalidAchievements + TotalInvalidStudyPlanTasks + TotalInvalidUserAchievements;
+        public int TotalComprehensiveAnomaliesCount => TotalIssuesCount + TotalUsersWithInvalidBalances + TotalDuplicateFavorites;
         public bool IsHealthy => TotalIssuesCount == 0;
+        public bool IsStrictlyHealthy => TotalIssuesCount == 0 && TotalUsersWithInvalidBalances == 0 && TotalDuplicateFavorites == 0;
         public List<string> AuditDetails { get; set; } = new();
     }
 

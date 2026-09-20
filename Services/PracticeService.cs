@@ -998,7 +998,25 @@ namespace Northtropic.Services
                     return $"电极反应式与电子转移等价：已识别电极反应半反应式中的电子转移项移项等价性，对应标准反应式 [{correct}]";
                 }
 
-                // 3. 化学方程式反应项等价 (需包含反应物生成物加号或特征反应箭头)
+                // 3. 物理经典运动学/力学/电学/光学核心公式等价 (优先于泛用化学方程式匹配)
+                if (CheckPhysicsFormulaEquivalence(user, correct) || CheckPhysicsFormulaEquivalence(normU, normC))
+                {
+                    return $"物理核心定律与公式等价：已自动识别物理运动学/力学/电学/光学公式的代数移项与参数等价性，对应标准公式 [{correct}]";
+                }
+
+                // 4. 有机化学烃类通式与反应焓变等价
+                if (CheckOrganicGeneralFormulaEquivalence(user, correct) || CheckOrganicGeneralFormulaEquivalence(normU, normC))
+                {
+                    return $"有机化学通式等价：已自动识别有机烃类（烷/烯/炔/芳香烃）或衍生物通式及焓变吸放热符号的规范表达，对应标准通式 [{correct}]";
+                }
+
+                // 5. 概率统计与随机变量记号等价
+                if (CheckProbabilityStatisticsEquivalence(user, correct) || CheckProbabilityStatisticsEquivalence(normU, normC))
+                {
+                    return $"概率统计记号等价：已自动识别正态分布 N(μ,σ^2)、期望 E(X)/EX 或方差 D(X)/Var(X) 的数学符号等价性，对应标准答案 [{correct}]";
+                }
+
+                // 6. 化学方程式反应项等价 (需包含反应物生成物加号或特征反应箭头)
                 if (((normU.Contains("=") && normU.Contains("+")) || normU.Contains("->") || normU.Contains("<=>")) &&
                     ((normC.Contains("=") && normC.Contains("+")) || normC.Contains("->") || normC.Contains("<=>")))
                 {
@@ -1009,13 +1027,13 @@ namespace Northtropic.Services
                     return $"化学方程式反应项等价：已识别反应物与生成物项的无序书写，对应标准方程式 [{correct}]";
                 }
 
-                // 4. 有机化学结构简式与分子式等价
+                // 7. 有机化学结构简式与分子式等价
                 if (IsOrganicStructureEquivalent(user, correct) || IsOrganicStructureEquivalent(normU, normC))
                 {
                     return $"有机化学结构简式与分子式等价：已识别结构简式、示性式与分子式（如 CH2=CH2 与 C2H4，CH3CH2OH 与 C2H5OH，CH3COOH 与 C2H4O2，(CH3)2CO 与 C3H6O）的化学等价性，对应标准答案 [{correct}]";
                 }
 
-                // 5. 比例与比值形式等价 (如 3:4 vs 3比4 vs 3/4)
+                // 8. 比例与比值形式等价 (如 3:4 vs 3比4 vs 3/4)
                 if ((user.Contains(':') || correct.Contains(':') || user.Contains("比") || correct.Contains("比") || user.Contains('：') || correct.Contains('：')) &&
                     (CheckRatioFractionEquivalence(user, correct) || CheckRatioFractionEquivalence(normU, normC)))
                 {
@@ -2934,6 +2952,204 @@ namespace Northtropic.Services
             return fA != null && fB != null && string.Equals(fA, fB, StringComparison.OrdinalIgnoreCase);
         }
 
+        public static bool CheckPhysicsFormulaEquivalence(string a, string b)
+        {
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+            static string CleanPhysics(string s)
+            {
+                s = s.Trim().Replace(" ", "").Replace("·", "").Replace("\\cdot", "").Replace("\\times", "").Replace("*", "");
+                s = s.Replace("（", "(").Replace("）", ")").Replace("＝", "=");
+                s = s.Replace("v_{0}", "v0").Replace("v_0", "v0").Replace("v_{t}", "vt").Replace("v_t", "vt");
+                s = s.Replace("v_{max}", "vmax").Replace("v_max", "vmax").Replace("v_{min}", "vmin").Replace("v_min", "vmin");
+                s = s.Replace("e_k", "ek").Replace("e_{k}", "ek").Replace("E_k", "ek").Replace("E_{k}", "ek");
+                s = s.Replace("e_p", "ep").Replace("e_{p}", "ep").Replace("E_p", "ep").Replace("E_{p}", "ep");
+                s = s.Replace("\\frac{1}{2}", "0.5").Replace("1/2", "0.5");
+                s = s.Replace("^{2}", "²").Replace("^2", "²");
+                s = s.Replace("$", "");
+                return s.ToLowerInvariant();
+            }
+
+            var ca = CleanPhysics(a);
+            var cb = CleanPhysics(b);
+            if (!ca.Any(char.IsLetter) || !cb.Any(char.IsLetter)) return false;
+            if (!ca.Contains("=") || !cb.Contains("=")) return false;
+            if (ca == cb) return true;
+
+            // 1. 速度时间公式: v = v0 + at <=> v = at + v0 <=> v - v0 = at <=> at = v - v0 <=> v - at = v0 <=> vt = v0 + at
+            var vGroup = new HashSet<string>
+            {
+                "v=v0+at", "v=at+v0", "v-v0=at", "at=v-v0", "v-at=v0", "vt=v0+at", "vt=at+v0", "vt-v0=at", "at=vt-v0"
+            };
+            if (vGroup.Contains(ca) && vGroup.Contains(cb)) return true;
+
+            // 2. 位移时间公式: s = v0t + 0.5at² <=> s = 0.5at² + v0t <=> x = v0t + 0.5at² <=> x = 0.5at² + v0t <=> h = v0t + 0.5at²
+            var sGroup = new HashSet<string>
+            {
+                "s=v0t+0.5at²", "s=0.5at²+v0t", "x=v0t+0.5at²", "x=0.5at²+v0t", "h=v0t+0.5at²", "h=0.5at²+v0t",
+                "s-v0t=0.5at²", "x-v0t=0.5at²", "0.5at²=s-v0t", "0.5at²=x-v0t"
+            };
+            if (sGroup.Contains(ca) && sGroup.Contains(cb)) return true;
+
+            // 3. 速度位移公式: v² - v0² = 2as <=> v² = v0² + 2as <=> 2as = v² - v0² <=> vt² - v0² = 2as <=> 2ax = v² - v0²
+            var v2Group = new HashSet<string>
+            {
+                "v²-v0²=2as", "v²=v0²+2as", "v²=2as+v0²", "2as=v²-v0²",
+                "vt²-v0²=2as", "vt²=v0²+2as", "vt²=2as+v0²", "2as=vt²-v0²",
+                "v²-v0²=2ax", "v²=v0²+2ax", "v²=2ax+v0²", "2ax=v²-v0²"
+            };
+            if (v2Group.Contains(ca) && v2Group.Contains(cb)) return true;
+
+            // 4. 牛顿第二定律: F = ma <=> a = F/m <=> m = F/a <=> ma = F
+            var fGroup = new HashSet<string>
+            {
+                "f=ma", "ma=f", "a=f/m", "m=f/a"
+            };
+            if (fGroup.Contains(ca) && fGroup.Contains(cb)) return true;
+
+            // 5. 动能公式: Ek = 0.5mv² <=> ek = 0.5mv² <=> 0.5mv² = ek
+            var ekGroup = new HashSet<string>
+            {
+                "ek=0.5mv²", "0.5mv²=ek", "ek=0.5m(v²)", "ek=0.5*(m*v²)"
+            };
+            if (ekGroup.Contains(ca) && ekGroup.Contains(cb)) return true;
+
+            // 6. 重力势能: Ep = mgh <=> ep = mgh
+            var epGroup = new HashSet<string>
+            {
+                "ep=mgh", "mgh=ep"
+            };
+            if (epGroup.Contains(ca) && epGroup.Contains(cb)) return true;
+
+            // 7. 功: W = Fs <=> W = Fx <=> fs = w <=> fx = w
+            var wGroup = new HashSet<string>
+            {
+                "w=fs", "w=fx", "fs=w", "fx=w"
+            };
+            if (wGroup.Contains(ca) && wGroup.Contains(cb)) return true;
+
+            // 8. 欧姆定律: U = IR <=> I = U/R <=> R = U/I <=> U = RI
+            var ohmGroup = new HashSet<string>
+            {
+                "u=ir", "u=ri", "ir=u", "ri=u", "i=u/r", "r=u/i"
+            };
+            if (ohmGroup.Contains(ca) && ohmGroup.Contains(cb)) return true;
+
+            // 9. 电功率: P = UI <=> P = IU <=> P = I²R <=> P = U²/R
+            var pGroup1 = new HashSet<string> { "p=ui", "p=iu", "ui=p", "iu=p" };
+            if (pGroup1.Contains(ca) && pGroup1.Contains(cb)) return true;
+            var pGroup2 = new HashSet<string> { "p=i²r", "p=ri²", "i²r=p", "ri²=p" };
+            if (pGroup2.Contains(ca) && pGroup2.Contains(cb)) return true;
+            var pGroup3 = new HashSet<string> { "p=u²/r", "u²/r=p" };
+            if (pGroup3.Contains(ca) && pGroup3.Contains(cb)) return true;
+
+            // 10. 透镜成像公式: 1/f = 1/u + 1/v <=> 1/f = 1/v + 1/u <=> 1/u + 1/v = 1/f <=> 1/v + 1/u = 1/f
+            var lensGroup = new HashSet<string>
+            {
+                "1/f=1/u+1/v", "1/f=1/v+1/u", "1/u+1/v=1/f", "1/v+1/u=1/f"
+            };
+            if (lensGroup.Contains(ca) && lensGroup.Contains(cb)) return true;
+
+            return false;
+        }
+
+        public static bool CheckOrganicGeneralFormulaEquivalence(string a, string b)
+        {
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+            static string CleanGeneralFormula(string s)
+            {
+                s = s.Trim().Replace(" ", "").Replace("_", "").Replace("{", "").Replace("}", "").Replace("$", "");
+                s = s.Replace("（", "(").Replace("）", ")");
+                return s.ToLowerInvariant();
+            }
+
+            var ca = CleanGeneralFormula(a);
+            var cb = CleanGeneralFormula(b);
+            if (!ca.Any(char.IsLetter) || !cb.Any(char.IsLetter)) return false;
+            bool isOrgA = (ca.Contains("cn") && ca.Contains("h")) || ca.Contains("delta") || ca.Contains("δ");
+            bool isOrgB = (cb.Contains("cn") && cb.Contains("h")) || cb.Contains("delta") || cb.Contains("δ");
+            if (!isOrgA || !isOrgB) return false;
+            if (ca == cb) return true;
+
+            // 烷烃通式: C_n H_{2n+2} <=> CnH2n+2
+            var alkane = new HashSet<string> { "cnh2n+2", "cnh(2n+2)" };
+            if (alkane.Contains(ca) && alkane.Contains(cb)) return true;
+
+            // 烯烃/环烷烃通式: C_n H_{2n} <=> CnH2n
+            var alkene = new HashSet<string> { "cnh2n", "cnh(2n)" };
+            if (alkene.Contains(ca) && alkene.Contains(cb)) return true;
+
+            // 炔烃/二烯烃通式: C_n H_{2n-2} <=> CnH2n-2
+            var alkyne = new HashSet<string> { "cnh2n-2", "cnh(2n-2)" };
+            if (alkyne.Contains(ca) && alkyne.Contains(cb)) return true;
+
+            // 苯及其同系物通式: C_n H_{2n-6} <=> CnH2n-6
+            var benzene = new HashSet<string> { "cnh2n-6", "cnh(2n-6)" };
+            if (benzene.Contains(ca) && benzene.Contains(cb)) return true;
+
+            // 饱和一元醇/醚通式: C_n H_{2n+2}O <=> C_n H_{2n+1}OH
+            var alcohol = new HashSet<string> { "cnh2n+2o", "cnh(2n+2)o", "cnh2n+1oh", "cnh(2n+1)oh" };
+            if (alcohol.Contains(ca) && alcohol.Contains(cb)) return true;
+
+            // 反应焓变吸放热记号: \Delta H < 0 <=> ΔH < 0, \Delta H > 0 <=> ΔH > 0
+            static string CleanDeltaH(string s)
+            {
+                s = s.Replace(" ", "").Replace("\\delta", "δ").Replace("△", "δ").Replace("∆", "δ").Replace("Δ", "δ")
+                     .Replace("kj/mol", "").Replace("千焦/摩尔", "").Replace("千焦每摩尔", "");
+                return s.ToLowerInvariant();
+            }
+            var da = CleanDeltaH(ca);
+            var db = CleanDeltaH(cb);
+            if (da == db) return true;
+            if ((da == "δh<0" || da == "deltah<0") && (db == "δh<0" || db == "deltah<0")) return true;
+            if ((da == "δh>0" || da == "deltah>0") && (db == "δh>0" || db == "deltah>0")) return true;
+
+            return false;
+        }
+
+        public static bool CheckProbabilityStatisticsEquivalence(string a, string b)
+        {
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+            static string CleanProb(string s)
+            {
+                s = s.Trim().Replace(" ", "").Replace("\\mu", "μ").Replace("\\sigma", "σ").Replace("^{2}", "²").Replace("^2", "²").Replace("$", "");
+                s = s.Replace("（", "(").Replace("）", ")").Replace("，", ",").Replace("；", ";");
+                return s.ToLowerInvariant();
+            }
+
+            var ca = CleanProb(a);
+            var cb = CleanProb(b);
+            bool isProbA = ca.StartsWith("n(") || ca.StartsWith("e(") || ca.StartsWith("e[") || ca == "ex" || ca == "eξ" ||
+                           ca.StartsWith("d(") || ca.StartsWith("d[") || ca == "dx" || ca == "dξ" || ca.StartsWith("var(") || ca.Contains("μ") || ca.Contains("σ") || ca.Contains("ξ");
+            bool isProbB = cb.StartsWith("n(") || cb.StartsWith("e(") || cb.StartsWith("e[") || cb == "ex" || cb == "eξ" ||
+                           cb.StartsWith("d(") || cb.StartsWith("d[") || cb == "dx" || cb == "dξ" || cb.StartsWith("var(") || cb.Contains("μ") || cb.Contains("σ") || cb.Contains("ξ");
+            if (!isProbA || !isProbB) return false;
+            if (ca == cb) return true;
+
+            // 正态分布记号: N(μ, σ²) <=> N(u, σ²) <=> N(μ, σ^2)
+            static string NormDistKey(string s)
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(s, @"^n\(([^\,\;]+)[\,\;]([^\)]+)\)$");
+                if (m.Success)
+                {
+                    var uVal = m.Groups[1].Value.Trim().Replace("u", "μ");
+                    var sVal = m.Groups[2].Value.Trim().Replace("σ²", "σ²").Replace("σ^2", "σ²");
+                    return $"n({uVal},{sVal})";
+                }
+                return s;
+            }
+            if (NormDistKey(ca) == NormDistKey(cb)) return true;
+
+            // 期望: E(X) <=> EX <=> E[X] <=> E(ξ) <=> Eξ
+            var expGroup = new HashSet<string> { "e(x)", "ex", "e[x]", "e(ξ)", "eξ", "e[ξ]" };
+            if (expGroup.Contains(ca) && expGroup.Contains(cb)) return true;
+
+            // 方差: D(X) <=> DX <=> Var(X) <=> D[X] <=> D(ξ) <=> Dξ <=> Var(ξ)
+            var varGroup = new HashSet<string> { "d(x)", "dx", "d[x]", "var(x)", "d(ξ)", "dξ", "d[ξ]", "var(ξ)" };
+            if (varGroup.Contains(ca) && varGroup.Contains(cb)) return true;
+
+            return false;
+        }
+
         public static bool CheckRatioFractionEquivalence(string u, string c)
         {
             if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
@@ -4216,6 +4432,27 @@ namespace Northtropic.Services
             if (IsOrganicStructureEquivalent(user, correct) || 
                 IsOrganicStructureEquivalent(normUser, normCorrect) ||
                 IsOrganicStructureEquivalent(chemUser, chemCorrect))
+            {
+                return true;
+            }
+
+            // 物理经典运动学、力学、电学与光学公式等价 (如 v=v0+at <=> v=at+v0 <=> v-v0=at, s=v0t+0.5at^2, F=ma, P=UI, U=IR, 1/f=1/u+1/v)
+            if (CheckPhysicsFormulaEquivalence(user, correct) ||
+                CheckPhysicsFormulaEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
+            // 有机化学烃类与烃的衍生物通式等价 (如 烷烃 C_n H_{2n+2} <=> CnH2n+2, 烯烃 C_n H_{2n}, 炔烃 C_n H_{2n-2}, 苯同系物 C_n H_{2n-6})
+            if (CheckOrganicGeneralFormulaEquivalence(user, correct) ||
+                CheckOrganicGeneralFormulaEquivalence(normUser, normCorrect))
+            {
+                return true;
+            }
+
+            // 概率统计分布与期望方差记号等价 (如 N(μ, σ^2) <=> N(u, σ^2), E(X) <=> EX, D(X) <=> DX <=> Var(X))
+            if (CheckProbabilityStatisticsEquivalence(user, correct) ||
+                CheckProbabilityStatisticsEquivalence(normUser, normCorrect))
             {
                 return true;
             }
