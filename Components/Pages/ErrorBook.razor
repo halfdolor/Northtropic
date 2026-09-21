@@ -279,6 +279,12 @@
                         <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.FlashOn" OnClick="StartCustomSprintPractice" Class="font-weight-bold" Style="border-radius: 8px; box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);">
                             ⚡ 一键组成错题靶向强化卷 (@_selectedItemIds.Count 题) ➔
                         </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Print" OnClick="OpenPrintWorksheetModal">
+                            🖨️ 打印/导出所选
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.FileDownload" OnClick="DownloadWorksheetMarkdownAsync">
+                            📥 导出 Markdown 错题卷
+                        </MudButton>
                         <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.DoneAll" OnClick="BatchMarkMasteredAsync">
                             批量标记已掌握
                         </MudButton>

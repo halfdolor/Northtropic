@@ -487,6 +487,93 @@ namespace Northtropic.Services
             return OpenXmlSpreadsheetHelper.CreateSpreadsheet("题库导出数据", headers, rows);
         }
 
+        public async Task<string> ExportQuestionsMarkdownAsync(Guid currentUserId, string? subject = null, string? category = null, bool? isPublic = null, PublishStatusEnum? status = null, IEnumerable<Guid>? specificQuestionIds = null, bool includeAnswers = true)
+        {
+            var questions = await GetQuestionsForManagementAsync(currentUserId, subject, category, isPublic, status, specificQuestionIds);
+            var sb = new System.Text.StringBuilder();
+
+            string titleSub = !string.IsNullOrWhiteSpace(subject) ? subject : "综合学科";
+            string modeName = includeAnswers ? "教研全解版" : "学生自测空白版";
+            sb.AppendLine($"# {titleSub} 标准试卷 · {modeName}");
+            sb.AppendLine();
+            sb.AppendLine($"- **所属考点专题**: {(!string.IsNullOrWhiteSpace(category) ? category : "全部专题模块")}");
+            sb.AppendLine($"- **生成时间**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"- **题量统计**: 共 {questions.Count} 道试题");
+            sb.AppendLine($"- **版本属性**: {(includeAnswers ? "包含标准答案与权威名师解析，适用于备课、教研讲评与批改对照" : "不含参考答案与解析，适用于限时模考、课堂测验与课后自主练习")}");
+            sb.AppendLine();
+            sb.AppendLine("---");
+            sb.AppendLine();
+
+            int idx = 1;
+            foreach (var q in questions)
+            {
+                string typeStr = q.Type switch
+                {
+                    QuestionType.SingleChoice => "单选题",
+                    QuestionType.MultipleChoice => "多选题",
+                    QuestionType.FillInBlank => "填空题",
+                    QuestionType.ShortAnswer => "简答题",
+                    QuestionType.EssayAnalysis => "综合大题",
+                    _ => q.Type.ToString()
+                };
+
+                sb.AppendLine($"### 第 {idx} 题 · [{q.Subject} - {q.Category}] {typeStr} (难度: {q.Difficulty}星)");
+                sb.AppendLine();
+                sb.AppendLine(q.Stem);
+                sb.AppendLine();
+
+                if (!string.IsNullOrWhiteSpace(q.OptionsJson))
+                {
+                    try
+                    {
+                        var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                        if (opts != null && opts.Count > 0)
+                        {
+                            foreach (var opt in opts)
+                            {
+                                sb.AppendLine($"- {opt}");
+                            }
+                            sb.AppendLine();
+                        }
+                    }
+                    catch { }
+                }
+
+                if (includeAnswers)
+                {
+                    sb.AppendLine($"- ✅ **参考答案**: {q.CorrectAnswer}");
+                    if (!string.IsNullOrWhiteSpace(q.StandardAnalysis))
+                    {
+                        sb.AppendLine($"- 💡 **名师深度解析**: {q.StandardAnalysis}");
+                    }
+                }
+                else
+                {
+                    if (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
+                    {
+                        sb.AppendLine("- 📝 **考生选择**: [　　]");
+                    }
+                    else if (q.Type == QuestionType.FillInBlank)
+                    {
+                        sb.AppendLine("- 📝 **考生作答**: ____________________");
+                    }
+                    else
+                    {
+                        sb.AppendLine("- 📝 **答题区域**:");
+                        sb.AppendLine("```");
+                        sb.AppendLine();
+                        sb.AppendLine();
+                        sb.AppendLine("```");
+                    }
+                }
+
+                sb.AppendLine();
+                idx++;
+            }
+
+            return sb.ToString();
+        }
+
         public async Task<int> BatchDeleteQuestionsAsync(IEnumerable<Guid> ids, Guid userId)
         {
             if (ids == null) return 0;

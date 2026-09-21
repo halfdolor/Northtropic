@@ -167,6 +167,7 @@ app.MapGet("/api/questions/export", async (
     string? category,
     bool? isPublic,
     Northtropic.Models.PublishStatusEnum? status,
+    bool? includeAnswers,
     string? ticket) =>
 {
     if (!await exportConcurrencyLock.WaitAsync(2000))
@@ -192,6 +193,16 @@ app.MapGet("/api/questions/export", async (
 
         format = format?.ToLowerInvariant();
 
+        if (format == "markdown" || format == "md")
+        {
+            bool withAnswers = includeAnswers ?? true;
+            var mdStr = await mgmtService.ExportQuestionsMarkdownAsync(currentUserId, subject, category, isPublic, status, includeAnswers: withAnswers);
+            var mdBytes = System.Text.Encoding.UTF8.GetBytes(mdStr);
+            string subName = !string.IsNullOrWhiteSpace(subject) ? subject : "题库试卷";
+            string modeName = withAnswers ? "全解版" : "空白自测版";
+            string filename = $"{subName}_{modeName}_{DateTime.Now:yyyyMMddHHmmss}.md";
+            return Results.File(mdBytes, "text/markdown; charset=utf-8", filename);
+        }
         if (format == "xlsx" || format == "excel")
         {
             var xlsxBytes = await mgmtService.ExportQuestionsXlsxAsync(currentUserId, subject, category, isPublic, status);

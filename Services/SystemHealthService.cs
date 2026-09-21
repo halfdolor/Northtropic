@@ -4746,6 +4746,13 @@ namespace Northtropic.Services
                     "【答案】", "【参考答案】", "【标准答案】", "【正确答案】",
                     "【答案解析】", "【题目详解】", "【解析】", "【分析】", "【考点】", "【选项】", "【提示】",
                     "【参考解法】", "【解题思路】", "【参考结论】", "【正确选项】", "【本题解答】",
+                    "【参考解题结论】", "【标准答案为】", "【本题答案为】", "【本题正确选项】", "【解析结论】", "【核心考点】",
+                    "【解题指引】", "【命题立意】", "【答案呈现】", "【本题选】",
+                    "由此可得：", "由此可得:", "根据题意可得：", "根据题意可得:", "经计算可知：", "经计算可知:",
+                    "综合以上分析，选：", "综合以上分析，选:", "综合以上分析，故选：", "综合以上分析，故选:",
+                    "由分析可知，选：", "由分析可知，选:", "由分析可知，故选：", "由分析可知，故选:",
+                    "根据题意，选：", "根据题意，选:", "根据题意可知，选：", "根据题意可知，选:",
+                    "由此可推知：", "由此可推知:", "由此可知：", "由此可知:",
                     "综上所述，故选：", "综上所述，故选:", "综上所述：", "综上所述:", "由上可知，选：", "由上可知，选:", "由上可知，选",
                     "故选：", "故选:", "故答案为：", "故答案为:", "故答案是：", "故答案是:",
                     "本题选：", "本题选:", "正确选项：", "正确选项:", "选项：", "选项:",
@@ -4785,6 +4792,14 @@ namespace Northtropic.Services
             {
                 return ((char)('A' + (s[0] - '1'))).ToString();
             }
+            if (s.Length == 1 && s[0] >= '①' && s[0] <= '⑧')
+            {
+                return ((char)('A' + (s[0] - '①'))).ToString();
+            }
+            if (s.Length == 1 && s[0] >= 'Ⅰ' && s[0] <= 'Ⅵ')
+            {
+                return ((char)('A' + (s[0] - 'Ⅰ'))).ToString();
+            }
             return s;
         }
 
@@ -4819,8 +4834,8 @@ namespace Northtropic.Services
             cleanedStem = stem;
             if (string.IsNullOrWhiteSpace(stem)) return new List<string>();
 
-            // 匹配 A 开头的选项序列，例如 A. ... B. ... C. ... D. ... 或 A．... B．... 或 A、... B、... 或 (A)... 或 （A）... 或 【A】... 或 A:...
-            var optionPattern = @"(?:(?<=^|[\s，。；：！？\.,:;!\?_\-\(\)（）\[\]【】])([A-H])[\.．、:：\s]|\(([A-H])\)|\（([A-H])\）|【([A-H])】)\s*";
+            // 匹配 A 开头的选项序列，例如 A. ... B. ... C. ... D. ... 或 A．... B．... 或 A、... B、... 或 (A)... 或 （A）... 或 【A】... 或 A:... 或 A）... 或 [A]... 或 ①... ②... 或 Ⅰ... Ⅱ...
+            var optionPattern = @"(?:(?<=^|[\s，。；：！？\.,:;!\?_\-\(\)（）\[\]【】])([A-H])[\.．、:：\s\)\）]|\(([A-H])\)|\（([A-H])\）|【([A-H])】|\[([A-H])\]|([①②③④⑤⑥⑦⑧])|([ⅠⅡⅢⅣⅤⅥ]))\s*";
             var matches = System.Text.RegularExpressions.Regex.Matches(stem, optionPattern);
 
             if (matches.Count >= 2)
@@ -4828,13 +4843,13 @@ namespace Northtropic.Services
                 var letters = new List<char>();
                 foreach (System.Text.RegularExpressions.Match m in matches)
                 {
-                    var letterStr = m.Groups[1].Success ? m.Groups[1].Value :
-                                   (m.Groups[2].Success ? m.Groups[2].Value :
-                                   (m.Groups[3].Success ? m.Groups[3].Value : m.Groups[4].Value));
-                    if (!string.IsNullOrEmpty(letterStr))
-                    {
-                        letters.Add(char.ToUpperInvariant(letterStr[0]));
-                    }
+                    if (m.Groups[1].Success) letters.Add(char.ToUpperInvariant(m.Groups[1].Value[0]));
+                    else if (m.Groups[2].Success) letters.Add(char.ToUpperInvariant(m.Groups[2].Value[0]));
+                    else if (m.Groups[3].Success) letters.Add(char.ToUpperInvariant(m.Groups[3].Value[0]));
+                    else if (m.Groups[4].Success) letters.Add(char.ToUpperInvariant(m.Groups[4].Value[0]));
+                    else if (m.Groups[5].Success) letters.Add(char.ToUpperInvariant(m.Groups[5].Value[0]));
+                    else if (m.Groups[6].Success) letters.Add((char)('A' + (m.Groups[6].Value[0] - '①')));
+                    else if (m.Groups[7].Success) letters.Add((char)('A' + (m.Groups[7].Value[0] - 'Ⅰ')));
                 }
 
                 if (letters.Count >= 2 && letters[0] == 'A')

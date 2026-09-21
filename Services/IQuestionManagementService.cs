@@ -20,6 +20,7 @@ namespace Northtropic.Services
         Task<string> ExportQuestionsJsonAsync(Guid currentUserId, string? subject = null, string? category = null, bool? isPublic = null, PublishStatusEnum? status = null, IEnumerable<Guid>? specificQuestionIds = null);
         Task<byte[]> ExportQuestionsCsvAsync(Guid currentUserId, string? subject = null, string? category = null, bool? isPublic = null, PublishStatusEnum? status = null, IEnumerable<Guid>? specificQuestionIds = null);
         Task<byte[]> ExportQuestionsXlsxAsync(Guid currentUserId, string? subject = null, string? category = null, bool? isPublic = null, PublishStatusEnum? status = null, IEnumerable<Guid>? specificQuestionIds = null);
+        Task<string> ExportQuestionsMarkdownAsync(Guid currentUserId, string? subject = null, string? category = null, bool? isPublic = null, PublishStatusEnum? status = null, IEnumerable<Guid>? specificQuestionIds = null, bool includeAnswers = true);
         Task<int> BatchDeleteQuestionsAsync(IEnumerable<Guid> ids, Guid userId);
         Task<int> BatchDirectPublishAsync(IEnumerable<Guid> ids, Guid userId);
         Task<int> BatchRetractToPrivateAsync(IEnumerable<Guid> ids, Guid userId);

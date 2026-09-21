@@ -3131,6 +3131,8 @@ namespace Northtropic.Services
                 s = s.Replace("v_{1}", "v1").Replace("v_1", "v1").Replace("v_{2}", "v2").Replace("v_2", "v2");
                 s = s.Replace("w_{0}", "w0").Replace("w_0", "w0");
                 s = s.Replace("v_{m}", "vm").Replace("v_m", "vm");
+                s = s.Replace("x_{1}", "x1").Replace("x_1", "x1").Replace("x_{2}", "x2").Replace("x_2", "x2");
+                s = s.Replace("y_{1}", "y1").Replace("y_1", "y1").Replace("y_{2}", "y2").Replace("y_2", "y2");
                 s = s.Replace("’", "'").Replace("`", "'").Replace("^{\\prime}", "'").Replace("^\\prime", "'");
                 s = s.Replace("f_{浮}", "f浮").Replace("f_浮", "f浮").Replace("f_{向}", "f").Replace("f_向", "f");
                 s = s.Replace("f_{1}", "f1").Replace("f_1", "f1").Replace("f_{2}", "f2").Replace("f_2", "f2");
@@ -3141,6 +3143,13 @@ namespace Northtropic.Services
                 s = s.Replace("w_{有}", "w有").Replace("w_有", "w有").Replace("w_{总}", "w总").Replace("w_总", "w总").Replace("w_{合}", "w合").Replace("w_合", "w合");
                 s = s.Replace("w_{有用}", "w有").Replace("w_有用", "w有").Replace("w有用", "w有");
                 s = s.Replace("ρ_{液}", "ρ液").Replace("ρ_液", "ρ液").Replace("v_{排}", "v排").Replace("v_排", "v排");
+                s = s.Replace("\\sqrt", "√").Replace("sqrt", "√");
+                s = s.Replace("\\varepsilon_r", "εr").Replace("\\varepsilon", "ε").Replace("\\epsilon", "ε").Replace("ε_r", "εr").Replace("ε_{r}", "εr");
+                s = s.Replace("n_a", "na").Replace("n_{a}", "na").Replace("n_A", "na").Replace("n_{A}", "na");
+                s = s.Replace("a_n", "an").Replace("a_{n}", "an").Replace("s_n", "sn").Replace("s_{n}", "sn");
+                s = s.Replace("m_0", "m0").Replace("m_{0}", "m0");
+                s = s.Replace("\\vec{a}", "a").Replace("\\vec{b}", "b").Replace("\\vec", "");
+                s = s.Replace("||", "").Replace("|", "");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\frac\{([^}]+)\}\{([^}]+)\}", m =>
                 {
                     var num = m.Groups[1].Value;
@@ -3149,6 +3158,7 @@ namespace Northtropic.Services
                     if ((num.Contains('+') || num.Contains('-')) && !num.StartsWith("(") && !num.EndsWith(")")) num = $"({num})";
                     return $"{num}/{den}";
                 });
+                s = s.Replace("{", "(").Replace("}", ")");
                 return s;
             }
 
@@ -3496,6 +3506,114 @@ namespace Northtropic.Services
                 "w=cm/(1000ρ)", "cm/(1000ρ)=w", "w=(cm)/(1000ρ)", "(cm)/(1000ρ)=w"
             };
             if (concentrationGroup.Contains(ca) && concentrationGroup.Contains(cb)) return true;
+
+            // 46. 万有引力与天体运动黄金代换公式: GM = gR² <=> g = GM/R² <=> GM = gr² <=> g' = GM/r² <=> gR² = GM
+            var goldenSubstitutionGroup = new HashSet<string>
+            {
+                "gm=gr²", "gr²=gm", "g=gm/r²", "gm/r²=g", "g=(gm)/r²", "(gm)/r²=g",
+                "gm=gr'²", "gr'²=gm", "g'=gm/r'²", "gm/r'²=g'",
+                "g'=gm/r²", "gm/r²=g'", "gm=g'r²", "g'r²=gm",
+                "gm=g(r²)", "g(r²)=gm"
+            };
+            if (goldenSubstitutionGroup.Contains(ca) && goldenSubstitutionGroup.Contains(cb)) return true;
+
+            // 47. 第一宇宙速度推导公式: v = √(gR) <=> v = √(GM/R) <=> v² = gR <=> v² = GM/R <=> v1 = √(gR)
+            var firstCosmicGroup = new HashSet<string>
+            {
+                "v=√(gr)", "√(gr)=v", "v=√(gm/r)", "√(gm/r)=v", "v²=gr", "gr=v²", "v²=gm/r", "gm/r=v²",
+                "v1=√(gr)", "√(gr)=v1", "v1=√(gm/r)", "√(gm/r)=v1", "v1²=gr", "gr=v1²",
+                "v=(gr)^0.5", "v=(gm/r)^0.5"
+            };
+            if (firstCosmicGroup.Contains(ca) && firstCosmicGroup.Contains(cb)) return true;
+
+            // 48. LC振荡电路固有周期与频率: T = 2π√(LC) <=> f = 1/(2π√(LC)) <=> ω = 1/√(LC)
+            var lcGroup1 = new HashSet<string>
+            {
+                "t=2π√(lc)", "2π√(lc)=t", "t=2π(lc)^0.5"
+            };
+            if (lcGroup1.Contains(ca) && lcGroup1.Contains(cb)) return true;
+            var lcGroup2 = new HashSet<string>
+            {
+                "f=1/(2π√(lc))", "1/(2π√(lc))=f", "f=1/(2π(lc)^0.5)"
+            };
+            if (lcGroup2.Contains(ca) && lcGroup2.Contains(cb)) return true;
+            var lcGroup3 = new HashSet<string>
+            {
+                "ω=1/√(lc)", "1/√(lc)=ω", "ω=1/(lc)^0.5"
+            };
+            if (lcGroup3.Contains(ca) && lcGroup3.Contains(cb)) return true;
+
+            // 49. 化学反应速率与平衡常数公式: v = Δc/Δt <=> Δc = v*Δt <=> K = [C]^c[D]^d/([A]^a[B]^b)
+            var chemRateGroup = new HashSet<string>
+            {
+                "v=δc/δt", "δc/δt=v", "δc=vδt", "vδt=δc", "v=δc/t", "δc/t=v", "δc=vt", "vt=δc"
+            };
+            if (chemRateGroup.Contains(ca) && chemRateGroup.Contains(cb)) return true;
+
+            // 50. 阿伏加德罗常数微观与宏观换算: N = n*NA <=> n = N/NA <=> NA = N/n <=> M = m0*NA <=> m0 = M/NA
+            var avogadroGroup1 = new HashSet<string>
+            {
+                "n=nna", "nna=n", "n=n/na", "n/na=n", "na=n/n", "n/n=na"
+            };
+            if (avogadroGroup1.Contains(ca) && avogadroGroup1.Contains(cb)) return true;
+            var avogadroGroup2 = new HashSet<string>
+            {
+                "m=m0na", "m0na=m", "m0=m/na", "m/na=m0", "na=m/m0", "m/m0=na"
+            };
+            if (avogadroGroup2.Contains(ca) && avogadroGroup2.Contains(cb)) return true;
+
+            // 51. 磁感应强度定义式与安培力扩展: B = F/(IL) <=> F = BIL <=> B = F/(qv)
+            var magFieldGroup = new HashSet<string>
+            {
+                "b=f/(il)", "f/(il)=b", "b=f/il", "f/il=b", "b=f/(qv)", "f/(qv)=b", "b=f/qv", "f=bil", "bil=f"
+            };
+            if (magFieldGroup.Contains(ca) && magFieldGroup.Contains(cb)) return true;
+
+            // 52. 高中数学等差数列通项与前n项和: an = a1 + (n-1)d <=> an - a1 = (n-1)d <=> Sn = n(a1+an)/2 <=> Sn = na1 + 0.5n(n-1)d
+            var apTermGroup = new HashSet<string>
+            {
+                "an=a1+(n-1)d", "a1+(n-1)d=an", "an-a1=(n-1)d", "(n-1)d=an-a1", "an=a1+nd-d"
+            };
+            if (apTermGroup.Contains(ca) && apTermGroup.Contains(cb)) return true;
+            var apSumGroup = new HashSet<string>
+            {
+                "sn=n(a1+an)/2", "n(a1+an)/2=sn", "sn=0.5n(a1+an)", "sn=(n(a1+an))/2",
+                "sn=na1+0.5n(n-1)d", "sn=na1+n(n-1)d/2", "na1+n(n-1)d/2=sn", "sn=na1+(n(n-1)d)/2"
+            };
+            if (apSumGroup.Contains(ca) && apSumGroup.Contains(cb)) return true;
+
+            // 53. 高中数学等比数列通项与前n项和: an = a1*q^(n-1) <=> Sn = a1(1-q^n)/(1-q) <=> Sn = (a1 - an*q)/(1-q)
+            var gpTermGroup = new HashSet<string>
+            {
+                "an=a1q^(n-1)", "a1q^(n-1)=an"
+            };
+            if (gpTermGroup.Contains(ca) && gpTermGroup.Contains(cb)) return true;
+            var gpSumGroup = new HashSet<string>
+            {
+                "sn=a1(1-q^n)/(1-q)", "a1(1-q^n)/(1-q)=sn", "sn=(a1(1-q^n))/(1-q)",
+                "sn=(a1-anq)/(1-q)", "(a1-anq)/(1-q)=sn", "sn=a1(1-q^(n))/(1-q)"
+            };
+            if (gpSumGroup.Contains(ca) && gpSumGroup.Contains(cb)) return true;
+
+            // 54. 平面向量数量积与坐标/夹角运算: a*b = ab*cosθ <=> cosθ = (a*b)/(ab) <=> a*b = x1x2 + y1y2
+            var vectorDotGroup = new HashSet<string>
+            {
+                "ab=abcosθ", "abcosθ=ab", "ab=x1x2+y1y2", "x1x2+y1y2=ab",
+                "cosθ=(ab)/(ab)", "(ab)/(ab)=cosθ", "cosθ=(x1x2+y1y2)/(ab)"
+            };
+            if (vectorDotGroup.Contains(ca) && vectorDotGroup.Contains(cb)) return true;
+
+            // 55. 电容器电容定义式与平行板决定式: C = Q/U <=> Q = CU <=> U = Q/C <=> C = εr*S/(4πkd)
+            var capDefGroup = new HashSet<string>
+            {
+                "c=q/u", "q/u=c", "q=cu", "cu=q", "u=q/c", "q/c=u"
+            };
+            if (capDefGroup.Contains(ca) && capDefGroup.Contains(cb)) return true;
+            var capPlateGroup = new HashSet<string>
+            {
+                "c=εrs/(4πkd)", "c=(εrs)/(4πkd)", "(εrs)/(4πkd)=c", "c=εs/(4πkd)", "(εs)/(4πkd)=c"
+            };
+            if (capPlateGroup.Contains(ca) && capPlateGroup.Contains(cb)) return true;
 
             return false;
         }

@@ -1708,11 +1708,19 @@
                                 </MudButton>
                                 <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ContentCopy"
                                            OnClick="@CopyAllSessionErrorsToClipboard">
-                                    📋 导出/复制本轮错题清单
+                                    📋 复制错题清单
                                 </MudButton>
                                 <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download"
                                            OnClick="@DownloadSessionErrorsMarkdownAsync">
-                                    📥 下载错题复盘文档 (.md)
+                                    📥 错题复盘 (.md)
+                                </MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.Description"
+                                           OnClick="@DownloadFullSessionMarkdownAsync">
+                                    📥 全卷复盘 (.md)
+                                </MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Quiz"
+                                           OnClick="@DownloadBlankSessionMarkdownAsync">
+                                    📝 全卷空白测验 (.md)
                                 </MudButton>
                             </div>
                         </div>
@@ -1919,16 +1927,42 @@
                 }
             </div>
 
-            <!-- 第二行：辅助导航与关闭（精致轻量对齐排版） -->
-            <div class="d-flex align-center justify-space-between w-100 pt-2" style="border-top: 1px dashed rgba(255, 255, 255, 0.08);">
-                <MudButton Variant="Variant.Text" 
-                           Color="Color.Info" 
-                           Size="Size.Small" 
-                           StartIcon="@Icons.Material.Filled.Analytics" 
-                           OnClick='() => NavigationManager.NavigateTo("/practice-records")'
-                           Style="font-size: 0.82rem; font-weight: 600; white-space: nowrap;">
-                    📊 查看历史学情与战报大屏
-                </MudButton>
+            <!-- 第二行：学情导出、辅助导航与关闭 -->
+            <div class="d-flex align-center justify-space-between w-100 pt-2 flex-wrap gap-2" style="border-top: 1px dashed rgba(255, 255, 255, 0.08);">
+                <div class="d-flex align-center gap-2 flex-wrap">
+                    <MudButton Variant="Variant.Text" 
+                               Color="Color.Info" 
+                               Size="Size.Small" 
+                               StartIcon="@Icons.Material.Filled.Analytics" 
+                               OnClick='() => NavigationManager.NavigateTo("/practice-records")'
+                               Style="font-size: 0.82rem; font-weight: 600; white-space: nowrap;">
+                        📊 学情大屏
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" 
+                               Color="Color.Secondary" 
+                               Size="Size.Small" 
+                               StartIcon="@Icons.Material.Filled.Download" 
+                               OnClick="DownloadFullSessionMarkdownAsync"
+                               Style="font-size: 0.82rem; font-weight: 600; white-space: nowrap;">
+                        📥 导出全卷复盘
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" 
+                               Color="Color.Tertiary" 
+                               Size="Size.Small" 
+                               StartIcon="@Icons.Material.Filled.Quiz" 
+                               OnClick="DownloadBlankSessionMarkdownAsync"
+                               Style="font-size: 0.82rem; font-weight: 600; white-space: nowrap;">
+                        📝 导出空白重测卷
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" 
+                               Color="Color.Default" 
+                               Size="Size.Small" 
+                               StartIcon="@Icons.Material.Filled.ContentCopy" 
+                               OnClick="CopySessionSummaryToClipboardAsync"
+                               Style="font-size: 0.82rem; font-weight: 500; white-space: nowrap;">
+                        📋 复制战报概要
+                    </MudButton>
+                </div>
 
                 <div class="d-flex align-center gap-2">
                     <MudButton Variant="Variant.Text" 
@@ -4215,6 +4249,213 @@
         catch (Exception ex)
         {
             Snackbar.Add($"错题文档下载失败: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private async Task DownloadFullSessionMarkdownAsync()
+    {
+        try
+        {
+            if (_questions == null || _questions.Count == 0)
+            {
+                Snackbar.Add("本轮尚无试题可供导出！", Severity.Warning);
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"# 本轮刷题全卷复盘报告");
+            sb.AppendLine();
+            sb.AppendLine($"- **学科与题库**: {_selectedSubject} · {_selectedCategory}");
+            sb.AppendLine($"- **生成时间**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            int total = _questions.Count;
+            int correct = _sessionCorrectCount;
+            double rate = total > 0 ? (double)correct / total : 0;
+            sb.AppendLine($"- **作答概况**: 共 {total} 题，答对 {correct} 题，正确率 {rate:P0}，最高连对 {_sessionMaxCombo} 题");
+            if (!string.IsNullOrWhiteSpace(_sessionPaceAdvice))
+            {
+                sb.AppendLine($"- **学情节奏建议**: {_sessionPaceAdvice}");
+            }
+            sb.AppendLine();
+
+            for (int i = 0; i < _questions.Count; i++)
+            {
+                int qIndex = i + 1;
+                var q = _questions[i];
+                var eval = _evalMode.Contains("整卷统一")
+                    ? (_paperEvalResults.TryGetValue(qIndex, out var pe) ? pe : null)
+                    : (_instantEvalResults.TryGetValue(qIndex, out var ie) ? ie : null);
+                bool isCorrect = eval?.IsCorrect == true;
+
+                sb.AppendLine("---");
+                sb.AppendLine($"## 第 {qIndex} 题 · [{q.Subject} - {q.Category}] {q.TypeDisplayName}");
+                sb.AppendLine();
+                sb.AppendLine(q.Stem);
+                sb.AppendLine();
+
+                if (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
+                {
+                    if (q.OptionsJson != null)
+                    {
+                        try
+                        {
+                            var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                            if (opts != null && opts.Count > 0)
+                            {
+                                foreach (var opt in opts)
+                                {
+                                    sb.AppendLine($"- {opt}");
+                                }
+                                sb.AppendLine();
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(eval?.UserAnswer))
+                {
+                    sb.AppendLine($"- {(isCorrect ? "✅" : "❌")} **考生作答**: {eval.UserAnswer} (耗时 {eval.TimeTakenSeconds} 秒)");
+                }
+                else
+                {
+                    sb.AppendLine($"- ⚠️ **考生作答**: (未作答)");
+                }
+                sb.AppendLine($"- 📌 **标准答案**: {q.CorrectAnswer}");
+                if (!string.IsNullOrWhiteSpace(eval?.EquivalentMatchReason))
+                {
+                    sb.AppendLine($"- 🎯 **智能等价说明**: {eval.EquivalentMatchReason}");
+                }
+                if (!string.IsNullOrWhiteSpace(q.StandardAnalysis))
+                {
+                    sb.AppendLine($"- 💡 **深度解析**: {q.StandardAnalysis}");
+                }
+                sb.AppendLine();
+            }
+
+            string safeSubject = string.IsNullOrWhiteSpace(_selectedSubject) ? "全科" : _selectedSubject.Trim();
+            string fileName = $"全卷复盘_{safeSubject}_{DateTime.Now:yyyyMMdd_HHmmss}.md";
+            await JSRuntime.InvokeVoidAsync("downloadTextFile", fileName, sb.ToString(), "text/markdown;charset=utf-8");
+            Snackbar.Add($"📥 已开始下载全卷复盘文档: {fileName}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"全卷文档下载失败: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private async Task DownloadBlankSessionMarkdownAsync()
+    {
+        try
+        {
+            if (_questions == null || _questions.Count == 0)
+            {
+                Snackbar.Add("本轮尚无试题可供生成测试卷！", Severity.Warning);
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"# 本轮刷题自测练习卷 · 学生空白版");
+            sb.AppendLine();
+            sb.AppendLine($"- **考试学科**: {_selectedSubject} · {_selectedCategory}");
+            sb.AppendLine($"- **试题总量**: 共 {_questions.Count} 题");
+            sb.AppendLine($"- **建议用时**: {_questions.Count * 2} 分钟");
+            sb.AppendLine($"- **生成时间**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine();
+            sb.AppendLine("> 说明：本试卷为本轮原题空白测试版，已隐藏所有答案与名师解析，供二刷巩固或纸质自测。");
+            sb.AppendLine();
+
+            for (int i = 0; i < _questions.Count; i++)
+            {
+                int qIndex = i + 1;
+                var q = _questions[i];
+
+                sb.AppendLine("---");
+                sb.AppendLine($"## 第 {qIndex} 题 · [{q.Subject} - {q.Category}] {q.TypeDisplayName}");
+                sb.AppendLine();
+                sb.AppendLine(q.Stem);
+                sb.AppendLine();
+
+                if (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
+                {
+                    if (q.OptionsJson != null)
+                    {
+                        try
+                        {
+                            var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson);
+                            if (opts != null && opts.Count > 0)
+                            {
+                                foreach (var opt in opts)
+                                {
+                                    sb.AppendLine($"- {opt}");
+                                }
+                                sb.AppendLine();
+                            }
+                        }
+                        catch { }
+                    }
+                    sb.AppendLine("- 📝 **考生作答**: [　　]");
+                }
+                else if (q.Type == QuestionType.FillInBlank)
+                {
+                    sb.AppendLine("- 📝 **考生作答**: ________________________________________");
+                }
+                else
+                {
+                    sb.AppendLine("- 📝 **答题区**:");
+                    sb.AppendLine();
+                    sb.AppendLine("```");
+                    sb.AppendLine();
+                    sb.AppendLine();
+                    sb.AppendLine("```");
+                }
+                sb.AppendLine();
+            }
+
+            string safeSubject = string.IsNullOrWhiteSpace(_selectedSubject) ? "全科" : _selectedSubject.Trim();
+            string fileName = $"空白重测卷_{safeSubject}_{DateTime.Now:yyyyMMdd_HHmmss}.md";
+            await JSRuntime.InvokeVoidAsync("downloadTextFile", fileName, sb.ToString(), "text/markdown;charset=utf-8");
+            Snackbar.Add($"📝 已开始下载空白重测卷: {fileName}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"空白重测卷下载失败: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private async Task CopySessionSummaryToClipboardAsync()
+    {
+        try
+        {
+            int total = _questions?.Count ?? 0;
+            int correct = _sessionCorrectCount;
+            int wrong = GetSessionWrongCount();
+            double rate = total > 0 ? (double)correct / total : 0;
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("🏆 【Northtropic 极岛智能练题学情战报】");
+            sb.AppendLine($"📚 学科专题: {_selectedSubject} · {_selectedCategory}");
+            sb.AppendLine($"📊 成绩统计: 共 {total} 题 | 答对 {correct} 题 | 答错 {wrong} 题 | 正确率 {rate:P0}");
+            sb.AppendLine($"⚡ 连对锋芒: 最高连胜 {_sessionMaxCombo} 题");
+            if (!string.IsNullOrWhiteSpace(_sessionPaceAdvice))
+            {
+                sb.AppendLine($"💡 学情反馈: {_sessionPaceAdvice}");
+            }
+            if (wrong > 0)
+            {
+                sb.AppendLine($"🎯 错题归档: {wrong} 道错题已自动收录至专属智能错题本！");
+            }
+            else
+            {
+                sb.AppendLine("🌟 完美表现: 本轮全对无错题，继续保持！");
+            }
+            sb.AppendLine($"⏰ 时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString().TrimEnd());
+            Snackbar.Add("📋 学情战报概要已成功复制到剪贴板！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"复制战报概要失败: {ex.Message}", Severity.Warning);
         }
     }
 

@@ -41,6 +41,12 @@
                 <MudMenuItem Icon="@Icons.Material.Filled.Code" IconColor="Color.Warning" OnClick="ExportQuestionsJsonAsync">
                     结构化 JSON 备份 (.json)
                 </MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Filled.Description" IconColor="Color.Primary" OnClick="@(async () => await ExportQuestionsMarkdownAsync(true))">
+                    标准教研试卷 · 教师详解版 (.md)
+                </MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Filled.Quiz" IconColor="Color.Secondary" OnClick="@(async () => await ExportQuestionsMarkdownAsync(false))">
+                    课堂测试卷 · 学生自测版 (.md)
+                </MudMenuItem>
             </MudMenu>
             @if (_currentUser != null && _currentUser.CanManageQuestionBank)
             {
@@ -185,6 +191,12 @@
                     </MudMenuItem>
                     <MudMenuItem Icon="@Icons.Material.Filled.Code" IconColor="Color.Warning" OnClick="@(async () => await ExportSelectedQuestionsAsync("json"))">
                         导出为 JSON (.json)
+                    </MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Filled.Description" IconColor="Color.Primary" OnClick="@(async () => await ExportSelectedQuestionsAsync("md_full"))">
+                        标准试卷 · 教师详解版 (.md)
+                    </MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Filled.Quiz" IconColor="Color.Secondary" OnClick="@(async () => await ExportSelectedQuestionsAsync("md_blank"))">
+                        课堂测试卷 · 学生自测版 (.md)
                     </MudMenuItem>
                 </MudMenu>
                 @if (_currentUser != null && _currentUser.CanManageQuestionBank)
@@ -886,6 +898,40 @@
         }
     }
 
+    private async Task ExportQuestionsMarkdownAsync(bool includeAnswers)
+    {
+        if (_currentUser == null) return;
+        _isExporting = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            string? subject = _selectedSubject == "全部学科" ? null : _selectedSubject;
+            bool? isPublic = null;
+            PublishStatusEnum? status = null;
+
+            if (_scopeFilter == "全网公共题库") isPublic = true;
+            else if (_scopeFilter == "我的私有题库") isPublic = false;
+            else if (_scopeFilter == "待审核转公开") status = PublishStatusEnum.Pending;
+
+            string mdContent = await QuestionManagementService.ExportQuestionsMarkdownAsync(_currentUser.Id, subject, null, isPublic, status, includeAnswers: includeAnswers);
+            string modeName = includeAnswers ? "全解版" : "学生空白版";
+            string fileName = $"题库试卷_{_selectedSubject}_{modeName}_{DateTime.Now:yyyyMMdd_HHmmss}.md";
+
+            await JSRuntime.InvokeVoidAsync("downloadTextFile", fileName, mdContent, "text/markdown;charset=utf-8");
+            Snackbar.Add($"🎉 成功导出题库标准 Markdown 试卷（{modeName}）：{fileName}！", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"题库 Markdown 试卷导出失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isExporting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
     private async Task ExportSelectedQuestionsAsync(string format)
     {
         if (_currentUser == null || !_selectedQuestionIds.Any()) return;
@@ -918,6 +964,15 @@
                 string base64 = Convert.ToBase64String(xlsxBytes);
                 await JSRuntime.InvokeVoidAsync("downloadBase64File", fileName, base64, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
                 Snackbar.Add($"🎉 成功导出 {selectedIds.Count} 道勾选试题 Excel 表格：{fileName}！", Severity.Success);
+            }
+            else if (format == "md_full" || format == "md_blank")
+            {
+                bool includeAnswers = format == "md_full";
+                string mdContent = await QuestionManagementService.ExportQuestionsMarkdownAsync(_currentUser.Id, specificQuestionIds: selectedIds, includeAnswers: includeAnswers);
+                string modeName = includeAnswers ? "全解版" : "学生空白版";
+                string fileName = $"题库勾选试卷_{selectedIds.Count}题_{modeName}_{timestamp}.md";
+                await JSRuntime.InvokeVoidAsync("downloadTextFile", fileName, mdContent, "text/markdown;charset=utf-8");
+                Snackbar.Add($"🎉 成功导出 {selectedIds.Count} 道勾选试卷（{modeName}）：{fileName}！", Severity.Success);
             }
         }
         catch (Exception ex)
