@@ -3584,6 +3584,55 @@ namespace Northtropic.Services
                     modified = true;
                 }
 
+                // 深度自愈：清洗题干、正确答案与选项中的隐藏零宽字符与残留 HTML 实体
+                static string CleanInvisibleAndHtmlEntities(string str)
+                {
+                    if (string.IsNullOrEmpty(str)) return str;
+                    return str.Replace("\u200B", "")
+                              .Replace("\u200C", "")
+                              .Replace("\u200D", "")
+                              .Replace("\uFEFF", "")
+                              .Replace("\u200E", "")
+                              .Replace("\u200F", "")
+                              .Replace("\u202A", "")
+                              .Replace("\u202B", "")
+                              .Replace("\u202C", "")
+                              .Replace("&nbsp;", " ")
+                              .Replace("&amp;", "&")
+                              .Replace("&lt;", "<")
+                              .Replace("&gt;", ">")
+                              .Replace("&quot;", "\"")
+                              .Replace("&#39;", "'");
+                }
+
+                if (!string.IsNullOrEmpty(q.Stem))
+                {
+                    var cleanedStem = CleanInvisibleAndHtmlEntities(q.Stem);
+                    if (cleanedStem != q.Stem)
+                    {
+                        q.Stem = cleanedStem;
+                        modified = true;
+                    }
+                }
+                if (!string.IsNullOrEmpty(q.CorrectAnswer))
+                {
+                    var cleanedAns = CleanInvisibleAndHtmlEntities(q.CorrectAnswer);
+                    if (cleanedAns != q.CorrectAnswer)
+                    {
+                        q.CorrectAnswer = cleanedAns;
+                        modified = true;
+                    }
+                }
+                if (!string.IsNullOrEmpty(q.OptionsJson))
+                {
+                    var cleanedOpts = CleanInvisibleAndHtmlEntities(q.OptionsJson);
+                    if (cleanedOpts != q.OptionsJson)
+                    {
+                        q.OptionsJson = cleanedOpts;
+                        modified = true;
+                    }
+                }
+
                 // 领域不变量：公开可见性与审批发布状态对齐自愈
                 if (q.PublishStatus == PublishStatusEnum.Rejected || q.PublishStatus == PublishStatusEnum.Pending)
                 {

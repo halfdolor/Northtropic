@@ -984,6 +984,16 @@
                                 </div>
                             </div>
                         }
+
+                        @if (!string.IsNullOrWhiteSpace(_textAnswer) && IsFormulaOrScientificAnswerCandidate(_textAnswer, q.Subject))
+                        {
+                            <div class="d-flex align-center gap-1.5 px-3 py-1.5 my-1.5 rounded-lg" style="background: rgba(99, 102, 241, 0.08); border: 1px dashed rgba(99, 102, 241, 0.35);">
+                                <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Small" Color="Color.Primary" />
+                                <MudText Typo="Typo.caption" Color="Color.Primary" Style="font-weight: 600;">
+                                    ⚡ 智能科学等价引擎已就绪：支持代数移项变体、无序因式、复合单位换算与等价符号自动识别
+                                </MudText>
+                            </div>
+                        }
                     }
                 }
             </div>
@@ -1239,11 +1249,13 @@
                     </div>
                     @if (!string.IsNullOrWhiteSpace(_lastResult.EquivalentMatchReason))
                     {
-                        <div class="pa-2 rounded" style="background: rgba(34, 197, 94, 0.08); border-left: 3px solid #22c55e;">
-                            <MudText Typo="Typo.caption" Style="color: var(--mud-palette-success); font-weight: 600;">
-                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Style="vertical-align: middle; margin-right: 4px;" />
-                                @_lastResult.EquivalentMatchReason
-                            </MudText>
+                        <div class="pa-2.5 rounded-lg mb-2" style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.12) 0%, rgba(16, 185, 129, 0.06) 100%); border: 1px solid rgba(34, 197, 94, 0.3); border-left: 4px solid #22c55e;">
+                            <div class="d-flex align-center gap-1.5">
+                                <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Small" Color="Color.Success" />
+                                <MudText Typo="Typo.caption" Style="color: var(--mud-palette-success); font-weight: 700; line-height: 1.5;">
+                                    🎯 智能等价认可：@_lastResult.EquivalentMatchReason
+                                </MudText>
+                            </div>
                         </div>
                     }
                     @if (!string.IsNullOrWhiteSpace(_lastResult.Analysis))
@@ -5018,6 +5030,30 @@
                 StateHasChanged();
             }
         });
+    }
+
+    private static bool IsFormulaOrScientificAnswerCandidate(string text, string? subject)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        if (text.Contains('=') || text.Contains('^') || text.Contains('_') || text.Contains('\\') || text.Contains('√') ||
+            text.Contains('π') || text.Contains('θ') || text.Contains('λ') || text.Contains('ω') || text.Contains('ρ') ||
+            text.Contains("²") || text.Contains("³") || text.Contains("<=>") || text.Contains("⇌") ||
+            (text.Contains('/') && text.Any(char.IsLetter)))
+        {
+            return true;
+        }
+        if (subject == "物理" || subject == "化学" || subject == "数学")
+        {
+            if (text.Contains("m/s", StringComparison.OrdinalIgnoreCase) || text.Contains("km/h", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("g/cm", StringComparison.OrdinalIgnoreCase) || text.Contains("kg/m", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("kw", StringComparison.OrdinalIgnoreCase) || text.Contains("pa", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("mol", StringComparison.OrdinalIgnoreCase) || text.Contains("ev", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("kj", StringComparison.OrdinalIgnoreCase) || text.Contains("j/", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void Dispose()

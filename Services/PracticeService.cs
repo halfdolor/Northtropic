@@ -719,6 +719,60 @@ namespace Northtropic.Services
                 var normU = user.Replace(" ", "").ToLowerInvariant();
                 var normC = correct.Replace(" ", "").ToLowerInvariant();
 
+                // 物理与理化核心经典定律与公式等价 (优先于泛用向量代数与粗粒度正则匹配)
+                if (CheckPhysicsFormulaEquivalence(user, correct) || CheckPhysicsFormulaEquivalence(normU, normC))
+                {
+                    var cleanU = normU.Replace("·", "").Replace("\\cdot", "").Replace("\\times", "").Replace("*", "").Replace("（", "(").Replace("）", ")").Replace("＝", "=");
+                    cleanU = System.Text.RegularExpressions.Regex.Replace(cleanU, @"\\frac\{([^}]+)\}\{([^}]+)\}", "$1/$2");
+                    var cleanC = normC.Replace("·", "").Replace("\\cdot", "").Replace("\\times", "").Replace("*", "").Replace("（", "(").Replace("）", ")").Replace("＝", "=");
+                    cleanC = System.Text.RegularExpressions.Regex.Replace(cleanC, @"\\frac\{([^}]+)\}\{([^}]+)\}", "$1/$2");
+
+                    if (cleanU.Contains("u=ed") || cleanC.Contains("u=ed") || cleanU.Contains("e=u/d") || cleanC.Contains("e=u/d") || cleanU.Contains("d=u/e") || cleanC.Contains("d=u/e") ||
+                        cleanU.Contains("u=de") || cleanC.Contains("u=de") || cleanU.Contains("ed=u") || cleanC.Contains("ed=u") || cleanU.Contains("de=u") || cleanC.Contains("de=u"))
+                    {
+                        return $"电场电势差与场强关系等价：已自动识别匀强电场 U=Ed 与 E=U/d 代数变形等价性，对应标准公式 [{correct}]";
+                    }
+                    if (cleanU.Contains("f=qe") || cleanC.Contains("f=qe") || cleanU.Contains("e=f/q") || cleanC.Contains("e=f/q") || cleanU.Contains("q=f/e") || cleanC.Contains("q=f/e") ||
+                        cleanU.Contains("f=eq") || cleanC.Contains("f=eq") || cleanU.Contains("qe=f") || cleanC.Contains("qe=f") || cleanU.Contains("eq=f") || cleanC.Contains("eq=f"))
+                    {
+                        return $"电场力公式等价：已自动识别静电场力 F=qE 与 E=F/q 代数变形等价性，对应标准公式 [{correct}]";
+                    }
+                    if (cleanU.Contains("q/m") || cleanC.Contains("q/m") || cleanU.Contains("q/q") || cleanC.Contains("q/q") ||
+                        cleanU.Contains("q/v") || cleanC.Contains("q/v") || cleanU.Contains("q=mq") || cleanC.Contains("q=mq") ||
+                        cleanU.Contains("q=qm") || cleanC.Contains("q=qm") || cleanU.Contains("q=vq") || cleanC.Contains("q=vq") ||
+                        cleanU.Contains("q=qv") || cleanC.Contains("q=qv") || cleanU.Contains("mq=q") || cleanC.Contains("mq=q") ||
+                        cleanU.Contains("vq=q") || cleanC.Contains("vq=q"))
+                    {
+                        return $"燃料热值公式等价：已自动识别热学热值 Q=mq 或 Q=Vq 的参数移项等价性，对应标准公式 [{correct}]";
+                    }
+                    if (cleanU.Contains("g=mg") || cleanC.Contains("g=mg") || cleanU.Contains("mg=g") || cleanC.Contains("mg=g") ||
+                        cleanU.Contains("m=g/g") || cleanC.Contains("m=g/g") || cleanU.Contains("g=g/m") || cleanC.Contains("g=g/m"))
+                    {
+                        return $"重力公式等价：已自动识别重力与质量关系 G=mg 及其移项等价性，对应标准公式 [{correct}]";
+                    }
+                    if (cleanU.Contains("p1") || cleanC.Contains("p1") || cleanU.Contains("v1") || cleanC.Contains("v1") || cleanU.Contains("t1") || cleanC.Contains("t1"))
+                    {
+                        return $"理想气体状态与实验定律等价：已自动识别理想气体分态状态方程或玻意耳/查理/盖-吕萨克定律等价形式，对应标准公式 [{correct}]";
+                    }
+                    if (cleanU.Contains("(x-h)") || cleanC.Contains("(x-h)") || cleanU.Contains("-b/(2a)") || cleanC.Contains("-b/(2a)") || cleanU.Contains("-b/2a") || cleanC.Contains("-b/2a"))
+                    {
+                        return $"二次函数顶点与对称轴等价：已自动识别二次函数顶点式 y=a(x-h)²+k 或对称轴 x=-b/(2a) 代数等价形式，对应标准公式 [{correct}]";
+                    }
+                    if ((cleanU.Contains("(x-a)") || cleanC.Contains("(x-a)") || cleanU.Contains("(x-x0)") || cleanC.Contains("(x-x0)")) &&
+                        (cleanU.Contains("r²") || cleanC.Contains("r²") || cleanU.Contains("r^2") || cleanC.Contains("r^2")))
+                    {
+                        return $"圆的标准方程等价：已自动识别解析几何圆的标准方程 (x-a)²+(y-b)²=r² 平方项次序与移项等价性，对应标准公式 [{correct}]";
+                    }
+                    if (cleanU.Contains("kw") || cleanC.Contains("kw") ||
+                        cleanU.Contains("10^-14") || cleanC.Contains("10^-14") ||
+                        (cleanU.Contains("[h+]") && cleanU.Contains("[oh-]")) || (cleanC.Contains("[h+]") && cleanC.Contains("[oh-]")) ||
+                        (cleanU.Contains("c(h+)") && cleanU.Contains("c(oh-)")) || (cleanC.Contains("c(h+)") && cleanC.Contains("c(oh-)")))
+                    {
+                        return $"水的离子积常数等价：已自动识别水的离子积 Kw=[H+][OH-] 及其常数值 1.0×10^-14 表达等价性，对应标准公式 [{correct}]";
+                    }
+                    return $"物理核心定律与公式等价：已自动识别物理运动学/力学/电学/光学公式的代数移项与参数等价性，对应标准公式 [{correct}]";
+                }
+
                 // 特殊角三角函数精确值与弧度制双向等价
                 if (CheckTrigonometricSpecialValueEquivalence(user, correct) || CheckTrigonometricSpecialValueEquivalence(normU, normC))
                 {
@@ -1029,11 +1083,7 @@ namespace Northtropic.Services
                     return $"空间/平面向量基底与坐标表达等价：已自动识别向量正交基分解（如 a=xi+yj）与坐标表达 (x,y) 的代数等价性，对应标准答案 [{correct}]";
                 }
 
-                // 物理核心经典运动学/力学/电学/光学公式等价 (优先于泛用向量代数匹配)
-                if (CheckPhysicsFormulaEquivalence(user, correct) || CheckPhysicsFormulaEquivalence(normU, normC))
-                {
-                    return $"物理核心定律与公式等价：已自动识别物理运动学/力学/电学/光学公式的代数移项与参数等价性，对应标准公式 [{correct}]";
-                }
+
 
                 // 平面向量点乘/数量积交换律与模长等价
                 if ((user.Contains("\\vec") || correct.Contains("\\vec") || user.Contains("·") || correct.Contains("·") || user.Contains("*") || correct.Contains("*") || user.Contains("|") || correct.Contains("|")) &&
@@ -3102,6 +3152,9 @@ namespace Northtropic.Services
             if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
             static string CleanPhysics(string s)
             {
+                s = s.Replace("1.0*10^-14", "10^-14").Replace("1.0×10^-14", "10^-14").Replace("1.0x10^-14", "10^-14")
+                     .Replace("1*10^-14", "10^-14").Replace("1×10^-14", "10^-14").Replace("1x10^-14", "10^-14")
+                     .Replace("1.0\\times10^{-14}", "10^-14").Replace("10^{-14}", "10^-14");
                 s = s.Trim().Replace(" ", "").Replace("·", "").Replace("\\cdot", "").Replace("\\times", "").Replace("*", "");
                 s = s.Replace("（", "(").Replace("）", ")").Replace("＝", "=");
                 s = s.ToLowerInvariant();
@@ -3148,6 +3201,10 @@ namespace Northtropic.Services
                 s = s.Replace("n_a", "na").Replace("n_{a}", "na").Replace("n_A", "na").Replace("n_{A}", "na");
                 s = s.Replace("a_n", "an").Replace("a_{n}", "an").Replace("s_n", "sn").Replace("s_{n}", "sn");
                 s = s.Replace("m_0", "m0").Replace("m_{0}", "m0");
+                s = s.Replace("x_0", "x0").Replace("x_{0}", "x0").Replace("y_0", "y0").Replace("y_{0}", "y0");
+                s = s.Replace("k_w", "kw").Replace("k_{w}", "kw");
+                s = s.Replace("c(h+)", "[h+]").Replace("c(h^+)", "[h+]").Replace("c(oh-)", "[oh-]").Replace("c(oh^-)", "[oh-]");
+                s = s.Replace("[h^{+}]", "[h+]").Replace("[oh^{-}]", "[oh-]");
                 s = s.Replace("\\vec{a}", "a").Replace("\\vec{b}", "b").Replace("\\vec", "");
                 s = s.Replace("||", "").Replace("|", "");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\frac\{([^}]+)\}\{([^}]+)\}", m =>
@@ -3614,6 +3671,97 @@ namespace Northtropic.Services
                 "c=εrs/(4πkd)", "c=(εrs)/(4πkd)", "(εrs)/(4πkd)=c", "c=εs/(4πkd)", "(εs)/(4πkd)=c"
             };
             if (capPlateGroup.Contains(ca) && capPlateGroup.Contains(cb)) return true;
+
+            // 56. 匀强电场电势差与电场强度关系: U = Ed <=> E = U/d <=> d = U/E <=> U = dE <=> Ed = U
+            var uEdGroup = new HashSet<string>
+            {
+                "u=ed", "u=de", "ed=u", "de=u", "e=u/d", "u/d=e", "d=u/e", "u/e=d"
+            };
+            if (uEdGroup.Contains(ca) && uEdGroup.Contains(cb)) return true;
+
+            // 57. 电场力公式: F = qE <=> F = Eq <=> E = F/q <=> q = F/E <=> qE = F <=> Eq = F
+            var feGroup = new HashSet<string>
+            {
+                "f=qe", "f=eq", "qe=f", "eq=f", "e=f/q", "f/q=e", "q=f/e", "f/e=q"
+            };
+            if (feGroup.Contains(ca) && feGroup.Contains(cb)) return true;
+
+            // 58. 燃料热值公式: Q = mq <=> Q = qm <=> q = Q/m <=> m = Q/q <=> Q = Vq <=> Q = qV <=> q = Q/V <=> V = Q/q
+            var qHeatGroup1 = new HashSet<string>
+            {
+                "q=mq", "q=qm", "mq=q", "qm=q", "q=q/m", "q/m=q", "m=q/q", "q/q=m"
+            };
+            if (qHeatGroup1.Contains(ca) && qHeatGroup1.Contains(cb)) return true;
+            var qHeatGroup2 = new HashSet<string>
+            {
+                "q=vq", "q=qv", "vq=q", "qv=q", "q=q/v", "q/v=q", "v=q/q", "q/q=v"
+            };
+            if (qHeatGroup2.Contains(ca) && qHeatGroup2.Contains(cb)) return true;
+
+            // 59. 重力与质量关系公式: G = mg <=> mg = G <=> m = G/g <=> g = G/m
+            var gravityWeightGroup = new HashSet<string>
+            {
+                "g=mg", "mg=g", "m=g/g", "g/g=m", "g=g/m", "g/m=g"
+            };
+            if (gravityWeightGroup.Contains(ca) && gravityWeightGroup.Contains(cb)) return true;
+
+            // 60. 理想气体实验三大定律与分态状态方程:
+            // 查理定律: p1/T1 = p2/T2 <=> p1/p2 = T1/T2 <=> p/T = C
+            var charleGroup = new HashSet<string>
+            {
+                "p1/t1=p2/t2", "p2/t2=p1/t1", "p1/p2=t1/t2", "p2/p1=t2/t1", "p1t2=p2t1", "p2t1=p1t2", "p/t=c", "c=p/t"
+            };
+            if (charleGroup.Contains(ca) && charleGroup.Contains(cb)) return true;
+            // 玻意耳定律: p1V1 = p2V2 <=> p1/p2 = V2/V1 <=> pV = C
+            var boyleGroup = new HashSet<string>
+            {
+                "p1v1=p2v2", "p2v2=p1v1", "p1/p2=v2/v1", "p2/p1=v1/v2", "pv=c", "c=pv"
+            };
+            if (boyleGroup.Contains(ca) && boyleGroup.Contains(cb)) return true;
+            // 盖-吕萨克定律: V1/T1 = V2/T2 <=> V1/V2 = T1/T2 <=> V/T = C
+            var gayLussacGroup = new HashSet<string>
+            {
+                "v1/t1=v2/t2", "v2/t2=v1/t1", "v1/v2=t1/t2", "v2/v1=t2/t1", "v1t2=v2t1", "v2t1=v1t2", "v/t=c", "c=v/t"
+            };
+            if (gayLussacGroup.Contains(ca) && gayLussacGroup.Contains(cb)) return true;
+            // 理想气体分态综合状态方程: p1V1/T1 = p2V2/T2
+            var gasCombinedStateGroup = new HashSet<string>
+            {
+                "p1v1/t1=p2v2/t2", "p2v2/t2=p1v1/t1", "(p1v1)/t1=(p2v2)/t2", "(p2v2)/t2=(p1v1)/t1",
+                "p1v1t2=p2v2t1", "p2v2t1=p1v1t2"
+            };
+            if (gasCombinedStateGroup.Contains(ca) && gasCombinedStateGroup.Contains(cb)) return true;
+
+            // 61. 初高中数学二次函数顶点式与对称轴方程:
+            // 顶点式: y = a(x-h)² + k <=> y = a(x-h)^2 + k
+            var quadVertexGroup = new HashSet<string>
+            {
+                "y=a(x-h)²+k", "y=k+a(x-h)²", "a(x-h)²+k=y", "k+a(x-h)²=y"
+            };
+            if (quadVertexGroup.Contains(ca) && quadVertexGroup.Contains(cb)) return true;
+            // 对称轴: x = -b/(2a) <=> x = -b/2a
+            var quadAxisGroup = new HashSet<string>
+            {
+                "x=-b/(2a)", "-b/(2a)=x", "x=-(b/(2a))", "x=-b/2a", "-b/2a=x", "x=-0.5b/a"
+            };
+            if (quadAxisGroup.Contains(ca) && quadAxisGroup.Contains(cb)) return true;
+
+            // 62. 高中解析几何圆的标准方程: (x-a)² + (y-b)² = r² <=> (x-x0)² + (y-y0)² = r²
+            var circleStdGroup = new HashSet<string>
+            {
+                "(x-a)²+(y-b)²=r²", "(y-b)²+(x-a)²=r²", "r²=(x-a)²+(y-b)²", "r²=(y-b)²+(x-a)²",
+                "(x-x0)²+(y-y0)²=r²", "(y-y0)²+(x-x0)²=r²", "r²=(x-x0)²+(y-y0)²", "r²=(y-y0)²+(x-x0)²"
+            };
+            if (circleStdGroup.Contains(ca) && circleStdGroup.Contains(cb)) return true;
+
+            // 63. 水的离子积常数与水的电离平衡: Kw = [H+][OH-] <=> Kw = c(H+)c(OH-) <=> Kw = 10^-14
+            var waterKwGroup = new HashSet<string>
+            {
+                "kw=[h+][oh-]", "[h+][oh-]=kw", "kw=[oh-][h+]", "[oh-][h+]=kw",
+                "kw=10^-14", "10^-14=kw", "kw=1.0*10^-14", "1.0*10^-14=kw", "kw=1*10^-14", "1*10^-14=kw",
+                "[h+][oh-]=10^-14", "10^-14=[h+][oh-]", "[h+][oh-]=1.0*10^-14", "[h+][oh-]=1*10^-14"
+            };
+            if (waterKwGroup.Contains(ca) && waterKwGroup.Contains(cb)) return true;
 
             return false;
         }
