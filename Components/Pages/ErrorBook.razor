@@ -843,6 +843,9 @@
             <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="CopyWorksheetTextAsync" Class="font-weight-bold">
                 📋 复制纯文本题单
             </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Download" OnClick="DownloadWorksheetMarkdownAsync" Class="font-weight-bold">
+                📥 下载错题卷 (.md)
+            </MudButton>
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Print" OnClick="TriggerPrintAsync" Class="font-weight-bold">
                 立即打印 / 导出 PDF
             </MudButton>
@@ -1433,6 +1436,89 @@
         catch (Exception ex)
         {
             Snackbar.Add($"复制到剪贴板失败: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private async Task DownloadWorksheetMarkdownAsync()
+    {
+        var printItems = _selectedItemIds.Count > 0 
+            ? _unmasteredItems.Where(i => _selectedItemIds.Contains(i.Id) && i.Question != null).ToList() 
+            : FilteredUnmasteredItems;
+
+        if (printItems.Count == 0)
+        {
+            Snackbar.Add("当前没有可供导出的错题！", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"# Northtropic 错题净化专项巩固练习卷");
+            sb.AppendLine();
+            sb.AppendLine($"- **所属学科**: {_filterSubject}");
+            sb.AppendLine($"- **练习题量**: {printItems.Count} 题");
+            sb.AppendLine($"- **生成时间**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"- **考生姓名**: {_currentUser?.Username ?? "学生"}");
+            sb.AppendLine();
+            sb.AppendLine("---");
+            sb.AppendLine();
+
+            int idx = 1;
+            foreach (var item in printItems)
+            {
+                var q = item.Question;
+                if (q == null) continue;
+
+                string typeName = q.Type == QuestionType.SingleChoice ? "单选题" :
+                                  q.Type == QuestionType.MultipleChoice ? "多选题" :
+                                  q.Type == QuestionType.FillInBlank ? "填空题" : "解答题";
+
+                sb.AppendLine($"## - [ ] 第 {idx} 题 · 【{typeName}】{q.Subject} - {q.Category}");
+                sb.AppendLine();
+                if (_printIncludeErrorReason && !string.IsNullOrWhiteSpace(item.ErrorReasonCategory))
+                {
+                    sb.AppendLine($"> ⚠️ **历史错因**: {item.ErrorReasonCategory} (历史累计失误 {item.ErrorCount} 次)");
+                    sb.AppendLine();
+                }
+                sb.AppendLine(q.Stem);
+                sb.AppendLine();
+
+                if (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
+                {
+                    var options = System.Text.Json.JsonSerializer.Deserialize<List<string>>(q.OptionsJson) ?? new List<string>();
+                    foreach (var opt in options)
+                    {
+                        sb.AppendLine($"- {opt}");
+                    }
+                    sb.AppendLine();
+                }
+
+                if (!string.IsNullOrWhiteSpace(item.UserWrongAnswer))
+                {
+                    sb.AppendLine($"- ❌ **曾错作答**: `{item.UserWrongAnswer}`");
+                }
+
+                if (_printIncludeAnswerAnalysis)
+                {
+                    sb.AppendLine($"- ✅ **参考答案**: {q.CorrectAnswer}");
+                    if (!string.IsNullOrWhiteSpace(q.StandardAnalysis))
+                    {
+                        sb.AppendLine($"- 💡 **深度解析**: {q.StandardAnalysis}");
+                    }
+                }
+                sb.AppendLine();
+                idx++;
+            }
+
+            string safeSub = _filterSubject != "全部学科" ? _filterSubject : "全学科";
+            string fileName = $"错题强化练习卷_{safeSub}_{DateTime.Now:yyyyMMdd_HHmmss}.md";
+            await JSRuntime.InvokeVoidAsync("downloadTextFile", fileName, sb.ToString(), "text/markdown;charset=utf-8");
+            Snackbar.Add($"📥 成功生成并下载错题卷: {fileName}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"下载错题卷失败: {ex.Message}", Severity.Warning);
         }
     }
 

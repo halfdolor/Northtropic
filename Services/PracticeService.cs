@@ -3110,24 +3110,45 @@ namespace Northtropic.Services
                 s = s.Replace("e_k", "ek").Replace("e_{k}", "ek");
                 s = s.Replace("e_p", "ep").Replace("e_{p}", "ep");
                 s = s.Replace("\\frac{1}{2}", "0.5").Replace("1/2", "0.5");
-                s = s.Replace("^{2}", "²").Replace("^2", "²");
+                s = s.Replace("^{2}", "²").Replace("^2", "²").Replace("^{3}", "³").Replace("^3", "³");
                 s = s.Replace("$", "");
                 s = s.Replace("\\lambda", "λ").Replace("\\nu", "ν").Replace("\\omega", "ω").Replace("\\rho", "ρ").Replace("\\pi", "π")
                      .Replace("\\delta", "δ").Replace("\\Delta", "δ").Replace("△", "δ").Replace("∆", "δ").Replace("Δ", "δ").Replace("δ", "δ");
                 s = s.Replace("\\phi", "φ").Replace("\\Phi", "φ").Replace("φ", "φ").Replace("Φ", "φ");
                 s = s.Replace("\\eta", "η").Replace("η", "η");
+                s = s.Replace("\\theta", "θ").Replace("θ_{1}", "θ1").Replace("θ_1", "θ1").Replace("θ_{2}", "θ2").Replace("θ_2", "θ2");
+                s = s.Replace("\\sin", "sin").Replace("\\cos", "cos");
                 s = s.Replace("m_{1}", "m1").Replace("m_1", "m1").Replace("m_{2}", "m2").Replace("m_2", "m2");
                 s = s.Replace("q_{1}", "q1").Replace("q_1", "q1").Replace("q_{2}", "q2").Replace("q_2", "q2");
                 s = s.Replace("t_{0}", "t0").Replace("t_0", "t0").Replace("t_{1}", "t1").Replace("t_1", "t1").Replace("t_{2}", "t2").Replace("t_2", "t2");
+                s = s.Replace("u_{1}", "u1").Replace("u_1", "u1").Replace("u_{2}", "u2").Replace("u_2", "u2");
+                s = s.Replace("i_{1}", "i1").Replace("i_1", "i1").Replace("i_{2}", "i2").Replace("i_2", "i2");
+                s = s.Replace("n_{1}", "n1").Replace("n_1", "n1").Replace("n_{2}", "n2").Replace("n_2", "n2");
+                s = s.Replace("r_{1}", "r1").Replace("r_1", "r1").Replace("r_{2}", "r2").Replace("r_2", "r2");
+                s = s.Replace("a_{1}", "a1").Replace("a_1", "a1").Replace("a_{2}", "a2").Replace("a_2", "a2");
+                s = s.Replace("p_{1}", "p1").Replace("p_1", "p1").Replace("p_{2}", "p2").Replace("p_2", "p2");
+                s = s.Replace("p_{入}", "p入").Replace("p_入", "p入").Replace("p_{出}", "p出").Replace("p_出", "p出");
+                s = s.Replace("v_{1}", "v1").Replace("v_1", "v1").Replace("v_{2}", "v2").Replace("v_2", "v2");
+                s = s.Replace("w_{0}", "w0").Replace("w_0", "w0");
+                s = s.Replace("v_{m}", "vm").Replace("v_m", "vm");
+                s = s.Replace("’", "'").Replace("`", "'").Replace("^{\\prime}", "'").Replace("^\\prime", "'");
                 s = s.Replace("f_{浮}", "f浮").Replace("f_浮", "f浮").Replace("f_{向}", "f").Replace("f_向", "f");
                 s = s.Replace("f_{1}", "f1").Replace("f_1", "f1").Replace("f_{2}", "f2").Replace("f_2", "f2");
                 s = s.Replace("l_{1}", "l1").Replace("l_1", "l1").Replace("l_{2}", "l2").Replace("l_2", "l2");
                 s = s.Replace("e_{k1}", "ek1").Replace("e_k1", "ek1").Replace("e_{k2}", "ek2").Replace("e_k2", "ek2");
                 s = s.Replace("e_{p1}", "ep1").Replace("e_p1", "ep1").Replace("e_{p2}", "ep2").Replace("e_p2", "ep2");
+                s = s.Replace("e_{1}", "e1").Replace("e_1", "e1").Replace("e_{2}", "e2").Replace("e_2", "e2");
                 s = s.Replace("w_{有}", "w有").Replace("w_有", "w有").Replace("w_{总}", "w总").Replace("w_总", "w总").Replace("w_{合}", "w合").Replace("w_合", "w合");
                 s = s.Replace("w_{有用}", "w有").Replace("w_有用", "w有").Replace("w有用", "w有");
                 s = s.Replace("ρ_{液}", "ρ液").Replace("ρ_液", "ρ液").Replace("v_{排}", "v排").Replace("v_排", "v排");
-                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\frac\{([^}]+)\}\{([^}]+)\}", "$1/$2");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\\frac\{([^}]+)\}\{([^}]+)\}", m =>
+                {
+                    var num = m.Groups[1].Value;
+                    var den = m.Groups[2].Value;
+                    if ((den.Contains('+') || den.Contains('-')) && !den.StartsWith("(") && !den.EndsWith(")")) den = $"({den})";
+                    if ((num.Contains('+') || num.Contains('-')) && !num.StartsWith("(") && !num.EndsWith(")")) num = $"({num})";
+                    return $"{num}/{den}";
+                });
                 return s;
             }
 
@@ -3391,6 +3412,90 @@ namespace Northtropic.Services
                 "η=w有/w总", "w有/w总=η", "η=w有用/w总", "w有用/w总=η", "η=(w有/w总)*100%", "η=w有/w总*100%"
             };
             if (efficiencyGroup.Contains(ca) && efficiencyGroup.Contains(cb)) return true;
+
+            // 36. 动量守恒定律: m1v1 + m2v2 = m1v1' + m2v2' <=> m1v1 + m2v2 = (m1+m2)v <=> p1 + p2 = p1' + p2' <=> p = p'
+            var momentumConservationGroup = new HashSet<string>
+            {
+                "m1v1+m2v2=m1v1'+m2v2'", "m1v1'+m2v2'=m1v1+m2v2",
+                "m1v1+m2v2=(m1+m2)v", "(m1+m2)v=m1v1+m2v2",
+                "p1+p2=p1'+p2'", "p1'+p2'=p1+p2",
+                "δp1+δp2=0", "δp=0", "p=p'", "p'=p"
+            };
+            if (momentumConservationGroup.Contains(ca) && momentumConservationGroup.Contains(cb)) return true;
+
+            // 37. 闭合电路欧姆定律: I = E/(R+r) <=> E = I(R+r) <=> E = IR + Ir <=> E = U + Ir <=> U = E - Ir
+            var closedOhmGroup = new HashSet<string>
+            {
+                "i=e/(r+r)", "e/(r+r)=i", "i=e/r+r", "e/r+r=i", "e=i(r+r)", "i(r+r)=e", "e=ir+ir", "ir+ir=e",
+                "e=u+ir", "u+ir=e", "u=e-ir", "e-ir=u", "ir=e-u", "e-u=ir"
+            };
+            if (closedOhmGroup.Contains(ca) && closedOhmGroup.Contains(cb)) return true;
+
+            // 38. 热力学第一定律: ΔU = W + Q <=> ΔU = Q + W <=> W + Q = ΔU <=> Q + W = ΔU <=> W = ΔU - Q <=> Q = ΔU - W
+            var thermoFirstGroup = new HashSet<string>
+            {
+                "δu=w+q", "δu=q+w", "w+q=δu", "q+w=δu", "w=δu-q", "q=δu-w", "δu-w=q", "δu-q=w"
+            };
+            if (thermoFirstGroup.Contains(ca) && thermoFirstGroup.Contains(cb)) return true;
+
+            // 39. 爱因斯坦光电效应方程: Ek = hν - W0 <=> hν = Ek + W0 <=> Ek = hν - W <=> hν = W0 + Ek <=> hν = E2 - E1 <=> ΔE = hν
+            var photoelectricGroup = new HashSet<string>
+            {
+                "ek=hν-w0", "hν-w0=ek", "hν=ek+w0", "ek+w0=hν", "hν=w0+ek", "w0+ek=hν",
+                "ek=hν-w", "hν-w=ek", "hν=ek+w", "ek+w=hν", "hν=w+ek", "w+ek=hν",
+                "δe=hν", "hν=δe", "hν=e2-e1", "e2-e1=hν"
+            };
+            if (photoelectricGroup.Contains(ca) && photoelectricGroup.Contains(cb)) return true;
+
+            // 40. 光的折射定律 / 斯涅尔定律: n = sin(i)/sin(r) <=> n1*sinθ1 = n2*sinθ2 <=> n = c/v
+            var refractionGroup = new HashSet<string>
+            {
+                "n=sini/sinr", "sini/sinr=n", "n=sin(i)/sin(r)", "sin(i)/sin(r)=n",
+                "n1sinθ1=n2sinθ2", "n2sinθ2=n1sinθ1", "n1sin(θ1)=n2sin(θ2)", "n2sin(θ2)=n1sin(θ1)",
+                "sinθ1/sinθ2=n2/n1", "n2/n1=sinθ1/sinθ2", "n=c/v", "c/v=n", "v=c/n", "c/n=v"
+            };
+            if (refractionGroup.Contains(ca) && refractionGroup.Contains(cb)) return true;
+
+            // 41. 开普勒第三定律: a³/T² = k <=> r³/T² = k <=> R³/T² = k <=> T²/r³ = k <=> r1³/T1² = r2³/T2²
+            var keplerGroup = new HashSet<string>
+            {
+                "a³/t²=k", "k=a³/t²", "r³/t²=k", "k=r³/t²", "r1³/t1²=r2³/t2²",
+                "r2³/t2²=r1³/t1²", "a1³/t1²=a2³/t2²", "t²/r³=k", "t1²/r1³=t2²/r2³"
+            };
+            if (keplerGroup.Contains(ca) && keplerGroup.Contains(cb)) return true;
+
+            // 42. 爱因斯坦质能方程: E = mc² <=> mc² = E <=> ΔE = Δm*c² <=> ΔE = Δmc²
+            var massEnergyGroup = new HashSet<string>
+            {
+                "e=mc²", "mc²=e", "δe=δmc²", "δmc²=δe", "δe=δm*c²", "δm*c²=δe", "e=m*c²", "m*c²=e"
+            };
+            if (massEnergyGroup.Contains(ca) && massEnergyGroup.Contains(cb)) return true;
+
+            // 43. 理想变压器变压变流比: U1/U2 = n1/n2 <=> I1/I2 = n2/n1 <=> U1*I1 = U2*I2 <=> P1 = P2
+            var transformerGroup = new HashSet<string>
+            {
+                "u1/u2=n1/n2", "n1/n2=u1/u2", "u1/u2=i2/i1", "i2/i1=u1/u2",
+                "i1/i2=n2/n1", "n2/n1=i1/i2", "u1i1=u2i2", "u2i2=u1i1", "p1=p2", "p2=p1",
+                "p入=p出", "p出=p入"
+            };
+            if (transformerGroup.Contains(ca) && transformerGroup.Contains(cb)) return true;
+
+            // 44. 物质的量与气体摩尔体积: n = V/Vm <=> V = n*Vm <=> n = m/M <=> m = nM <=> c = n/V <=> n = cV
+            var molarVolumeGroup = new HashSet<string>
+            {
+                "n=v/vm", "v/vm=n", "v=nvm", "nvm=v", "v=n*vm", "n*vm=v",
+                "n=m/m", "m/m=n", "m=nm", "nm=m", "m=n*m", "n*m=m",
+                "c=n/v", "n/v=c", "n=cv", "cv=n", "n=c*v", "c*v=n"
+            };
+            if (molarVolumeGroup.Contains(ca) && molarVolumeGroup.Contains(cb)) return true;
+
+            // 45. 物质的量浓度与质量分数换算: c = (1000*ρ*w)/M <=> c = 1000ρw/M <=> w = cM/(1000ρ)
+            var concentrationGroup = new HashSet<string>
+            {
+                "c=1000ρw/m", "1000ρw/m=c", "c=(1000ρw)/m", "(1000ρw)/m=c", "c=1000*ρ*w/m",
+                "w=cm/(1000ρ)", "cm/(1000ρ)=w", "w=(cm)/(1000ρ)", "(cm)/(1000ρ)=w"
+            };
+            if (concentrationGroup.Contains(ca) && concentrationGroup.Contains(cb)) return true;
 
             return false;
         }
