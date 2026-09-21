@@ -3717,12 +3717,14 @@ namespace Northtropic.Services
                     else
                     {
                         var raw = q.CorrectAnswer.Trim();
+                        raw = CleanAnswerPrefixes(raw);
                         if (raw.StartsWith("[") && raw.EndsWith("]"))
                         {
                             raw = raw.Trim('[', ']', '"', '\'', ' ');
                         }
                         raw = raw.TrimEnd('.', '、', ';', '；', ' ', ')', '）');
                         raw = raw.TrimStart('(', '（');
+                        raw = ExtractChoiceLetter(raw);
                         raw = raw.ToUpperInvariant();
                         if (raw.Length == 1 && raw[0] >= '1' && raw[0] <= '9')
                         {
@@ -3805,6 +3807,7 @@ namespace Northtropic.Services
                     else
                     {
                         var raw = q.CorrectAnswer.Trim();
+                        raw = CleanAnswerPrefixes(raw);
                         if (raw.StartsWith("[") && raw.EndsWith("]"))
                         {
                             raw = raw.Trim('[', ']', ' ');
@@ -3816,7 +3819,14 @@ namespace Northtropic.Services
                         else
                         {
                             raw = raw.TrimEnd('.', '。', '、', ';', '；', ' ');
-                            raw = raw.ToUpperInvariant();
+                            if (raw.StartsWith("选") || raw.EndsWith("选项") || raw.EndsWith("项"))
+                            {
+                                raw = ExtractMultipleChoiceLetters(raw);
+                            }
+                            else
+                            {
+                                raw = raw.ToUpperInvariant();
+                            }
                         }
                         if (q.CorrectAnswer != raw)
                         {
@@ -3843,6 +3853,7 @@ namespace Northtropic.Services
                         else
                         {
                             var cleaned = q.CorrectAnswer.Trim();
+                            cleaned = CleanAnswerPrefixes(cleaned);
                             if ((cleaned.StartsWith("\"") && cleaned.EndsWith("\"") && cleaned.Length > 1) ||
                                 (cleaned.StartsWith("“") && cleaned.EndsWith("”") && cleaned.Length > 1) ||
                                 (cleaned.StartsWith("【") && cleaned.EndsWith("】") && cleaned.Length > 1) ||
@@ -3850,6 +3861,7 @@ namespace Northtropic.Services
                             {
                                 cleaned = cleaned.Substring(1, cleaned.Length - 2).Trim();
                             }
+                            cleaned = CleanAnswerPrefixes(cleaned);
                             if (q.CorrectAnswer != cleaned)
                             {
                                 q.CorrectAnswer = cleaned;
@@ -4665,6 +4677,63 @@ namespace Northtropic.Services
         {
             if (q == null) return false;
             return IsJudgementQuestion(q.Category, q.Stem, q.Type, q.OptionsJson, q.CorrectAnswer);
+        }
+
+        public static string CleanAnswerPrefixes(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+            var s = text.Trim();
+            string prev;
+            do
+            {
+                prev = s;
+                var prefixes = new[]
+                {
+                    "【答案】", "【参考答案】", "【标准答案】", "【正确答案】",
+                    "答案：", "答案:", "答案是：", "答案是:", "答案为：", "答案为:",
+                    "答：", "答:", "解：", "解:", "参考答案：", "参考答案:",
+                    "标准答案：", "标准答案:", "正确答案：", "正确答案:",
+                    "选：", "选:"
+                };
+                foreach (var prefix in prefixes)
+                {
+                    if (s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        s = s.Substring(prefix.Length).Trim();
+                    }
+                }
+            } while (s != prev);
+            return s;
+        }
+
+        public static string ExtractChoiceLetter(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+            var s = text.Trim();
+            var m = System.Text.RegularExpressions.Regex.Match(s, @"^(?:选\s*)?([A-Za-z])(?:\s*(?:项|选项))?$");
+            if (m.Success)
+            {
+                return m.Groups[1].Value.ToUpperInvariant();
+            }
+            return s;
+        }
+
+        public static string ExtractMultipleChoiceLetters(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+            var s = text.Trim();
+            s = s.TrimEnd('.', '。', '、', ';', '；', ' ');
+            var m = System.Text.RegularExpressions.Regex.Match(s, @"^(?:选\s*)?([A-Za-z\s,，、]+)(?:\s*(?:项|选项))?$");
+            if (m.Success)
+            {
+                var letters = System.Text.RegularExpressions.Regex.Replace(m.Groups[1].Value, @"[^A-Za-z]", "").ToUpperInvariant();
+                if (!string.IsNullOrEmpty(letters))
+                {
+                    var sorted = new string(letters.Distinct().OrderBy(c => c).ToArray());
+                    return sorted;
+                }
+            }
+            return s.ToUpperInvariant();
         }
     }
 }

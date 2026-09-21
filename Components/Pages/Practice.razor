@@ -1642,6 +1642,12 @@
                                      OnClick="@(() => _victoryReviewFilter = "correct")">
                                 完全正确 (@GetSessionCorrectCount())
                             </MudChip>
+                            <MudChip T="string" Size="Size.Small" 
+                                     Color="@(_victoryReviewFilter == "slow" ? Color.Warning : Color.Default)" 
+                                     Variant="@(_victoryReviewFilter == "slow" ? Variant.Filled : Variant.Outlined)"
+                                     OnClick="@(() => _victoryReviewFilter = "slow")">
+                                ⏱️ 耗时深思 (@GetSessionSlowCount())
+                            </MudChip>
                         </div>
 
                         <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
@@ -1684,7 +1690,11 @@
                                     简答 (@_questions.Count(q => q.Type == QuestionType.ShortAnswer || q.Type == QuestionType.EssayAnalysis))
                                 </MudChip>
                             </div>
-                            <div class="d-flex align-center gap-2">
+                            <div class="d-flex align-center gap-2 flex-wrap">
+                                <MudTextField @bind-Value="_victorySearchKeyword" Placeholder="搜索复盘题目/考点/解析..."
+                                              Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                              Clearable="true" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                                              Style="min-width: 200px; max-width: 260px; font-size: 0.8rem;" />
                                 <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ContentCopy"
                                            OnClick="@CopyAllSessionErrorsToClipboard">
                                     📋 导出/复制本轮错题清单
@@ -1714,6 +1724,20 @@
                                 if (_victoryReviewFilter == "wrong" && (hasResult && isCorrect)) continue;
                                 if (_victoryReviewFilter == "equivalent" && !isEquiv) continue;
                                 if (_victoryReviewFilter == "correct" && (!hasResult || !isCorrect)) continue;
+                                if (_victoryReviewFilter == "slow" && (eval?.TimeTakenSeconds <= 45)) continue;
+
+                                if (!string.IsNullOrWhiteSpace(_victorySearchKeyword))
+                                {
+                                    var kw = _victorySearchKeyword.Trim();
+                                    bool matchesStem = q.Stem?.Contains(kw, StringComparison.OrdinalIgnoreCase) == true;
+                                    bool matchesSubject = q.Subject?.Contains(kw, StringComparison.OrdinalIgnoreCase) == true;
+                                    bool matchesCategory = q.Category?.Contains(kw, StringComparison.OrdinalIgnoreCase) == true;
+                                    bool matchesAns = q.CorrectAnswer?.Contains(kw, StringComparison.OrdinalIgnoreCase) == true;
+                                    bool matchesUserAns = eval?.UserAnswer?.Contains(kw, StringComparison.OrdinalIgnoreCase) == true;
+                                    bool matchesAnalysis = q.StandardAnalysis?.Contains(kw, StringComparison.OrdinalIgnoreCase) == true;
+                                    if (!matchesStem && !matchesSubject && !matchesCategory && !matchesAns && !matchesUserAns && !matchesAnalysis)
+                                        continue;
+                                }
 
                                 if (_victoryTypeFilter != "all")
                                 {
@@ -1764,6 +1788,12 @@
                                             <span class="text-caption mud-text-secondary">[@q.Subject - @q.Category]</span>
                                         </div>
                                         <div class="d-flex align-center gap-1">
+                                            <MudTooltip Text="@(_reviewFavoritedQuestionIds.Contains(q.Id) ? "取消收藏此题" : "一键收藏此题到个人收藏夹")">
+                                                <MudIconButton Icon="@(_reviewFavoritedQuestionIds.Contains(q.Id) ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)"
+                                                               Size="Size.Small"
+                                                               Color="@(_reviewFavoritedQuestionIds.Contains(q.Id) ? Color.Warning : Color.Default)"
+                                                               OnClick="@(() => ToggleReviewQuestionFavoriteAsync(q.Id))" />
+                                            </MudTooltip>
                                             <MudTooltip Text="一键复制本题题干与解析到剪贴板">
                                                 <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small" Color="Color.Default"
                                                                OnClick="@(() => CopyReviewQuestionToClipboard(q, eval?.UserAnswer, eval?.EquivalentMatchReason))" />
@@ -1783,30 +1813,27 @@
                                         @q.Stem
                                     </MudText>
                                     <div class="d-flex flex-column gap-1 mt-2 pt-2 text-caption" style="border-top: 1px dashed rgba(var(--mud-palette-lines-default-rgb), 0.15);">
-                                        <div class="d-flex align-center gap-3 flex-wrap">
-                                            @if (hasResult && !string.IsNullOrWhiteSpace(eval?.UserAnswer))
-                                            {
-                                                <div>
-                                                    <span class="font-weight-bold" style="color: @(isCorrect ? "var(--mud-palette-success)" : "var(--mud-palette-error)");">您的作答：</span>
-                                                    <span style="font-weight: 600;">@eval?.UserAnswer</span>
-                                                </div>
-                                            }
-                                            <div>
-                                                <span class="font-weight-bold" style="color: var(--mud-palette-primary);">标准答案：</span>
-                                                <span style="font-weight: 600;">@q.CorrectAnswer</span>
-                                            </div>
+                                        <div class="d-flex align-center gap-2">
+                                            <span class="mud-text-secondary">您的答案：</span>
+                                            <span class="@(isCorrect ? "mud-text-success font-weight-bold" : "mud-text-error font-weight-bold")">
+                                                @(string.IsNullOrWhiteSpace(eval?.UserAnswer) ? "（未作答）" : eval.UserAnswer)
+                                            </span>
                                         </div>
-                                        @if (hasResult && !string.IsNullOrWhiteSpace(eval?.EquivalentMatchReason))
+                                        <div class="d-flex align-center gap-2">
+                                            <span class="mud-text-secondary">标准答案：</span>
+                                            <span class="mud-text-primary font-weight-bold">@q.CorrectAnswer</span>
+                                        </div>
+                                        @if (isEquiv && !string.IsNullOrWhiteSpace(eval?.EquivalentMatchReason))
                                         {
-                                            <div class="mt-1 pa-1 rounded" style="background: rgba(34, 197, 94, 0.08); color: var(--mud-palette-success); font-size: 0.75rem;">
-                                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Style="vertical-align: middle; margin-right: 4px;" />
-                                                @eval.EquivalentMatchReason
+                                            <div class="d-flex align-start gap-1 mud-text-success" style="background: rgba(var(--mud-palette-success-rgb), 0.08); padding: 4px 8px; border-radius: 4px;">
+                                                <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Small" Class="mt-0.5" />
+                                                <span>@eval.EquivalentMatchReason</span>
                                             </div>
                                         }
                                         @if (!string.IsNullOrWhiteSpace(q.StandardAnalysis))
                                         {
-                                            <div class="mt-1 mud-text-secondary">
-                                                <span class="font-weight-bold" style="color: var(--mud-palette-text-primary);">解析：</span>
+                                            <div class="mud-text-secondary mt-1" style="background: rgba(var(--mud-palette-lines-default-rgb), 0.05); padding: 6px 8px; border-radius: 4px;">
+                                                <span class="font-weight-bold">解析：</span>
                                                 <span>@q.StandardAnalysis</span>
                                             </div>
                                         }
@@ -1815,8 +1842,9 @@
                             }
                             @if (renderedReviewCount == 0)
                             {
-                                <div class="py-4 text-center mud-text-secondary text-caption">
-                                    当前筛选维度下暂无匹配试题
+                                <div class="pa-6 text-center rounded-lg" style="background: rgba(var(--mud-palette-surface-rgb), 0.4); border: 1px dashed rgba(var(--mud-palette-lines-default-rgb), 0.2);">
+                                    <MudIcon Icon="@Icons.Material.Outlined.FilterListOff" Size="Size.Large" Color="Color.Default" Class="mb-2" />
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">当前筛选维度或搜索关键词下暂无匹配试题（可切换作答状态、题型或清空搜索框）</MudText>
                                 </div>
                             }
                         </div>
@@ -2054,6 +2082,8 @@
     private string _sessionPaceAdvice = string.Empty;
     private string _victoryReviewFilter = "all";
     private string _victoryTypeFilter = "all";
+    private string _victorySearchKeyword = "";
+    private HashSet<Guid> _reviewFavoritedQuestionIds = new();
 
     // AI Modal State
     private bool _aiDialogVisible = false;
@@ -3344,6 +3374,18 @@
     private async Task OpenVictoryDialogAsync()
     {
         _victoryDialogVisible = true;
+        _victorySearchKeyword = "";
+
+        if (_currentUser != null && _questions.Count > 0)
+        {
+            try
+            {
+                var favs = await PracticeService.GetFavoriteQuestionsAsync(_currentUser.Id);
+                var favIds = favs.Select(q => q.Id).ToHashSet();
+                _reviewFavoritedQuestionIds = new HashSet<Guid>(_questions.Where(q => favIds.Contains(q.Id)).Select(q => q.Id));
+            }
+            catch { }
+        }
 
         // 若非整卷提交模式，动态依据作答用时与正确情况补齐四象限认知分布统计
         if ((_sessionAgileCount + _sessionSteadyCount + _sessionCarelessCount + _sessionStrugglingCount == 0) && _questions.Count > 0)
@@ -3504,6 +3546,39 @@
             return _paperEvalResults.Values.Count(r => r.IsCorrect);
         }
         return _instantEvalResults.Values.Count(r => r.IsCorrect);
+    }
+
+    private int GetSessionSlowCount()
+    {
+        if (_evalMode.Contains("整卷统一"))
+        {
+            return _paperEvalResults.Values.Count(r => r.TimeTakenSeconds > 45);
+        }
+        return _instantEvalResults.Values.Count(r => r.TimeTakenSeconds > 45);
+    }
+
+    private async Task ToggleReviewQuestionFavoriteAsync(Guid questionId)
+    {
+        if (_currentUser == null || questionId == Guid.Empty) return;
+        try
+        {
+            var isFav = await PracticeService.ToggleFavoriteAsync(_currentUser.Id, questionId);
+            if (isFav)
+            {
+                _reviewFavoritedQuestionIds.Add(questionId);
+                Snackbar.Add("⭐ 已将该题加入您的个人收藏夹", Severity.Success);
+            }
+            else
+            {
+                _reviewFavoritedQuestionIds.Remove(questionId);
+                Snackbar.Add("已从个人收藏夹移除该题", Severity.Info);
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"收藏状态切换异常: {ex.Message}", Severity.Warning);
+        }
     }
 
     private string GetQuestionMatrixTooltip(int qNum)

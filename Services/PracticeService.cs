@@ -1029,6 +1029,12 @@ namespace Northtropic.Services
                     return $"空间/平面向量基底与坐标表达等价：已自动识别向量正交基分解（如 a=xi+yj）与坐标表达 (x,y) 的代数等价性，对应标准答案 [{correct}]";
                 }
 
+                // 物理核心经典运动学/力学/电学/光学公式等价 (优先于泛用向量代数匹配)
+                if (CheckPhysicsFormulaEquivalence(user, correct) || CheckPhysicsFormulaEquivalence(normU, normC))
+                {
+                    return $"物理核心定律与公式等价：已自动识别物理运动学/力学/电学/光学公式的代数移项与参数等价性，对应标准公式 [{correct}]";
+                }
+
                 // 平面向量点乘/数量积交换律与模长等价
                 if ((user.Contains("\\vec") || correct.Contains("\\vec") || user.Contains("·") || correct.Contains("·") || user.Contains("*") || correct.Contains("*") || user.Contains("|") || correct.Contains("|")) &&
                     (user.Contains("a") || user.Contains("b") || correct.Contains("a") || correct.Contains("b") || user.Contains("v") || correct.Contains("v")))
@@ -1134,12 +1140,6 @@ namespace Northtropic.Services
                     (normU.Contains("=") || normU.Contains("->") || normC.Contains("=") || normC.Contains("->")))
                 {
                     return $"电极反应式与电子转移等价：已识别电极反应半反应式中的电子转移项移项等价性，对应标准反应式 [{correct}]";
-                }
-
-                // 3. 物理经典运动学/力学/电学/光学核心公式等价 (优先于泛用化学方程式匹配)
-                if (CheckPhysicsFormulaEquivalence(user, correct) || CheckPhysicsFormulaEquivalence(normU, normC))
-                {
-                    return $"物理核心定律与公式等价：已自动识别物理运动学/力学/电学/光学公式的代数移项与参数等价性，对应标准公式 [{correct}]";
                 }
 
                 // 4. 有机化学烃类通式与反应焓变等价
@@ -1249,6 +1249,12 @@ namespace Northtropic.Services
                 if ((normU == "∅" || normU == "空集" || normU == "无解" || normU == "不存在") && (normC == "∅" || normC == "空集" || normC == "无解" || normC == "不存在" || normC.Contains("emptyset")))
                 {
                     return $"解集与空集等价：已识别无解/无实数解与空集 \\emptyset 的集合论等价性，对应标准答案 [{correct}]";
+                }
+
+                // 多空填空无序组合等价 (如 氧气；氢气 <=> 氢气、氧气)
+                if (CheckMultiItemSetEquivalence(user, correct))
+                {
+                    return $"多空填空无序组合等价：已自动识别并匹配多个填空项的无序对应关系，对应标准答案 [{correct}]";
                 }
 
                 if ((user.Contains("sqrt") || correct.Contains("sqrt") || user.Contains("\\sqrt") || correct.Contains("\\sqrt")) &&
@@ -3249,7 +3255,140 @@ namespace Northtropic.Services
             };
             if (buoyancyGroup.Contains(ca) && buoyancyGroup.Contains(cb)) return true;
 
+            // 18. 匀速直线运动速度公式: v = s/t <=> s = vt <=> t = s/v
+            var speedGroup = new HashSet<string>
+            {
+                "v=s/t", "s=vt", "s=tv", "t=s/v", "vt=s", "tv=s",
+                "v=x/t", "x=vt", "x=tv", "t=x/v", "vt=x", "tv=x"
+            };
+            if (speedGroup.Contains(ca) && speedGroup.Contains(cb)) return true;
+
+            // 19. 质量与密度公式: ρ = m/V <=> m = ρV <=> V = m/ρ
+            var densityGroup = new HashSet<string>
+            {
+                "ρ=m/v", "m=ρv", "m=vρ", "v=m/ρ", "ρv=m", "vρ=m"
+            };
+            if (densityGroup.Contains(ca) && densityGroup.Contains(cb)) return true;
+
+            // 20. 固体压强公式: p = F/S <=> F = pS <=> S = F/p
+            var pressureGroup = new HashSet<string>
+            {
+                "p=f/s", "f=ps", "f=sp", "s=f/p", "ps=f", "sp=f"
+            };
+            if (pressureGroup.Contains(ca) && pressureGroup.Contains(cb)) return true;
+
+            // 21. 液体压强公式: p = ρgh <=> ρgh = p
+            var liquidPressureGroup = new HashSet<string>
+            {
+                "p=ρgh", "ρgh=p", "p=ρg*h", "p=ρ*g*h"
+            };
+            if (liquidPressureGroup.Contains(ca) && liquidPressureGroup.Contains(cb)) return true;
+
+            // 22. 机械功率公式: P = W/t <=> W = Pt <=> t = W/P
+            var powerGroup = new HashSet<string>
+            {
+                "p=w/t", "w=pt", "w=tp", "t=w/p", "pt=w", "tp=w"
+            };
+            if (powerGroup.Contains(ca) && powerGroup.Contains(cb)) return true;
+
+            // 23. 弹簧胡克定律: F = kx <=> k = F/x <=> x = F/k
+            var hookeGroup = new HashSet<string>
+            {
+                "f=kx", "kx=f", "k=f/x", "x=f/k", "f=kδx", "kδx=f", "k=f/δx", "δx=f/k"
+            };
+            if (hookeGroup.Contains(ca) && hookeGroup.Contains(cb)) return true;
+
+            // 24. 动量公式: p = mv <=> mv = p <=> v = p/m <=> m = p/v
+            var momentumGroup = new HashSet<string>
+            {
+                "p=mv", "mv=p", "v=p/m", "m=p/v"
+            };
+            if (momentumGroup.Contains(ca) && momentumGroup.Contains(cb)) return true;
+
+            // 25. 并联总电阻公式: 1/R = 1/R1 + 1/R2
+            var parallelResGroup = new HashSet<string>
+            {
+                "1/r=1/r1+1/r2", "1/r=1/r2+1/r1", "1/r1+1/r2=1/r", "1/r2+1/r1=1/r"
+            };
+            if (parallelResGroup.Contains(ca) && parallelResGroup.Contains(cb)) return true;
+
             return false;
+        }
+
+        public static bool CheckMultiItemSetEquivalence(string u, string c)
+        {
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(c)) return false;
+            u = u.Trim();
+            c = c.Trim();
+            if (u == c) return true;
+
+            // 1. 严格排除单点坐标与数学区间表达 (如 (4, 5), [-1; 2], (-inf, 3], (x, y))
+            if (System.Text.RegularExpressions.Regex.IsMatch(u, @"^\s*[\(\[][^()\[\]]+[\)\]]\s*$") ||
+                System.Text.RegularExpressions.Regex.IsMatch(c, @"^\s*[\(\[][^()\[\]]+[\)\]]\s*$"))
+            {
+                return false;
+            }
+
+            // 2. 独立解析各方的填空多项列表：优先依据分号 (;, ；) 或中文顿号 (、)，其次才是中英文逗号 (,, ，)
+            // 绝不使用 '/' 作为多空分隔符；且逗号绝不拆分包含区间、集合、无穷大或并集运算的数学表达式
+            static List<string> SplitMultiItems(string s)
+            {
+                if (s.Contains(';') || s.Contains('；'))
+                {
+                    return s.Split(new[] { ';', '；' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(t => t.Trim())
+                            .Where(t => !string.IsNullOrEmpty(t))
+                            .ToList();
+                }
+                if (s.Contains('、'))
+                {
+                    return s.Split(new[] { '、' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(t => t.Trim())
+                            .Where(t => !string.IsNullOrEmpty(t))
+                            .ToList();
+                }
+                // 仅当不含区间/集合括号与并集符号时，逗号才可能作为多空填空分隔符
+                if ((s.Contains(',') || s.Contains('，')) &&
+                    !s.Contains('(') && !s.Contains(')') && !s.Contains('[') && !s.Contains(']') &&
+                    !s.Contains('{') && !s.Contains('}') && !s.Contains('U') && !s.Contains('∪') &&
+                    !s.Contains("cup", StringComparison.OrdinalIgnoreCase) && !s.Contains("inf", StringComparison.OrdinalIgnoreCase))
+                {
+                    return s.Split(new[] { ',', '，' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(t => t.Trim())
+                            .Where(t => !string.IsNullOrEmpty(t))
+                            .ToList();
+                }
+                return new List<string> { s.Trim() };
+            }
+
+            var tokensU = SplitMultiItems(u);
+            var tokensC = SplitMultiItems(c);
+
+            if (tokensU.Count < 2 || tokensU.Count != tokensC.Count)
+                return false;
+
+            int n = tokensU.Count;
+            bool[] usedC = new bool[n];
+
+            bool CanMatchAll(int idxU)
+            {
+                if (idxU >= n) return true;
+                for (int j = 0; j < n; j++)
+                {
+                    if (!usedC[j])
+                    {
+                        if (CheckFillInBlankMatch(tokensU[idxU], tokensC[j]))
+                        {
+                            usedC[j] = true;
+                            if (CanMatchAll(idxU + 1)) return true;
+                            usedC[j] = false;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            return CanMatchAll(0);
         }
 
         public static bool CheckOrganicGeneralFormulaEquivalence(string a, string b)
@@ -6581,6 +6720,12 @@ namespace Northtropic.Services
 
             // 立体几何与解析几何形体表面积与体积公式符号等价 (如 V = 4/3*pi*r^3, S = 4*pi*r^2, V = pi*r^2*h <=> Sh)
             if (CheckGeometricFormulaEquivalence(user, correct) || CheckGeometricFormulaEquivalence(normUser, normCorrect)) return true;
+
+            // 物理经典核心定律公式变式与代数等价 (欧姆定律、电功率、速度、密度、压强、功率、动量等)
+            if (CheckPhysicsFormulaEquivalence(user, correct) || CheckPhysicsFormulaEquivalence(normUser, normCorrect)) return true;
+
+            // 多空无序填空集合等价匹配 (以顿号、分号、逗号、斜杠分隔的多项填空无序匹配)
+            if (CheckMultiItemSetEquivalence(user, correct)) return true;
 
             return false;
         }
