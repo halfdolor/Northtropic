@@ -3113,11 +3113,19 @@ namespace Northtropic.Services
                 s = s.Replace("^{2}", "²").Replace("^2", "²");
                 s = s.Replace("$", "");
                 s = s.Replace("\\lambda", "λ").Replace("\\nu", "ν").Replace("\\omega", "ω").Replace("\\rho", "ρ").Replace("\\pi", "π")
-                     .Replace("\\delta", "δ").Replace("△", "δ").Replace("∆", "δ").Replace("δ", "δ");
+                     .Replace("\\delta", "δ").Replace("\\Delta", "δ").Replace("△", "δ").Replace("∆", "δ").Replace("Δ", "δ").Replace("δ", "δ");
+                s = s.Replace("\\phi", "φ").Replace("\\Phi", "φ").Replace("φ", "φ").Replace("Φ", "φ");
+                s = s.Replace("\\eta", "η").Replace("η", "η");
                 s = s.Replace("m_{1}", "m1").Replace("m_1", "m1").Replace("m_{2}", "m2").Replace("m_2", "m2");
                 s = s.Replace("q_{1}", "q1").Replace("q_1", "q1").Replace("q_{2}", "q2").Replace("q_2", "q2");
                 s = s.Replace("t_{0}", "t0").Replace("t_0", "t0").Replace("t_{1}", "t1").Replace("t_1", "t1").Replace("t_{2}", "t2").Replace("t_2", "t2");
                 s = s.Replace("f_{浮}", "f浮").Replace("f_浮", "f浮").Replace("f_{向}", "f").Replace("f_向", "f");
+                s = s.Replace("f_{1}", "f1").Replace("f_1", "f1").Replace("f_{2}", "f2").Replace("f_2", "f2");
+                s = s.Replace("l_{1}", "l1").Replace("l_1", "l1").Replace("l_{2}", "l2").Replace("l_2", "l2");
+                s = s.Replace("e_{k1}", "ek1").Replace("e_k1", "ek1").Replace("e_{k2}", "ek2").Replace("e_k2", "ek2");
+                s = s.Replace("e_{p1}", "ep1").Replace("e_p1", "ep1").Replace("e_{p2}", "ep2").Replace("e_p2", "ep2");
+                s = s.Replace("w_{有}", "w有").Replace("w_有", "w有").Replace("w_{总}", "w总").Replace("w_总", "w总").Replace("w_{合}", "w合").Replace("w_合", "w合");
+                s = s.Replace("w_{有用}", "w有").Replace("w_有用", "w有").Replace("w有用", "w有");
                 s = s.Replace("ρ_{液}", "ρ液").Replace("ρ_液", "ρ液").Replace("v_{排}", "v排").Replace("v_排", "v排");
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\\frac\{([^}]+)\}\{([^}]+)\}", "$1/$2");
                 return s;
@@ -3311,6 +3319,78 @@ namespace Northtropic.Services
                 "1/r=1/r1+1/r2", "1/r=1/r2+1/r1", "1/r1+1/r2=1/r", "1/r2+1/r1=1/r"
             };
             if (parallelResGroup.Contains(ca) && parallelResGroup.Contains(cb)) return true;
+
+            // 26. 动能定理: W = ΔEk <=> W = Ek2 - Ek1 <=> W_合 = ΔEk
+            var workEnergyGroup = new HashSet<string>
+            {
+                "w=δek", "w合=δek", "w总=δek", "δek=w", "w=ek2-ek1", "w=ek-ek0", "ek2-ek1=w", "w=1/2mv2²-1/2mv1²", "w=0.5mv2²-0.5mv1²"
+            };
+            if (workEnergyGroup.Contains(ca) && workEnergyGroup.Contains(cb)) return true;
+
+            // 27. 机械能守恒定律: Ep1 + Ek1 = Ep2 + Ek2 <=> ΔEp + ΔEk = 0
+            var mechEnergyGroup = new HashSet<string>
+            {
+                "ep1+ek1=ep2+ek2", "ek1+ep1=ek2+ep2", "ep2+ek2=ep1+ek1", "ek2+ep2=ek1+ep1",
+                "δep+δek=0", "δek+δep=0", "δek=-δep", "δep=-δek"
+            };
+            if (mechEnergyGroup.Contains(ca) && mechEnergyGroup.Contains(cb)) return true;
+
+            // 28. 洛伦兹力: F = qvB <=> F = Bqv <=> qvB = F <=> Bqv = F
+            var lorentzGroup = new HashSet<string>
+            {
+                "f=qvb", "f=bqv", "qvb=f", "bqv=f", "f=q*v*b", "f=b*q*v"
+            };
+            if (lorentzGroup.Contains(ca) && lorentzGroup.Contains(cb)) return true;
+
+            // 29. 安培力: F = BIL <=> F = ILB <=> BIL = F <=> ILB = F
+            var ampereGroup = new HashSet<string>
+            {
+                "f=bil", "f=ilb", "bil=f", "ilb=f", "f=b*i*l", "f=i*l*b"
+            };
+            if (ampereGroup.Contains(ca) && ampereGroup.Contains(cb)) return true;
+
+            // 30. 法拉第电磁感应定律与动生电动势: E = BLv <=> E = Blv <=> BLv = E <=> E = nΔΦ/Δt
+            var inductionGroup = new HashSet<string>
+            {
+                "e=blv", "blv=e", "e=b*l*v", "e=nδφ/δt", "nδφ/δt=e", "e=δφ/δt", "δφ/δt=e", "e=n(δφ/δt)"
+            };
+            if (inductionGroup.Contains(ca) && inductionGroup.Contains(cb)) return true;
+
+            // 31. 电容定义式: C = Q/U <=> Q = CU <=> U = Q/C
+            var capGroup = new HashSet<string>
+            {
+                "c=q/u", "q=cu", "cu=q", "u=q/c", "q=c*u", "c*u=q"
+            };
+            if (capGroup.Contains(ca) && capGroup.Contains(cb)) return true;
+
+            // 32. 焦耳定律与电热/电功公式: Q = I²Rt <=> Q = U²t/R <=> Q = UIt
+            var jouleGroup = new HashSet<string>
+            {
+                "q=i²rt", "q=ri²t", "i²rt=q", "ri²t=q", "q=i²*r*t",
+                "q=u²t/r", "u²t/r=q", "q=(u²t)/r", "q=uit", "uit=q"
+            };
+            if (jouleGroup.Contains(ca) && jouleGroup.Contains(cb)) return true;
+
+            // 33. 固体压强与压力: F = pS <=> p = F/S <=> S = F/p
+            var forcePressureGroup = new HashSet<string>
+            {
+                "f=ps", "ps=f", "f=sp", "sp=f", "p=f/s", "s=f/p", "f=p*s"
+            };
+            if (forcePressureGroup.Contains(ca) && forcePressureGroup.Contains(cb)) return true;
+
+            // 34. 杠杆平衡条件: F1L1 = F2L2 <=> F1*L1 = F2*L2 <=> F1/F2 = L2/L1
+            var leverGroup = new HashSet<string>
+            {
+                "f1l1=f2l2", "f2l2=f1l1", "f1*l1=f2*l2", "f2*l2=f1*l1", "f1/f2=l2/l1", "l2/l1=f1/f2"
+            };
+            if (leverGroup.Contains(ca) && leverGroup.Contains(cb)) return true;
+
+            // 35. 机械效率: η = W有/W总 <=> η = W有用/W总 <=> W有/W总 = η
+            var efficiencyGroup = new HashSet<string>
+            {
+                "η=w有/w总", "w有/w总=η", "η=w有用/w总", "w有用/w总=η", "η=(w有/w总)*100%", "η=w有/w总*100%"
+            };
+            if (efficiencyGroup.Contains(ca) && efficiencyGroup.Contains(cb)) return true;
 
             return false;
         }
@@ -4059,7 +4139,15 @@ namespace Northtropic.Services
                 }
                 // Unicode 负号与减号归一
                 s = s.Replace("−", "-").Replace("－", "-");
+                // 弯单引号与重音符统一转换为标准半角单引号
+                s = s.Replace('’', '\'').Replace('‘', '\'').Replace('´', '\'').Replace('`', '\'');
+                // 中文双引号统一转换为半角双引号
+                s = s.Replace('“', '"').Replace('”', '"');
+                // 中文破折号与省略号规范化
+                s = s.Replace("……", "...").Replace("…", "...");
+                s = s.Replace("——", "--").Replace("—", "--");
                 // 英语常用缩略语归一 (人称代词、助动词、否定式等)
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bcan not\b", "cannot", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bcan't\b", "cannot", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwon't\b", "will not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bdon't\b", "do not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -4102,6 +4190,7 @@ namespace Northtropic.Services
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwhen's\b", "when is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bwhy's\b", "why is", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"\bshan't\b", "shall not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\bneedn't\b", "need not", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
                 // 省略前导零的小数补齐: 如 .5 -> 0.5, -.75 -> -0.75, +.25 -> +0.25, x = .5 -> x = 0.5
                 s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<=^|[^\d\.])\.(\d+)", "0.$1");

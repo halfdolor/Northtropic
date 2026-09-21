@@ -3494,11 +3494,26 @@ namespace Northtropic.Services
 
             foreach (var q in corruptedChoiceQuestions)
             {
-                var defaultOptions = new[] { "A. 选项A", "B. 选项B", "C. 选项C", "D. 选项D" };
-                q.OptionsJson = System.Text.Json.JsonSerializer.Serialize(defaultOptions, new System.Text.Json.JsonSerializerOptions
+                var extracted = ExtractOptionsFromStem(q.Stem, out var cleanedStem);
+                if (extracted.Count >= 2)
                 {
-                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-                });
+                    q.OptionsJson = System.Text.Json.JsonSerializer.Serialize(extracted, new System.Text.Json.JsonSerializerOptions
+                    {
+                        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                    });
+                    if (!string.IsNullOrWhiteSpace(cleanedStem) && cleanedStem != q.Stem)
+                    {
+                        q.Stem = cleanedStem;
+                    }
+                }
+                else
+                {
+                    var defaultOptions = new[] { "A. 选项A", "B. 选项B", "C. 选项C", "D. 选项D" };
+                    q.OptionsJson = System.Text.Json.JsonSerializer.Serialize(defaultOptions, new System.Text.Json.JsonSerializerOptions
+                    {
+                        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                    });
+                }
                 healedCount++;
             }
 
@@ -3700,7 +3715,19 @@ namespace Northtropic.Services
                         }
                         if (healed.Count < 2)
                         {
-                            healed = new List<string> { "选项A", "选项B", "选项C", "选项D" };
+                            var extracted = ExtractOptionsFromStem(q.Stem, out var cleanedStem);
+                            if (extracted.Count >= 2)
+                            {
+                                healed = extracted;
+                                if (!string.IsNullOrWhiteSpace(cleanedStem) && cleanedStem != q.Stem)
+                                {
+                                    q.Stem = cleanedStem;
+                                }
+                            }
+                            else
+                            {
+                                healed = new List<string> { "选项A", "选项B", "选项C", "选项D" };
+                            }
                         }
                         q.OptionsJson = System.Text.Json.JsonSerializer.Serialize(healed, new System.Text.Json.JsonSerializerOptions
                         {
@@ -3790,7 +3817,19 @@ namespace Northtropic.Services
                         }
                         if (healed.Count < 2)
                         {
-                            healed = new List<string> { "选项A", "选项B", "选项C", "选项D" };
+                            var extracted = ExtractOptionsFromStem(q.Stem, out var cleanedStem);
+                            if (extracted.Count >= 2)
+                            {
+                                healed = extracted;
+                                if (!string.IsNullOrWhiteSpace(cleanedStem) && cleanedStem != q.Stem)
+                                {
+                                    q.Stem = cleanedStem;
+                                }
+                            }
+                            else
+                            {
+                                healed = new List<string> { "选项A", "选项B", "选项C", "选项D" };
+                            }
                         }
                         q.OptionsJson = System.Text.Json.JsonSerializer.Serialize(healed, new System.Text.Json.JsonSerializerOptions
                         {
@@ -4687,9 +4726,27 @@ namespace Northtropic.Services
             do
             {
                 prev = s;
+                // 去除 HTML 标签与 markdown 格式修饰
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"<[^>]+>", "").Trim();
+                if (s.StartsWith("**") && s.EndsWith("**") && s.Length > 4)
+                {
+                    s = s.Substring(2, s.Length - 4).Trim();
+                }
+                if (s.StartsWith("*") && s.EndsWith("*") && s.Length > 2)
+                {
+                    s = s.Substring(1, s.Length - 2).Trim();
+                }
+                if (s.StartsWith("`") && s.EndsWith("`") && s.Length > 2)
+                {
+                    s = s.Substring(1, s.Length - 2).Trim();
+                }
+
                 var prefixes = new[]
                 {
                     "【答案】", "【参考答案】", "【标准答案】", "【正确答案】",
+                    "【答案解析】", "【题目详解】", "【解析】", "【分析】", "【考点】", "【选项】", "【提示】",
+                    "故选：", "故选:", "故答案为：", "故答案为:", "故答案是：", "故答案是:",
+                    "本题选：", "本题选:", "正确选项：", "正确选项:", "选项：", "选项:",
                     "答案：", "答案:", "答案是：", "答案是:", "答案为：", "答案为:",
                     "答：", "答:", "解：", "解:", "参考答案：", "参考答案:",
                     "标准答案：", "标准答案:", "正确答案：", "正确答案:",
@@ -4710,10 +4767,21 @@ namespace Northtropic.Services
         {
             if (string.IsNullOrWhiteSpace(text)) return string.Empty;
             var s = text.Trim();
+            s = CleanAnswerPrefixes(s);
+            s = s.Trim('[', ']', '(', ')', '（', '）', '【', '】', '《', '》', '`', '*', '"', '\'', ' ', '.', '、', ';', '；');
+            
             var m = System.Text.RegularExpressions.Regex.Match(s, @"^(?:选\s*)?([A-Za-z])(?:\s*(?:项|选项))?$");
             if (m.Success)
             {
                 return m.Groups[1].Value.ToUpperInvariant();
+            }
+            if (s.Length == 1 && s[0] >= 'Ａ' && s[0] <= 'Ｚ')
+            {
+                return ((char)('A' + (s[0] - 'Ａ'))).ToString();
+            }
+            if (s.Length == 1 && s[0] >= '1' && s[0] <= '9')
+            {
+                return ((char)('A' + (s[0] - '1'))).ToString();
             }
             return s;
         }
@@ -4722,8 +4790,16 @@ namespace Northtropic.Services
         {
             if (string.IsNullOrWhiteSpace(text)) return string.Empty;
             var s = text.Trim();
+            s = CleanAnswerPrefixes(s);
             s = s.TrimEnd('.', '。', '、', ';', '；', ' ');
-            var m = System.Text.RegularExpressions.Regex.Match(s, @"^(?:选\s*)?([A-Za-z\s,，、]+)(?:\s*(?:项|选项))?$");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"<[^>]+>", "");
+            s = s.Replace("**", "").Replace("*", "").Replace("`", "");
+            // 全角括号与连接符规整
+            s = s.Replace("与", " ").Replace("和", " ").Replace("及", " ").Replace("、", " ").Replace("，", " ").Replace(",", " ");
+            s = s.Replace("（", " ").Replace("）", " ").Replace("(", " ").Replace(")", " ")
+                 .Replace("【", " ").Replace("】", " ").Replace("[", " ").Replace("]", " ");
+
+            var m = System.Text.RegularExpressions.Regex.Match(s, @"^(?:选\s*)?([A-Za-z\s]+)(?:\s*(?:项|选项))?$");
             if (m.Success)
             {
                 var letters = System.Text.RegularExpressions.Regex.Replace(m.Groups[1].Value, @"[^A-Za-z]", "").ToUpperInvariant();
@@ -4734,6 +4810,71 @@ namespace Northtropic.Services
                 }
             }
             return s.ToUpperInvariant();
+        }
+
+        public static List<string> ExtractOptionsFromStem(string stem, out string cleanedStem)
+        {
+            cleanedStem = stem;
+            if (string.IsNullOrWhiteSpace(stem)) return new List<string>();
+
+            // 匹配 A 开头的选项序列，例如 A. ... B. ... C. ... D. ... 或 A、... B、... 或 (A)... 或 （A）... 或 【A】... 或 A:...
+            var optionPattern = @"(?:(?<=^|[\s，。；：！？\.,:;!\?_\-\(\)（）\[\]【】])([A-D])[\.、:：\s]|\(([A-D])\)|\（([A-D])\）|【([A-D])】)\s*";
+            var matches = System.Text.RegularExpressions.Regex.Matches(stem, optionPattern);
+
+            if (matches.Count >= 2)
+            {
+                var letters = new List<char>();
+                foreach (System.Text.RegularExpressions.Match m in matches)
+                {
+                    var letterStr = m.Groups[1].Success ? m.Groups[1].Value :
+                                   (m.Groups[2].Success ? m.Groups[2].Value :
+                                   (m.Groups[3].Success ? m.Groups[3].Value : m.Groups[4].Value));
+                    if (!string.IsNullOrEmpty(letterStr))
+                    {
+                        letters.Add(char.ToUpperInvariant(letterStr[0]));
+                    }
+                }
+
+                if (letters.Count >= 2 && letters[0] == 'A')
+                {
+                    bool isConsecutive = true;
+                    for (int i = 1; i < letters.Count; i++)
+                    {
+                        if (letters[i] != letters[i - 1] + 1)
+                        {
+                            isConsecutive = false;
+                            break;
+                        }
+                    }
+
+                    if (isConsecutive)
+                    {
+                        var options = new List<string>();
+                        int firstOptionIndex = matches[0].Index;
+                        for (int i = 0; i < matches.Count; i++)
+                        {
+                            int start = matches[i].Index + matches[i].Length;
+                            int end = (i + 1 < matches.Count) ? matches[i + 1].Index : stem.Length;
+                            string optContent = stem.Substring(start, end - start).Trim();
+                            optContent = optContent.TrimEnd(';', '；', ' ', '\r', '\n');
+                            char letter = letters[i];
+                            options.Add($"{letter}. {optContent}");
+                        }
+
+                        if (options.Count >= 2 && options.All(o => o.Length >= 4))
+                        {
+                            var prefixStem = stem.Substring(0, firstOptionIndex).Trim();
+                            if (!string.IsNullOrWhiteSpace(prefixStem))
+                            {
+                                cleanedStem = prefixStem;
+                            }
+                            return options;
+                        }
+                    }
+                }
+            }
+
+            return new List<string>();
         }
     }
 }

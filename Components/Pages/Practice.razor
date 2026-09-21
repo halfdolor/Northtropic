@@ -1695,6 +1695,17 @@
                                               Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense"
                                               Clearable="true" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
                                               Style="min-width: 200px; max-width: 260px; font-size: 0.8rem;" />
+                                @if (GetSessionWrongCount() > 0)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Star"
+                                               OnClick="@FavoriteAllSessionWrongQuestionsAsync">
+                                        ⭐ 一键典藏本轮错题 (@GetSessionWrongCount())
+                                    </MudButton>
+                                }
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Print"
+                                           OnClick="@PrintSessionReviewAsync">
+                                    🖨️ 打印/导出错题卷
+                                </MudButton>
                                 <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ContentCopy"
                                            OnClick="@CopyAllSessionErrorsToClipboard">
                                     📋 导出/复制本轮错题清单
@@ -1857,6 +1868,17 @@
         <div class="d-flex flex-column gap-3 px-4 py-3 w-100" style="background: rgba(var(--mud-palette-surface-rgb), 0.3); border-top: 1px solid rgba(255, 255, 255, 0.08);">
             <!-- 第一行：核心进阶行动（大按钮、横向等高均匀分布、杜绝文本换行挤压） -->
             <div class="d-flex align-center gap-3 w-100 flex-wrap">
+                @if (IsReviewFilterActive && GetFilteredReviewQuestions().Count > 0)
+                {
+                    <MudButton Variant="Variant.Filled" 
+                               Color="Color.Secondary" 
+                               StartIcon="@Icons.Material.Filled.FilterAlt" 
+                               OnClick="RetryFilteredQuestionsAsync" 
+                               Class="flex-grow-1 font-weight-bold"
+                               Style="min-height: 42px; border-radius: 10px; font-size: 0.92rem; box-shadow: 0 4px 14px rgba(168, 85, 247, 0.35); white-space: nowrap;">
+                        🎯 重练当前筛选试题 (@GetFilteredReviewQuestions().Count 题)
+                    </MudButton>
+                }
                 @if (GetSessionWrongCount() > 0)
                 {
                     <MudButton Variant="Variant.Filled" 
@@ -3630,6 +3652,127 @@
         StartTimers();
         Snackbar.Add($"⚡ 立即开启本轮错题靶向重练特训！共 {wrongQuestions.Count} 道错题，加油攻克！", Severity.Success);
         await InvokeAsync(StateHasChanged);
+    }
+
+    private bool IsReviewFilterActive => _victoryReviewFilter != "all" || _victoryTypeFilter != "all" || !string.IsNullOrWhiteSpace(_victorySearchKeyword);
+
+    private List<Question> GetFilteredReviewQuestions()
+    {
+        var list = new List<Question>();
+        for (int i = 0; i < _questions.Count; i++)
+        {
+            int qIndex = i + 1;
+            var q = _questions[i];
+            var eval = _evalMode.Contains("整卷统一")
+                ? (_paperEvalResults.TryGetValue(qIndex, out var pe) ? pe : null)
+                : (_instantEvalResults.TryGetValue(qIndex, out var ie) ? ie : null);
+            bool hasResult = eval != null;
+            bool isCorrect = eval?.IsCorrect == true;
+            bool isEquiv = eval?.IsEquivalentMatch == true;
+
+            if (_victoryReviewFilter == "wrong" && (hasResult && isCorrect)) continue;
+            if (_victoryReviewFilter == "equivalent" && !isEquiv) continue;
+            if (_victoryReviewFilter == "correct" && (!hasResult || !isCorrect)) continue;
+            if (_victoryReviewFilter == "slow" && (eval?.TimeTakenSeconds <= 45)) continue;
+
+            if (!string.IsNullOrWhiteSpace(_victorySearchKeyword))
+            {
+                var kw = _victorySearchKeyword.Trim();
+                bool matchesStem = q.Stem?.Contains(kw, StringComparison.OrdinalIgnoreCase) == true;
+                bool matchesSubject = q.Subject?.Contains(kw, StringComparison.OrdinalIgnoreCase) == true;
+                bool matchesCategory = q.Category?.Contains(kw, StringComparison.OrdinalIgnoreCase) == true;
+                bool matchesAns = q.CorrectAnswer?.Contains(kw, StringComparison.OrdinalIgnoreCase) == true;
+                bool matchesUserAns = eval?.UserAnswer?.Contains(kw, StringComparison.OrdinalIgnoreCase) == true;
+                bool matchesAnalysis = q.StandardAnalysis?.Contains(kw, StringComparison.OrdinalIgnoreCase) == true;
+                if (!matchesStem && !matchesSubject && !matchesCategory && !matchesAns && !matchesUserAns && !matchesAnalysis)
+                    continue;
+            }
+
+            if (_victoryTypeFilter != "all")
+            {
+                bool isJudgement = SystemHealthService.IsJudgementQuestion(q);
+                if (_victoryTypeFilter == "Judgement" && !isJudgement) continue;
+                if (_victoryTypeFilter == "SingleChoice" && (q.Type != QuestionType.SingleChoice || isJudgement)) continue;
+                if (_victoryTypeFilter == "FillInBlank" && (q.Type != QuestionType.FillInBlank || isJudgement)) continue;
+                if (_victoryTypeFilter == "MultipleChoice" && q.Type != QuestionType.MultipleChoice) continue;
+                if (_victoryTypeFilter == "ShortAnswer" && q.Type != QuestionType.ShortAnswer && q.Type != QuestionType.EssayAnalysis) continue;
+            }
+
+            list.Add(q);
+        }
+        return list;
+    }
+
+    private async Task RetryFilteredQuestionsAsync()
+    {
+        var targetQuestions = GetFilteredReviewQuestions();
+        if (targetQuestions.Count == 0)
+        {
+            Snackbar.Add("当前筛选条件下没有试题可重练", Severity.Info);
+            return;
+        }
+
+        _victoryDialogVisible = false;
+        _questions.Clear();
+        _questions.AddRange(targetQuestions.Select(q => Northtropic.Helpers.QuestionShuffleHelper.ShuffleQuestionOptions(q)));
+        _currentIndex = 1;
+        _paperSubmitted = false;
+        _paperUserAnswers.Clear();
+        _paperEvalResults.Clear();
+        _instantEvalResults.Clear();
+        _flaggedQuestions.Clear();
+        _sessionCorrectCount = 0;
+        _sessionEarnedExp = 0;
+        _sessionEarnedCoins = 0;
+        _sessionMaxCombo = 0;
+        _sessionAgileCount = 0;
+        _sessionSteadyCount = 0;
+        _sessionCarelessCount = 0;
+        _sessionStrugglingCount = 0;
+        _sessionPaceAdvice = string.Empty;
+        await ResetCurrentQuestionStateAsync();
+        StartTimers();
+        Snackbar.Add($"🎯 立即开启筛选试题靶向重练！共 {targetQuestions.Count} 道试题，全力攻坚！", Severity.Success);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task FavoriteAllSessionWrongQuestionsAsync()
+    {
+        if (_currentUser == null) return;
+        var wrongQuestions = GetCurrentSessionWrongQuestions();
+        if (wrongQuestions.Count == 0)
+        {
+            Snackbar.Add("本轮没有错题需要收藏，太棒了！", Severity.Success);
+            return;
+        }
+
+        int addedCount = 0;
+        foreach (var q in wrongQuestions)
+        {
+            if (!_reviewFavoritedQuestionIds.Contains(q.Id))
+            {
+                var isFav = await PracticeService.ToggleFavoriteAsync(_currentUser.Id, q.Id);
+                if (isFav)
+                {
+                    _reviewFavoritedQuestionIds.Add(q.Id);
+                    addedCount++;
+                }
+            }
+        }
+        Snackbar.Add($"⭐ 已将本轮 {addedCount} 道错题批量收入个人典藏题库！", Severity.Success);
+        StateHasChanged();
+    }
+
+    private async Task PrintSessionReviewAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("window.print");
+        }
+        catch
+        {
+            Snackbar.Add("请通过浏览器菜单使用打印或另存为 PDF 功能", Severity.Info);
+        }
     }
 
     [JSInvokable]
