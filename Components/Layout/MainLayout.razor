@@ -406,6 +406,17 @@
                     }
                 </MudSelect>
 
+                <!-- 入门模式 vs 专业模式 切换 -->
+                <MudTooltip Text="@(AppModeService.IsBeginnerMode ? "当前为【入门模式】：专业词汇已通俗化，点击切换为【专业模式】" : "当前为【专业模式】：点击切换为【入门模式】（通俗词汇更亲切）")">
+                    <MudButton Variant="Variant.Outlined"
+                               Color="@(AppModeService.IsBeginnerMode ? Color.Success : Color.Info)"
+                               StartIcon="@(AppModeService.IsBeginnerMode ? Icons.Material.Filled.Spa : Icons.Material.Filled.Psychology)"
+                               OnClick="ToggleAppMode"
+                               Style="border-radius: 20px; font-weight: 700; height: 36px;">
+                        @(AppModeService.IsBeginnerMode ? "🌱 入门模式" : "⚡ 专业模式")
+                    </MudButton>
+                </MudTooltip>
+
                 <!-- 全局 LLM Token 账单按钮 (仅超级管理员可见) -->
                 @if (_currentUser?.CanAccessSystemConfig == true)
                 {
@@ -519,6 +530,13 @@
                                OnClick="ToggleSoundEffectsAsync"
                                Size="Size.Small" />
 
+                <MudTooltip Text="@(AppModeService.IsBeginnerMode ? "当前：入门模式 (点击切专业)" : "当前：专业模式 (点击切入门)")">
+                    <MudIconButton Icon="@(AppModeService.IsBeginnerMode ? Icons.Material.Filled.Spa : Icons.Material.Filled.Psychology)"
+                                   Color="@(AppModeService.IsBeginnerMode ? Color.Success : Color.Info)"
+                                   OnClick="ToggleAppMode"
+                                   Size="Size.Small" />
+                </MudTooltip>
+
                 <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
                     <ActivatorContent>
                         <MudIconButton Color="Color.Primary" Size="Size.Medium">
@@ -541,6 +559,11 @@
                                 </div>
                             </div>
                         </div>
+                        <MudMenuItem Icon="@(AppModeService.IsBeginnerMode ? Icons.Material.Filled.Spa : Icons.Material.Filled.Psychology)"
+                                     IconColor="@(AppModeService.IsBeginnerMode ? Color.Success : Color.Info)"
+                                     OnClick="ToggleAppMode">
+                            @(AppModeService.IsBeginnerMode ? "切换为：⚡ 专业模式" : "切换为：🌱 入门模式")
+                        </MudMenuItem>
                         @if (_currentUser?.CanAccessSystemConfig == true)
                         {
                             <MudMenuItem Icon="@Icons.Material.Filled.ReceiptLong" OnClick="() => _tokenDrawerOpen = true">LLM 账单</MudMenuItem>
@@ -715,6 +738,7 @@
     {
         UserSessionService.OnUserChanged += OnUserChangedHandler;
         ThemeService.OnThemeChanged += OnThemeChangedHandler;
+        AppModeService.OnModeChanged += OnAppModeChangedHandler;
         if (UserSessionService.IsAuthenticated)
         {
             _isRestoringSession = false;
@@ -1283,10 +1307,29 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private void OnAppModeChangedHandler()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleAppMode()
+    {
+        AppModeService.ToggleMode();
+        if (AppModeService.IsBeginnerMode)
+        {
+            Snackbar.Add("🌱 已切换为【入门模式】：所有复杂专业术语已转换为通俗表达！", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add("⚡ 已切换为【专业模式】：展现学术级与教研级精准术语！", Severity.Info);
+        }
+    }
+
     public void Dispose()
     {
         UserSessionService.OnUserChanged -= OnUserChangedHandler;
         ThemeService.OnThemeChanged -= OnThemeChangedHandler;
+        AppModeService.OnModeChanged -= OnAppModeChangedHandler;
         _dotNetRef?.Dispose();
     }
 

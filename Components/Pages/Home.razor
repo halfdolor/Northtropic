@@ -703,10 +703,10 @@
                         <div>
                             <div class="d-flex align-center gap-2 mb-2">
                                 <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Filled">Step 2</MudChip>
-                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold">苏格拉底 AI 启发</MudText>
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-bold">@AppModeService.T("苏格拉底 AI 启发", "启发式 AI 点拨")</MudText>
                             </div>
                             <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                                遇到卡壳难点时，点击【苏格拉底启发】，AI 导师层层递进点拨思考，建立科学思维路径。
+                                @AppModeService.Format("遇到卡壳难点时，点击【苏格拉底启发】，AI 导师层层递进点拨思考，建立科学思维路径。")
                             </MudText>
                         </div>
                         <div class="mt-3">
@@ -724,7 +724,7 @@
                                 <MudText Typo="Typo.subtitle2" Class="font-weight-bold">错题净化与靶向消灭</MudText>
                             </div>
                             <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                                答错题目自动归集进错题本，借助艾宾浩斯复习曲线与变式重练，彻底攻克薄弱盲区。
+                                @AppModeService.Format("答错题目自动归集进错题本，借助艾宾浩斯复习曲线与变式重练，彻底攻克薄弱盲区。")
                             </MudText>
                         </div>
                         <div class="mt-3">
@@ -1001,7 +1001,7 @@
                     </MudText>
                 </div>
                 <div>
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">待复习艾宾浩斯节点</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@AppModeService.T("待复习艾宾浩斯节点", "待防遗忘复习节点")</MudText>
                     <MudText Typo="Typo.h6" Class="font-weight-bold" Color="@(_diagnosisReport.PendingSpacedReviewCount > 0 ? Color.Warning : Color.Success)">
                         @_diagnosisReport.PendingSpacedReviewCount 个
                     </MudText>
@@ -1026,7 +1026,7 @@
                     <div class="d-flex align-center gap-2 mb-2">
                         <MudIcon Icon="@Icons.Material.Filled.AccountTree" Color="Color.Warning" />
                         <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Warning">
-                            🔗 AI 前置知识图谱溯源诊断 (前置概念薄弱警报)
+                            @AppModeService.T("🔗 AI 前置知识图谱溯源诊断 (前置概念薄弱警报)", "🔗 AI 基础知识溯源诊断 (前置概念薄弱警报)")
                         </MudText>
                     </div>
                     @foreach (var warn in _diagnosisReport.PrerequisiteWarnings)
@@ -1200,8 +1200,8 @@
                 <div class="d-flex align-center gap-2">
                     <MudIcon Icon="@Icons.Material.Filled.HourglassBottom" Color="Color.Warning" Size="Size.Large" />
                     <div>
-                        <MudText Typo="Typo.h6" Class="font-weight-bold">艾宾浩斯遗忘曲线 - 记忆唤醒副本</MudText>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">在记忆临界衰减点进行精准复习，巩固率提升 3.5 倍</MudText>
+                        <MudText Typo="Typo.h6" Class="font-weight-bold">@AppModeService.T("艾宾浩斯遗忘曲线 - 记忆唤醒副本", "科学防遗忘复习 - 记忆唤醒副本")</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@AppModeService.Format("在记忆临界衰减点进行精准复习，巩固率提升 3.5 倍")</MudText>
                     </div>
                 </div>
                 <div class="d-flex align-center gap-2 flex-wrap">

@@ -517,6 +517,91 @@ namespace Northtropic.Data
                     PublishStatus = PublishStatusEnum.Approved,
                     CreatedByUserId = teacherUser?.Id
                 },
+                new Question
+                {
+                    Id = Guid.Parse("b3030000-0000-0000-0000-000000000003"),
+                    Subject = "化学",
+                    Category = "空气成分与氧气的性质及实验室制取",
+                    GradeTarget = "初中三年级",
+                    Type = QuestionType.SingleChoice,
+                    Stem = "实验室用高锰酸钾制取氧气时，加热试管的试管口必须略向下倾斜，其主要目的是：",
+                    OptionsJson = "[\"A. 便于氧气平稳导出\",\"B. 防止冷凝水倒流导致试管炸裂\",\"C. 便于试管底部均匀受热\",\"D. 避免反应速率过快失控\"]",
+                    CorrectAnswer = "B",
+                    StandardAnalysis = "高锰酸钾受热分解会释放水蒸气，遇冷在管口凝结。试管口略向下倾斜可防止冷凝水倒流至受热的高温试管底部引起受热不均炸裂。故选 B。",
+                    Difficulty = 2,
+                    BaseExpReward = 15,
+                    IsPublic = true,
+                    PublishStatus = PublishStatusEnum.Approved,
+                    CreatedByUserId = teacherUser?.Id
+                },
+                new Question
+                {
+                    Id = Guid.Parse("b3040000-0000-0000-0000-000000000004"),
+                    Subject = "化学",
+                    Category = "溶液的形成溶解度与溶质质量分数计算",
+                    GradeTarget = "初中三年级",
+                    Type = QuestionType.SingleChoice,
+                    Stem = "在 $20^\\circ\\text{C}$ 时，硝酸钾（$\\text{KNO}_3$）的溶解度为 $31.6\\text{g}$。现将 $20\\text{g}$ 硝酸钾固体加入 $50\\text{g}$ 水中充分搅拌，所得溶液的质量为多少？",
+                    OptionsJson = "[\"A. 70g\",\"B. 65.8g\",\"C. 60g\",\"D. 50g\"]",
+                    CorrectAnswer = "B",
+                    StandardAnalysis = "在 $20^\\circ\\text{C}$ 时，$100\\text{g}$ 水最多溶解 $31.6\\text{g}$ 硝酸钾，故 $50\\text{g}$ 水最多溶解 $15.8\\text{g}$ 硝酸钾。加入 $20\\text{g}$ 固体有 $4.2\\text{g}$ 未溶解，溶液总质量为 $50\\text{g} + 15.8\\text{g} = 65.8\\text{g}$。故选 B。",
+                    Difficulty = 3,
+                    BaseExpReward = 20,
+                    IsPublic = true,
+                    PublishStatus = PublishStatusEnum.Approved,
+                    CreatedByUserId = teacherUser?.Id
+                },
+                new Question
+                {
+                    Id = Guid.Parse("b3050000-0000-0000-0000-000000000005"),
+                    Subject = "化学",
+                    Category = "化学方程式书写配平与过量计算",
+                    GradeTarget = "初中三年级",
+                    Type = QuestionType.SingleChoice,
+                    Stem = "完全中和 $100\\text{g}$ 质量分数为 $7.3\\%$ 的稀盐酸（$\\text{HCl}$），理论上需要质量分数为 $8\\%$ 的氢氧化钠（$\\text{NaOH}$）溶液多少克？",
+                    OptionsJson = "[\"A. 50g\",\"B. 100g\",\"C. 150g\",\"D. 200g\"]",
+                    CorrectAnswer = "B",
+                    StandardAnalysis = "反应方程式为 $\\text{HCl} + \\text{NaOH} = \\text{NaCl} + \\text{H}_2\\text{O}$。盐酸溶质质量为 $100\\text{g} \\times 7.3\\% = 7.3\\text{g}$ (即 $0.2\\text{mol}$)。需 $\\text{NaOH}$ 溶质质量为 $0.2\\text{mol} \\times 40\\text{g/mol} = 8\\text{g}$。所需溶液质量为 $8\\text{g} \\div 8\\% = 100\\text{g}$。故选 B。",
+                    Difficulty = 3,
+                    BaseExpReward = 20,
+                    IsPublic = true,
+                    PublishStatus = PublishStatusEnum.Approved,
+                    CreatedByUserId = teacherUser?.Id
+                },
+                new Question
+                {
+                    Id = Guid.Parse("b3060000-0000-0000-0000-000000000006"),
+                    Subject = "化学",
+                    Category = "氧化还原反应电子转移与强弱顺序判断",
+                    GradeTarget = "高中一年级",
+                    Type = QuestionType.SingleChoice,
+                    Stem = "已知微粒氧化性顺序为：$\\text{Cl}_2 > \\text{Br}_2 > \\text{Fe}^{3+} > \\text{I}_2$。向含有等物质的量的 $\\text{Fe}^{2+}$ 和 $\\text{I}^-$ 混合溶液中缓慢通入少量氯气，首先被氧化的微粒是：",
+                    OptionsJson = "[\"A. Fe2+\",\"B. I-\",\"C. Cl-\",\"D. 铁离子与碘离子同时被氧化\"]",
+                    CorrectAnswer = "B",
+                    StandardAnalysis = "还原性强的微粒优先被氧化。由氧化性 $\\text{Fe}^{3+} > \\text{I}_2$ 可知还原性 $\\text{I}^- > \\text{Fe}^{2+}$。因此通入氯气时，还原性更强的 $\\text{I}^-$ 优先发生反应失电子被氧化为单质碘。故选 B。",
+                    Difficulty = 4,
+                    BaseExpReward = 25,
+                    IsPublic = true,
+                    PublishStatus = PublishStatusEnum.Approved,
+                    CreatedByUserId = teacherUser?.Id
+                },
+                new Question
+                {
+                    Id = Guid.Parse("b3070000-0000-0000-0000-000000000007"),
+                    Subject = "化学",
+                    Category = "化学反应速率与化学平衡移动勒夏特列原理",
+                    GradeTarget = "高中二年级",
+                    Type = QuestionType.SingleChoice,
+                    Stem = "在一定温度下，恒容密闭容器中发生可逆反应：$\\text{A}(g) + 3\\text{B}(g) \\rightleftharpoons 2\\text{C}(g)$，并已达到平衡。若保持容器体积不变，向体系中充入氩气（$\\text{Ar}$），则下列说法正确的是：",
+                    OptionsJson = "[\"A. 正反应速率增大，平衡向正向移动\",\"B. 逆反应速率增大，平衡向逆向移动\",\"C. 各组分分压与浓度均不变，化学平衡不移动\",\"D. 容器总压增大，平衡向气体体积缩小的正向移动\"]",
+                    CorrectAnswer = "C",
+                    StandardAnalysis = "恒容条件下通入与反应无关的惰性气体，容器内各反应组分的分压与摩尔浓度保持不变，正逆反应有效碰撞几率不变，因此正逆反应速率均未改变，化学平衡不发生任何移动。故选 C。",
+                    Difficulty = 5,
+                    BaseExpReward = 30,
+                    IsPublic = true,
+                    PublishStatus = PublishStatusEnum.Approved,
+                    CreatedByUserId = teacherUser?.Id
+                },
 
                 // ==================== 初中英语 ====================
                 new Question

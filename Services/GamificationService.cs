@@ -15,6 +15,30 @@ namespace Northtropic.Services
         private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> _userLocks = new();
         private static SemaphoreSlim GetUserLock(Guid userId) => _userLocks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
 
+        public class LowDifficultySession
+        {
+            public DateTime FirstQuestionTime { get; set; } = DateTime.Now;
+            public DateTime LastQuestionTime { get; set; } = DateTime.Now;
+            public int ConsecutiveCount { get; set; } = 0;
+        }
+
+        private static readonly ConcurrentDictionary<Guid, LowDifficultySession> _lowDiffSessions = new();
+
+        public static void ResetLowDifficultySession(Guid userId)
+        {
+            _lowDiffSessions.TryRemove(userId, out _);
+        }
+
+        public static void SetLowDifficultySessionForTesting(Guid userId, DateTime startTime, int consecutiveCount)
+        {
+            _lowDiffSessions[userId] = new LowDifficultySession
+            {
+                FirstQuestionTime = startTime,
+                LastQuestionTime = DateTime.Now,
+                ConsecutiveCount = consecutiveCount
+            };
+        }
+
         private readonly AppDbContext _context;
         private readonly IDbContextFactory<AppDbContext>? _dbContextFactory;
         private readonly IUserSessionService _userSessionService;
@@ -156,6 +180,60 @@ namespace Northtropic.Services
                         earnedCoins = (int)Math.Round(earnedCoins * 1.5); // 金币暴击符加成 +50%
                     }
 
+                    // 中等难度以下 (difficulty < 3) 答题获得积分递减策略，连续练习超过一定时间 (10 分钟)，收益降为 0
+                    if (difficulty < 3)
+                    {
+                        var session = _lowDiffSessions.AddOrUpdate(
+                            effectiveUserId,
+                            _ => new LowDifficultySession { FirstQuestionTime = DateTime.Now, LastQuestionTime = DateTime.Now, ConsecutiveCount = 1 },
+                            (_, existing) =>
+                            {
+                                if ((DateTime.Now - existing.LastQuestionTime).TotalMinutes > 15)
+                                {
+                                    return new LowDifficultySession { FirstQuestionTime = DateTime.Now, LastQuestionTime = DateTime.Now, ConsecutiveCount = 1 };
+                                }
+                                existing.ConsecutiveCount++;
+                                existing.LastQuestionTime = DateTime.Now;
+                                return existing;
+                            });
+
+                        double continuousMinutes = (DateTime.Now - session.FirstQuestionTime).TotalMinutes;
+                        if (continuousMinutes >= 10.0)
+                        {
+                            result.IsZeroRewardDueToLowDifficultyThreshold = true;
+                            result.LowDifficultyMultiplier = 0.0;
+                            result.LowDifficultyNotice = $"⚠️ 连续练习低难度题目已达 {continuousMinutes:F1} 分钟，当前题目积分与金币收益已降为 0！建议挑战中等或更高难度题目以恢复收益。";
+                            earnedExp = 0;
+                            earnedCoins = 0;
+                        }
+                        else
+                        {
+                            double multiplier = session.ConsecutiveCount switch
+                            {
+                                1 => 1.0,
+                                2 => 0.8,
+                                3 => 0.6,
+                                4 => 0.4,
+                                5 => 0.2,
+                                _ => 0.1
+                            };
+
+                            if (multiplier < 1.0)
+                            {
+                                result.IsLowDifficultyDiminished = true;
+                                result.LowDifficultyMultiplier = multiplier;
+                                result.LowDifficultyNotice = $"📉 低难度递减收益 ({multiplier:P0})：连续第 {session.ConsecutiveCount} 道低难度题（已持续 {continuousMinutes:F1} 分钟），建议挑战中等以上难度！";
+                                earnedExp = (int)Math.Round(earnedExp * multiplier);
+                                earnedCoins = (int)Math.Round(earnedCoins * multiplier);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 练习中等难度及以上试题，重置连续低难度计时与计数
+                        _lowDiffSessions.TryRemove(effectiveUserId, out _);
+                    }
+
                     user.Exp += earnedExp;
                     user.Coins += earnedCoins;
 
@@ -205,6 +283,11 @@ namespace Northtropic.Services
                     user.Coins = Math.Max(0, user.Coins - penaltyCoins);
                     result.EarnedCoins = -penaltyCoins; // 返回负数表达扣金币
                     result.EarnedExp = 0;
+
+                    if (difficulty >= 3)
+                    {
+                        _lowDiffSessions.TryRemove(effectiveUserId, out _);
+                    }
                 }
 
                 if (!isGuest)

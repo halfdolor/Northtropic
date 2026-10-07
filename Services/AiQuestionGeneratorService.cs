@@ -53,9 +53,9 @@ namespace Northtropic.Services
             PracticeService.InvalidateCategoryCache();
         }
 
-        public async Task<Question> GenerateQuestionByGradeAsync(string grade, string subject, string? category = null)
+        public async Task<Question> GenerateQuestionByGradeAsync(string grade, string subject, string? category = null, int? targetDifficulty = null)
         {
-            var list = await GenerateBatchQuestionsAsync(grade, subject, category, 1);
+            var list = await GenerateBatchQuestionsAsync(grade, subject, category, 1, targetDifficulty);
             return list.First();
         }
 
@@ -104,7 +104,7 @@ namespace Northtropic.Services
             return user;
         }
 
-        public async Task<List<Question>> GenerateBatchQuestionsAsync(string grade, string subject, string? category = null, int count = 5)
+        public async Task<List<Question>> GenerateBatchQuestionsAsync(string grade, string subject, string? category = null, int count = 5, int? targetDifficulty = null)
         {
             var user = await _gamificationService.GetCurrentUserAsync();
             category ??= "综合运用";
@@ -117,7 +117,7 @@ namespace Northtropic.Services
             if (string.IsNullOrWhiteSpace(effectiveUser.LlmApiKey))
             {
                 // 启发式智能题库引擎：未配置 API Key 时自动派发精选多题型题集
-                return await GenerateHeuristicBatchQuestionsAsync(user, grade, subject, category, count);
+                return await GenerateHeuristicBatchQuestionsAsync(user, grade, subject, category, count, targetDifficulty);
             }
 
             try
@@ -125,24 +125,28 @@ namespace Northtropic.Services
                 var questions = await CallLlmBatchApiOrThrowAsync(effectiveUser, grade, subject, category, count);
                 if (questions != null && questions.Count > 0)
                 {
+                    if (targetDifficulty.HasValue && targetDifficulty.Value >= 1 && targetDifficulty.Value <= 5)
+                    {
+                        foreach (var q in questions) q.Difficulty = targetDifficulty.Value;
+                    }
                     // 确保返回的题目不重复
                     var distinctQuestions = questions.DistinctBy(q => q.Stem.Trim()).ToList();
                     if (distinctQuestions.Count < count)
                     {
                         // 补充不足的数量
                         int diff = count - distinctQuestions.Count;
-                        var extra = await GenerateHeuristicBatchQuestionsAsync(user, grade, subject, category, diff);
+                        var extra = await GenerateHeuristicBatchQuestionsAsync(user, grade, subject, category, diff, targetDifficulty);
                         distinctQuestions.AddRange(extra);
                     }
                     return distinctQuestions;
                 }
-                return await GenerateHeuristicBatchQuestionsAsync(user, grade, subject, category, count);
+                return await GenerateHeuristicBatchQuestionsAsync(user, grade, subject, category, count, targetDifficulty);
             }
             catch (Exception ex)
             {
                 // 网络波动或 API 异常时智能降级为启发式题库，绝不阻断学习
                 _systemHealthService?.RecordArchitectureEvent("AiGenerator", "Warning", $"LLM 题库批量生成异常降级: {ex.Message}");
-                return await GenerateHeuristicBatchQuestionsAsync(user, grade, subject, category, count);
+                return await GenerateHeuristicBatchQuestionsAsync(user, grade, subject, category, count, targetDifficulty);
             }
         }
 
@@ -364,7 +368,7 @@ namespace Northtropic.Services
             };
         }
 
-        private async Task<List<Question>> GenerateHeuristicBatchQuestionsAsync(User user, string grade, string subject, string category, int count)
+        private async Task<List<Question>> GenerateHeuristicBatchQuestionsAsync(User user, string grade, string subject, string category, int count, int? targetDifficulty = null)
         {
             var result = new List<Question>();
             var logs = new List<LlmGenerationLog>();
@@ -372,7 +376,7 @@ namespace Northtropic.Services
 
             for (int i = 0; i < count; i++)
             {
-                var q = CreateSmartHeuristicQuestion(grade, subject, category, i, rnd);
+                var q = CreateSmartHeuristicQuestion(grade, subject, category, i, rnd, targetDifficulty);
                 result.Add(q);
 
                 var log = new LlmGenerationLog
@@ -395,7 +399,7 @@ namespace Northtropic.Services
             return result;
         }
 
-        private Question CreateSmartHeuristicQuestion(string grade, string subject, string category, int index, Random rnd)
+        private Question CreateSmartHeuristicQuestion(string grade, string subject, string category, int index, Random rnd, int? targetDifficulty = null)
         {
             var q = new Question
             {
@@ -403,7 +407,7 @@ namespace Northtropic.Services
                 GradeTarget = grade,
                 Subject = subject,
                 Category = category,
-                Difficulty = rnd.Next(2, 5),
+                Difficulty = (targetDifficulty.HasValue && targetDifficulty.Value >= 1 && targetDifficulty.Value <= 5) ? targetDifficulty.Value : rnd.Next(2, 5),
                 CreatedByUserId = null,
                 IsPublic = true,
                 PublishStatus = PublishStatusEnum.Approved,

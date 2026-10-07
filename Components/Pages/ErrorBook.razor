@@ -35,7 +35,7 @@
                     🖨️ 导出/打印
                 </MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Large" StartIcon="@Icons.Material.Filled.Bolt" OnClick="NavigateToEbbinghausSprintAsync" Style="font-weight: 700; border-radius: 12px; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);" Class="no-print">
-                    ⚡ 艾宾浩斯抗遗忘特训
+                    @AppModeService.T("⚡ 艾宾浩斯抗遗忘特训", "⚡ 科学防遗忘复习特训")
                 </MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Large" StartIcon="@Icons.Material.Filled.SportsKabaddi" OnClick="NavigateToSprintPractice" Style="font-weight: 700; border-radius: 12px; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);" Class="no-print">
                     ⚔️ 错题专练 @(_unmasteredItems.Count > 0 ? $"({_unmasteredItems.Count})" : "")
@@ -187,7 +187,7 @@
                 </MudSelect>
 
                 <MudSelect T="string" Label="排序方式" @bind-Value="_sortBy" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 170px;" AnchorOrigin="Origin.BottomCenter">
-                    <MudSelectItem Value="@("艾宾浩斯紧迫度优先")">⚡ 艾宾浩斯紧迫度优先</MudSelectItem>
+                    <MudSelectItem Value="@("艾宾浩斯紧迫度优先")">@AppModeService.T("⚡ 艾宾浩斯紧迫度优先", "⚡ 防遗忘紧迫度优先")</MudSelectItem>
                     <MudSelectItem Value="@("错误频次降序")">🔥 错误频次降序</MudSelectItem>
                     <MudSelectItem Value="@("最新添加")">🕒 最新添加</MudSelectItem>
                     <MudSelectItem Value="@("最旧未消灭")">⏳ 最久未消灭</MudSelectItem>
@@ -245,7 +245,7 @@
                     @if (_onlyEbbinghausDue)
                     {
                         <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => _onlyEbbinghausDue = false">
-                            ⏳ 艾宾浩斯需复习
+                            @AppModeService.T("⏳ 艾宾浩斯需复习", "⏳ 防遗忘需复习")
                         </MudChip>
                     }
                     @if (!string.IsNullOrWhiteSpace(_searchQuery))
@@ -369,7 +369,7 @@
                             }
                             @if (_onlyEbbinghausDue)
                             {
-                                <MudChip T="string" Color="Color.Error" Size="Size.Small" OnClose="() => _onlyEbbinghausDue = false">仅艾宾浩斯临界</MudChip>
+                                <MudChip T="string" Color="Color.Error" Size="Size.Small" OnClose="() => _onlyEbbinghausDue = false">@AppModeService.T("仅艾宾浩斯临界", "仅防遗忘临界")</MudChip>
                             }
                             @if (!string.IsNullOrWhiteSpace(_searchQuery))
                             {
@@ -426,7 +426,7 @@
                                         if (baseTime == default) baseTime = DateTime.Now;
                                         var elapsedHours = Math.Max(0, (DateTime.Now - baseTime).TotalHours);
                                         var intervalHours = ErrorBookService.GetRecommendedReviewInterval(item.RevisionCount).TotalHours;
-                                        string tooltipText = $"🧠 艾宾浩斯抗遗忘记忆留存率: {healthScore}%\n⏱️ 距上次温习: {elapsedHours:F1}小时 / 推荐半衰期: {intervalHours:F0}小时\n📊 记忆状态: {healthText}";
+                                        string tooltipText = AppModeService.Format($"🧠 艾宾浩斯抗遗忘记忆留存率: {healthScore}%\n⏱️ 距上次温习: {elapsedHours:F1}小时 / 推荐半衰期: {intervalHours:F0}小时\n📊 记忆状态: {healthText}");
                                     }
                                     <MudTooltip Text="@tooltipText" Placement="Placement.Top" Arrow="true">
                                         <div class="d-inline-flex align-center gap-2 px-2 py-1 rounded-pill" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); cursor: help;">
@@ -439,7 +439,7 @@
                                             </div>
                                         </div>
                                     </MudTooltip>
-                                    <MudTooltip Text="@($"艾宾浩斯抗遗忘记忆强化轨迹：当前已连续巩固 {item.RevisionCount}/3 次。第 3 次答对将正式融会贯通，净化归档！")">
+                                    <MudTooltip Text="@AppModeService.Format($"艾宾浩斯抗遗忘记忆强化轨迹：当前已连续巩固 {item.RevisionCount}/3 次。第 3 次答对将正式融会贯通，净化归档！")">
                                         <MudChip T="string" Color="@(item.RevisionCount switch { 0 => Color.Default, 1 => Color.Info, _ => Color.Success })" Variant="Variant.Filled" Size="Size.Small">
                                             @(item.RevisionCount switch {
                                                 0 => "🌱 阶段 1/3: 初始巩固",
@@ -1607,12 +1607,12 @@
         var targetQIds = queue.Where(i => i.QuestionId != Guid.Empty).Select(i => i.QuestionId).Take(10).ToList();
         if (targetQIds.Count == 0)
         {
-            Snackbar.Add("🎉 恭喜！当前暂无临界遗忘错题，艾宾浩斯记忆曲线处于极佳状态！", Severity.Success);
+            Snackbar.Add(AppModeService.Format("🎉 恭喜！当前暂无临界遗忘错题，艾宾浩斯记忆曲线处于极佳状态！"), Severity.Success);
             return;
         }
 
         string qIds = string.Join(",", targetQIds);
-        Snackbar.Add($"⚡ 已为您组建【艾宾浩斯抗遗忘特训卷】({targetQIds.Count} 题)，直击记忆临界薄弱点！", Severity.Warning);
+        Snackbar.Add(AppModeService.Format($"⚡ 已为您组建【艾宾浩斯抗遗忘特训卷】({targetQIds.Count} 题)，直击记忆临界薄弱点！"), Severity.Warning);
         NavigationManager.NavigateTo($"/practice?QuestionIds={qIds}");
     }
 

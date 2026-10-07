@@ -71,6 +71,7 @@ builder.Services.AddScoped<IStudyPlanService, StudyPlanService>();
 builder.Services.AddScoped<ICurriculumConfigService, CurriculumConfigService>();
 builder.Services.AddScoped<ISystemHealthService, SystemHealthService>();
 builder.Services.AddScoped<ThemeService>();
+builder.Services.AddScoped<IAppModeService, AppModeService>();
 builder.Services.AddSingleton<IAppVersionService, AppVersionService>();
 
 // 4. 添加 Razor Components 与 Server 交互模式

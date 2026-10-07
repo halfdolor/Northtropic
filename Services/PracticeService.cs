@@ -69,7 +69,7 @@ namespace Northtropic.Services
             return await query.OrderBy(r => EF.Functions.Random()).Take(count).ToListAsync();
         }
 
-        public async Task<List<Question>> GetRandomQuestionsAsync(Guid userId, string grade, string subject, string? category = null, int count = 5)
+        public async Task<List<Question>> GetRandomQuestionsAsync(Guid userId, string grade, string subject, string? category = null, int count = 5, int? difficulty = null)
         {
             await using var dbScope = await CreateDbScopeAsync();
             var ctx = dbScope.Context;
@@ -86,6 +86,11 @@ namespace Northtropic.Services
             {
                 query = query.Where(q => q.Category == category);
             }
+            // 过滤匹配难度
+            if (difficulty.HasValue && difficulty.Value > 0)
+            {
+                query = query.Where(q => q.Difficulty == difficulty.Value);
+            }
 
             // 规则：拉取全网公共库，或者属于该用户的私有库题目
             query = query.Where(q => q.IsPublic || q.CreatedByUserId == userId);
@@ -96,7 +101,7 @@ namespace Northtropic.Services
             return shuffledList;
         }
 
-        public async Task<List<Question>> GetAdaptiveQuestionsAsync(Guid userId, string grade, string subject, string? category = null, int count = 5)
+        public async Task<List<Question>> GetAdaptiveQuestionsAsync(Guid userId, string grade, string subject, string? category = null, int count = 5, int? difficulty = null)
         {
             if (count <= 0) count = 5;
 
@@ -113,7 +118,11 @@ namespace Northtropic.Services
                 .ToListAsync();
 
             int baselineDifficulty = 3; // 默认为中等难度
-            if (recentRecords.Count >= 3)
+            if (difficulty.HasValue && difficulty.Value > 0)
+            {
+                baselineDifficulty = difficulty.Value;
+            }
+            else if (recentRecords.Count >= 3)
             {
                 double accuracy = (double)recentRecords.Count(r => r.IsCorrect) / recentRecords.Count;
                 if (accuracy >= 0.8)
@@ -147,12 +156,16 @@ namespace Northtropic.Services
             {
                 baseQuery = baseQuery.Where(q => q.Category == category);
             }
+            if (difficulty.HasValue && difficulty.Value > 0)
+            {
+                baseQuery = baseQuery.Where(q => q.Difficulty == difficulty.Value);
+            }
             baseQuery = baseQuery.Where(q => q.IsPublic || q.CreatedByUserId == userId);
 
             var candidatePool = await baseQuery.ToListAsync();
             if (candidatePool.Count == 0)
             {
-                return await GetRandomQuestionsAsync(userId, grade, subject, category, count);
+                return await GetRandomQuestionsAsync(userId, grade, subject, category, count, difficulty);
             }
 
             // 4. 按最近发展区 (ZPD) 梯度智能分发配比：
@@ -216,9 +229,15 @@ namespace Northtropic.Services
                 // 架构师优化：优先从同学科（Subject == subject）补充试题，避免出现跨学科出题违和感
                 if (!string.IsNullOrWhiteSpace(subject) && subject != "全部分科" && subject != "通用学科")
                 {
-                    var sameSubjectFallback = await ctx.Questions
+                    var sameSubjectQuery = ctx.Questions
                         .AsNoTracking()
-                        .Where(q => q.IsPublic && q.Subject == subject && !existingIds.Contains(q.Id))
+                        .Where(q => q.IsPublic && q.Subject == subject && !existingIds.Contains(q.Id));
+                    if (difficulty.HasValue && difficulty.Value > 0)
+                    {
+                        sameSubjectQuery = sameSubjectQuery.Where(q => q.Difficulty == difficulty.Value);
+                    }
+
+                    var sameSubjectFallback = await sameSubjectQuery
                         .OrderBy(q => q.Difficulty)
                         .Take(count - finalQuestions.Count)
                         .ToListAsync();
@@ -230,8 +249,8 @@ namespace Northtropic.Services
                     }
                 }
 
-                // 若同学科全库依然不足，再降级从全网公共库补充
-                if (finalQuestions.Count < count)
+                // 核心安全隔离：仅在未限定具体学科时才允许从全网公共库跨学科补充！若限定了具体学科（如化学），严禁跨学科填充其他学科（如语文）题目！
+                if (finalQuestions.Count < count && (string.IsNullOrWhiteSpace(subject) || subject == "全部分科" || subject == "通用学科"))
                 {
                     var fallbackQuestions = await ctx.Questions
                         .AsNoTracking()
@@ -246,7 +265,7 @@ namespace Northtropic.Services
                     }
                 }
 
-                if (finalQuestions.Count == 0)
+                if (finalQuestions.Count == 0 && (string.IsNullOrWhiteSpace(subject) || subject == "全部分科" || subject == "通用学科"))
                 {
                     finalQuestions = (await GetDemoQuestionsAsync(count)).Select(q => Northtropic.Helpers.QuestionShuffleHelper.ShuffleQuestionOptions(q)).ToList();
                 }

@@ -24,6 +24,12 @@ namespace Northtropic.Services
         public bool ExpBoostActive { get; set; }
         public bool GoldBoostActive { get; set; }
         public bool ComboShieldUsed { get; set; }
+
+        // 低难度 (中等难度以下) 递减与限时熔断防刷机制
+        public bool IsLowDifficultyDiminished { get; set; }
+        public double LowDifficultyMultiplier { get; set; } = 1.0;
+        public bool IsZeroRewardDueToLowDifficultyThreshold { get; set; }
+        public string? LowDifficultyNotice { get; set; }
     }
 
     public interface IGamificationService

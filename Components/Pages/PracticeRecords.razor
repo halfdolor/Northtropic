@@ -58,7 +58,7 @@
                 🔒 请先登录后查看专属闯关分析
             </MudText>
             <MudText Typo="Typo.body1" Class="mud-text-secondary mb-6" Style="max-width: 600px; margin: 0 auto; line-height: 1.6;">
-                登录后即可解锁全学科做题流水、艾宾浩斯抗遗忘记忆曲线与答题速度深度拆解分析。
+                @AppModeService.Format("登录后即可解锁全学科做题流水、艾宾浩斯抗遗忘记忆曲线与答题速度深度拆解分析。")
             </MudText>
             <div class="d-flex justify-center gap-4 flex-wrap">
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Login" Href="/login" Style="font-weight: 700; border-radius: 10px;">
@@ -80,7 +80,7 @@
                 🌟 欢迎开启智能自适应助学之旅！
             </MudText>
             <MudText Typo="Typo.body1" Class="mud-text-secondary mb-6" Style="max-width: 600px; margin: 0 auto; line-height: 1.6;">
-                当前尚未产生答题记录。系统会根据您的每一次作答，自动建立考点认知图谱、艾宾浩斯抗遗忘记忆曲线与做题速度节律分析，助您精准查漏补缺！
+                @AppModeService.Format("当前尚未产生答题记录。系统会根据您的每一次作答，自动建立考点认知图谱、艾宾浩斯抗遗忘记忆曲线与做题速度节律分析，助您精准查漏补缺！")
             </MudText>
             <div class="d-flex justify-center gap-4 flex-wrap">
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.Bolt" Href="/practice" Style="font-weight: 700; border-radius: 10px;">
@@ -213,7 +213,7 @@
                         <div class="d-flex align-center justify-space-between mb-3">
                             <div class="d-flex align-center gap-2">
                                 <MudIcon Icon="@Icons.Material.Filled.HistoryEdu" Color="Color.Error" />
-                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">艾宾浩斯抗遗忘记忆全景</MudText>
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">@AppModeService.T("艾宾浩斯抗遗忘记忆全景", "科学防遗忘记忆全景")</MudText>
                             </div>
                             @if (_dueEbbinghausCount > 0)
                             {

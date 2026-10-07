@@ -67,8 +67,8 @@ namespace Northtropic.Services
     public interface IPracticeService
     {
         Task<List<Question>> GetQuestionsAsync(string? category = null, int count = 10);
-        Task<List<Question>> GetRandomQuestionsAsync(Guid userId, string grade, string subject, string? category = null, int count = 5);
-        Task<List<Question>> GetAdaptiveQuestionsAsync(Guid userId, string grade, string subject, string? category = null, int count = 5);
+        Task<List<Question>> GetRandomQuestionsAsync(Guid userId, string grade, string subject, string? category = null, int count = 5, int? difficulty = null);
+        Task<List<Question>> GetAdaptiveQuestionsAsync(Guid userId, string grade, string subject, string? category = null, int count = 5, int? difficulty = null);
         Task<List<Question>> GetDemoQuestionsAsync(int count = 5);
         Task<List<string>> GetCategoriesAsync(bool forceRefresh = false);
         Task<AnswerCheckResult> SubmitAnswerAsync(Question activeQuestion, string userAnswer, int timeTakenSeconds, int currentCombo, Guid? targetUserId = null, System.Threading.CancellationToken cancellationToken = default);

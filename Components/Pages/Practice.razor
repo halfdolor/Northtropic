@@ -51,19 +51,28 @@
         </div>
     }
 
-    @if (_zenMode)
+    @if (_zenMode && _questions.Count > 0)
     {
-        <!-- 沉浸专注模式 HUD 顶栏 -->
+        <!-- 沉浸专注模式 HUD 顶栏 (默认模式，极简纯净无干扰) -->
         <div class="glass-card pa-3 mb-4 d-flex align-center justify-space-between flex-wrap gap-2 zen-hud no-print" style="border: 1.5px solid rgba(59, 130, 246, 0.4); background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
             <div class="d-flex align-center gap-3 flex-wrap">
                 <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Filled" Icon="@Icons.Material.Filled.CenterFocusStrong" Style="font-weight: 700;">
-                    🧘 沉浸专注模式
+                    🧘 沉浸模式 (默认)
                 </MudChip>
                 @if (_questions.Count > 0)
                 {
                     <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Style="color: #60a5fa;">
                         第 @_currentIndex / @_questions.Count 题
                     </MudText>
+                    var curQ = CurrentQuestion;
+                    if (curQ != null)
+                    {
+                        <MudTooltip Text="@GetDifficultyDescriptor(curQ.Difficulty)">
+                            <MudChip T="string" Color="@GetDifficultyColor(curQ.Difficulty)" Size="Size.Small" Variant="Variant.Filled" Class="font-weight-bold">
+                                @GetDifficultyBadgeText(curQ.Difficulty)
+                            </MudChip>
+                        </MudTooltip>
+                    }
                 }
                 @if (_perQuestionTimeLimit > 0)
                 {
@@ -85,16 +94,20 @@
                 }
             </div>
             <div class="d-flex align-center gap-2 flex-wrap">
+                <MudButton Variant="@(_scratchpadOpen ? Variant.Filled : Variant.Outlined)" Color="Color.Info" Size="Size.Small" StartIcon="@Icons.Material.Filled.Draw" OnClick="ToggleScratchpad" Style="font-weight: 700;">
+                    📝 草稿纸 @(_scratchpadOpen ? "【收起】" : "【展开】") (S)
+                </MudButton>
                 <MudTooltip Text="快捷键速查指南 (?)">
                     <MudIconButton Icon="@Icons.Material.Filled.Keyboard" Color="Color.Default" Size="Size.Small" OnClick="() => _showShortcutHelpDialog = true" />
                 </MudTooltip>
                 <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.FullscreenExit" OnClick="ToggleZenMode" Style="font-weight: 700;">
-                    退出沉浸 (Esc)
+                    退出沉浸 (Esc/Z)
                 </MudButton>
             </div>
         </div>
     }
-    else
+
+    @if (!_zenMode || _questions.Count == 0)
     {
         <!-- 顶部刷题头部面板 (年级专属学科与知识点二级联动选择) -->
         <!-- 顶部刷题指挥中心 (两层架构：核心刷题栏 + 折叠式高级模考定制面板) -->
@@ -114,6 +127,16 @@
                     {
                         <MudSelectItem Value="@cat">@cat</MudSelectItem>
                     }
+                </MudSelect>
+
+                <!-- 试题难度选择器 (难度过滤 & 针对性提分) -->
+                <MudSelect T="int" @bind-Value="_selectedDifficulty" Label="试题难度" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 140px;">
+                    <MudSelectItem Value="0">🌟 全部难度 (不限)</MudSelectItem>
+                    <MudSelectItem Value="1">⭐ 基础入门 Lv.1</MudSelectItem>
+                    <MudSelectItem Value="2">⭐⭐ 巩固提升 Lv.2</MudSelectItem>
+                    <MudSelectItem Value="3">⭐⭐⭐ 中等难度 Lv.3</MudSelectItem>
+                    <MudSelectItem Value="4">⭐⭐⭐⭐ 培优拔高 Lv.4</MudSelectItem>
+                    <MudSelectItem Value="5">⭐⭐⭐⭐⭐ 压轴挑战 Lv.5</MudSelectItem>
                 </MudSelect>
 
                 <!-- 题量快捷选择组 -->
@@ -142,7 +165,7 @@
 
                 @if (_useSocraticMode)
                 {
-                    <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Icon="@Icons.Material.Filled.Psychology" Variant="Variant.Filled">苏格拉底·开</MudChip>
+                    <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Icon="@Icons.Material.Filled.Psychology" Variant="Variant.Filled">@AppModeService.T("苏格拉底·开", "启发引导·开")</MudChip>
                 }
                 @if (_perQuestionTimeLimit > 0)
                 {
@@ -223,19 +246,19 @@
                 <!-- 预设场景一键切换 -->
                 <div class="d-flex align-center flex-wrap gap-2 mb-3">
                     <span class="text-caption font-weight-bold mr-1" style="color: var(--mud-palette-text-secondary);">⚡ 快捷预设场景：</span>
-                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Adjust" OnClick="@(() => ApplyPreset("adaptive"))">智能自适应 (动态梯度)</MudButton>
-                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Alarm" OnClick="@(() => ApplyPreset("ebbinghaus"))">艾宾浩斯抗遗忘</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Adjust" OnClick="@(() => ApplyPreset("adaptive"))">@AppModeService.T("智能自适应 (动态梯度)", "智能循序渐进推荐")</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Alarm" OnClick="@(() => ApplyPreset("ebbinghaus"))">@AppModeService.T("艾宾浩斯抗遗忘", "科学防遗忘复习")</MudButton>
                     <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Default" StartIcon="@Icons.Material.Filled.FlashOn" OnClick="@(() => ApplyPreset("quick"))">快速精练 (5题·即审)</MudButton>
                     <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Info" StartIcon="@Icons.Material.Filled.Timer" OnClick="@(() => ApplyPreset("mock"))">中考全真模拟 (15题·45分限时)</MudButton>
-                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Psychology" OnClick="@(() => ApplyPreset("socratic"))">苏格拉底深思 (启发追问)</MudButton>
-                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.GpsFixed" OnClick="@(() => ApplyPreset("error"))">错题靶向歼灭 (错题集)</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Psychology" OnClick="@(() => ApplyPreset("socratic"))">@AppModeService.T("苏格拉底深思 (启发追问)", "启发式引导复习")</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.GpsFixed" OnClick="@(() => ApplyPreset("error"))">@AppModeService.T("错题靶向歼灭 (错题集)", "错题集中攻坚")</MudButton>
                 </div>
 
                 <!-- 详细参数调优网格 -->
                 <div class="d-flex align-center flex-wrap gap-4">
                     <MudSelect T="string" @bind-Value="_questionSourceMode" Label="出题来源模式" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 210px;">
-                        <MudSelectItem Value="@("🎯 智能自适应推题 (动态梯度)")">🎯 智能自适应推题 (动态梯度)</MudSelectItem>
-                        <MudSelectItem Value="@("⏰ 艾宾浩斯抗遗忘强化")">⏰ 艾宾浩斯抗遗忘强化</MudSelectItem>
+                        <MudSelectItem Value="@("🎯 智能自适应推题 (动态梯度)")">@AppModeService.T("🎯 智能自适应推题 (动态梯度)", "🎯 智能循序渐进推荐")</MudSelectItem>
+                        <MudSelectItem Value="@("⏰ 艾宾浩斯抗遗忘强化")">@AppModeService.T("⏰ 艾宾浩斯抗遗忘强化", "⏰ 科学防遗忘复习强化")</MudSelectItem>
                         <MudSelectItem Value="@("AI 智能组卷生成")">🤖 AI 智能组卷生成</MudSelectItem>
                         <MudSelectItem Value="@("现有题库随机抽题")">📚 现有题库随机抽题</MudSelectItem>
                         <MudSelectItem Value="@("智能混合模式 (优先题库，不足 AI 补齐)")">🔀 智能混合模式 (题库+AI补齐)</MudSelectItem>
@@ -259,8 +282,8 @@
                                      Style="min-width: 135px; max-width: 155px;" />
 
                     <div class="d-flex align-center gap-2 pl-2">
-                        <MudSwitch T="bool" Value="@_useSocraticMode" ValueChanged="ToggleSocraticMode" Color="Color.Secondary" Label="🧠 苏格拉底式启发引导" />
-                        <MudTooltip Text="开启后，AI 将像苏格拉底一样用递进追问启发解题思维，绝不提前剧透答案。">
+                        <MudSwitch T="bool" Value="@_useSocraticMode" ValueChanged="ToggleSocraticMode" Color="Color.Secondary" Label="@AppModeService.T("🧠 苏格拉底式启发引导", "🧠 启发式循循善诱引导")" />
+                        <MudTooltip Text="@AppModeService.Format("开启后，AI 将像苏格拉底一样用递进追问启发解题思维，绝不提前剧透答案。")">
                             <MudIcon Icon="@Icons.Material.Filled.HelpOutline" Size="Size.Small" Color="Color.Default" />
                         </MudTooltip>
                     </div>
@@ -457,8 +480,8 @@
     }
     else
     {
-        <!-- 全卷答题卡矩阵导航 (Question Matrix Navigator) -->
-        @if (_questions.Count > 1)
+        <!-- 全卷答题卡矩阵导航 (Question Matrix Navigator: 沉浸模式下自动隐藏，普通模式展示) -->
+        @if (!_zenMode && _questions.Count > 1)
         {
             <div class="glass-card pa-3 mb-4 d-flex align-center justify-space-between flex-wrap gap-2 no-print">
                 <div class="d-flex align-center gap-2 flex-shrink-0">
@@ -579,42 +602,61 @@
 
         <!-- 题目 Card (使用唯一 @key 强制每题重新创建 DOM，杜绝 KaTeX 缓存脏节点；支持全键盘极速答题) -->
         <div class="glass-card pa-6 mb-6 position-relative practice-math-container" @key="@($"qcard-{q.Id}-{_currentIndex}")" tabindex="0" @onkeydown="HandleGlobalPracticeKeyDown" style="outline: none;">
-            <!-- 题目难度与标签 & 收藏/标记按钮 -->
+            <!-- 题目难度与标签 & 沉浸模式精简状态栏 -->
             <div class="d-flex align-center justify-space-between mb-4 flex-wrap gap-2">
-                <div class="d-flex align-center gap-2">
+                <div class="d-flex align-center gap-2 flex-wrap">
                     <MudChip T="string" Color="Color.Primary" Size="Size.Small">@q.Subject</MudChip>
                     <MudChip T="string" Color="Color.Secondary" Size="Size.Small">@q.Category</MudChip>
                     <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Filled">@q.TypeDisplayName</MudChip>
-                </div>
-                <div class="d-flex align-center gap-2">
-                    <MudTooltip Text="@(_flaggedQuestions.Contains(_currentIndex) ? "取消标记本题" : "📌 标记此题 (待复查)")">
-                        <MudIconButton Icon="@(_flaggedQuestions.Contains(_currentIndex) ? Icons.Material.Filled.PushPin : Icons.Material.Outlined.PushPin)"
-                                       Color="@(_flaggedQuestions.Contains(_currentIndex) ? Color.Warning : Color.Default)"
-                                       Size="Size.Medium"
-                                       OnClick="ToggleFlagCurrent" />
-                    </MudTooltip>
-                    <MudTooltip Text="@(_isFavorited ? "取消收藏" : "加入收藏夹 (快捷收藏)")">
-                        <MudIconButton Icon="@(_isFavorited ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)"
-                                       Color="@(_isFavorited ? Color.Warning : Color.Default)"
-                                       Class="@(_isFavorited ? "star-btn-fav" : "")"
-                                       Size="Size.Medium"
-                                       OnClick="ToggleFavoriteCurrentAsync" />
-                    </MudTooltip>
-                    <MudTooltip Text="复制试题与标准解析至剪贴板 (快捷键: C)">
-                        <MudIconButton Icon="@Icons.Material.Outlined.ContentCopy"
-                                       Color="Color.Default"
-                                       Size="Size.Medium"
-                                       OnClick="CopyQuestionMarkdownAsync" />
-                    </MudTooltip>
+                    <!-- 试题难度显式醒目标签 -->
                     <MudTooltip Text="@GetDifficultyDescriptor(q.Difficulty)">
-                        <MudChip T="string" Color="@GetDifficultyColor(q.Difficulty)" Size="Size.Small" Variant="Variant.Filled">
+                        <MudChip T="string" Color="@GetDifficultyColor(q.Difficulty)" Size="Size.Small" Variant="Variant.Filled" Class="font-weight-bold">
                             @GetDifficultyBadgeText(q.Difficulty)
                         </MudChip>
                     </MudTooltip>
-                    <MudText Typo="Typo.caption" Color="Color.Primary" Class="font-weight-bold">
-                        答对加/答错扣金币 ｜ +@q.BaseExpReward EXP
-                    </MudText>
                 </div>
+                @if (!_zenMode)
+                {
+                    <div class="d-flex align-center gap-2">
+                        <MudTooltip Text="@(_flaggedQuestions.Contains(_currentIndex) ? "取消标记本题" : "📌 标记此题 (待复查)")">
+                            <MudIconButton Icon="@(_flaggedQuestions.Contains(_currentIndex) ? Icons.Material.Filled.PushPin : Icons.Material.Outlined.PushPin)"
+                                           Color="@(_flaggedQuestions.Contains(_currentIndex) ? Color.Warning : Color.Default)"
+                                           Size="Size.Medium"
+                                           OnClick="ToggleFlagCurrent" />
+                        </MudTooltip>
+                        <MudTooltip Text="@(_isFavorited ? "取消收藏" : "加入收藏夹 (快捷收藏)")">
+                            <MudIconButton Icon="@(_isFavorited ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)"
+                                           Color="@(_isFavorited ? Color.Warning : Color.Default)"
+                                           Class="@(_isFavorited ? "star-btn-fav" : "")"
+                                           Size="Size.Medium"
+                                           OnClick="ToggleFavoriteCurrentAsync" />
+                        </MudTooltip>
+                        <MudTooltip Text="复制试题与标准解析至剪贴板 (快捷键: C)">
+                            <MudIconButton Icon="@Icons.Material.Outlined.ContentCopy"
+                                           Color="Color.Default"
+                                           Size="Size.Medium"
+                                           OnClick="CopyQuestionMarkdownAsync" />
+                        </MudTooltip>
+                        <MudText Typo="Typo.caption" Color="Color.Primary" Class="font-weight-bold">
+                            答对加/答错扣金币 ｜ +@q.BaseExpReward EXP
+                        </MudText>
+                    </div>
+                }
+                else
+                {
+                    <!-- 沉浸模式下只保留必要的输入演算工具开关 -->
+                    <div class="d-flex align-center gap-2">
+                        <button type="button" class="mud-button-root mud-button mud-button-text mud-button-text-info mud-button-size-small" 
+                                style="font-size: 0.75rem; padding: 2px 8px; font-weight: 700; cursor: pointer;"
+                                @onclick="ToggleScratchpad" title="快捷键 S：展开/收起草稿演算纸">
+                            <MudIcon Icon="@Icons.Material.Filled.EditNote" Size="Size.Small" Class="mr-1" />
+                            📝 草稿纸 @(_scratchpadOpen ? "【收起】" : "【展开】") (S)
+                        </button>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" OnClick="ToggleZenMode" Style="font-size: 0.75rem; border-radius: 6px;">
+                            退出沉浸 (Esc)
+                        </MudButton>
+                    </div>
+                }
             </div>
 
             <!-- 题干 (使用独立 key 确保题干文本每次切题均精准重新渲染，支持响应式公式平滑滚动) -->
@@ -626,7 +668,7 @@
 
             <!-- 答题区域 (根据题型渲染) -->
             <div class="d-flex flex-column gap-3 mb-6">
-                @if (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice)
+                @if (!_zenMode && (q.Type == QuestionType.SingleChoice || q.Type == QuestionType.MultipleChoice))
                 {
                     <div class="d-flex align-center justify-space-between gap-2 mb-1 no-print flex-wrap" style="background: rgba(var(--mud-palette-primary-rgb), 0.06); padding: 5px 12px; border-radius: 8px; border: 1px dashed rgba(var(--mud-palette-primary-rgb), 0.3);">
                         <div class="d-flex align-center gap-2">
@@ -1073,18 +1115,21 @@
                 </div>
             </div>
 
-            <!-- 底部快捷键提示条 (提高刷题效率) -->
-            <div class="d-flex align-center justify-center gap-4 mt-4 pt-3 mud-text-secondary flex-wrap" style="border-top: 1px dashed var(--glass-card-border); font-size: 0.8rem;">
-                <span>⌨️ 快捷键：</span>
-                <span><kbd class="shortcut-badge">A</kbd>-<kbd class="shortcut-badge">E</kbd> / <kbd class="shortcut-badge">1-5</kbd> 选择</span>
-                <span><kbd class="shortcut-badge">T</kbd>/<kbd class="shortcut-badge">F</kbd> 判断</span>
-                <span><kbd class="shortcut-badge">M</kbd> 收藏</span>
-                <span><kbd class="shortcut-badge">Enter</kbd> 提交作答</span>
-                <span><kbd class="shortcut-badge">Ctrl+Enter</kbd> 文本直接交卷</span>
-                <span><kbd class="shortcut-badge">Space</kbd> / <kbd class="shortcut-badge">→</kbd> 下一题</span>
-                <span><kbd class="shortcut-badge">←</kbd> 上一题</span>
-                <span><kbd class="shortcut-badge">?</kbd> 帮助</span>
-            </div>
+            @if (!_zenMode)
+            {
+                <!-- 底部快捷键提示条 (非沉浸模式下显示) -->
+                <div class="d-flex align-center justify-center gap-4 mt-4 pt-3 mud-text-secondary flex-wrap" style="border-top: 1px dashed var(--glass-card-border); font-size: 0.8rem;">
+                    <span>⌨️ 快捷键：</span>
+                    <span><kbd class="shortcut-badge">A</kbd>-<kbd class="shortcut-badge">E</kbd> / <kbd class="shortcut-badge">1-5</kbd> 选择</span>
+                    <span><kbd class="shortcut-badge">T</kbd>/<kbd class="shortcut-badge">F</kbd> 判断</span>
+                    <span><kbd class="shortcut-badge">M</kbd> 收藏</span>
+                    <span><kbd class="shortcut-badge">Enter</kbd> 提交作答</span>
+                    <span><kbd class="shortcut-badge">Ctrl+Enter</kbd> 文本直接交卷</span>
+                    <span><kbd class="shortcut-badge">Space</kbd> / <kbd class="shortcut-badge">→</kbd> 下一题</span>
+                    <span><kbd class="shortcut-badge">←</kbd> 上一题</span>
+                    <span><kbd class="shortcut-badge">?</kbd> 帮助</span>
+                </div>
+            }
         </div>
 
         <!-- 提交后的即时正向反馈结算卡片 -->
@@ -1142,11 +1187,30 @@
                                         <span>🎉 恭喜你升级到了 Lv.@_lastResult.Reward.NewLevel ！</span>
                                     }
                                 </MudText>
+
+                                @if (_lastResult.Reward.IsZeroRewardDueToLowDifficultyThreshold)
+                                {
+                                    <div class="pa-2 px-3 my-1.5 rounded-lg d-flex align-center gap-2" style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444;">
+                                        <MudIcon Icon="@Icons.Material.Filled.WarningAmber" Color="Color.Error" Size="Size.Small" />
+                                        <MudText Typo="Typo.caption" Class="font-weight-bold" Color="Color.Error">
+                                            ⚠️ 连续练习低难度题目超过 10 分钟，当前收益已降为 0！请挑战中等或更高难度试题以恢复正常奖励。
+                                        </MudText>
+                                    </div>
+                                }
+                                else if (_lastResult.Reward.IsLowDifficultyDiminished)
+                                {
+                                    <div class="pa-1.5 px-3 my-1 rounded-lg d-flex align-center gap-2" style="background: rgba(245, 158, 11, 0.12); border: 1px dashed #f59e0b;">
+                                        <MudIcon Icon="@Icons.Material.Filled.TrendingDown" Color="Color.Warning" Size="Size.Small" />
+                                        <MudText Typo="Typo.caption" Class="font-weight-bold" Style="color: #f59e0b;">
+                                            💡 @(!string.IsNullOrEmpty(_lastResult.Reward.LowDifficultyNotice) ? _lastResult.Reward.LowDifficultyNotice : $"低难度试题收益递减中（当前收益率 {(int)(_lastResult.Reward.LowDifficultyMultiplier * 100)}%）。连续刷低难度超10分钟收益将归零。")
+                                        </MudText>
+                                    </div>
+                                }
                             }
                             else
                             {
                                 <MudText Typo="Typo.caption" Class="mud-text-secondary mt-1 d-block">
-                                    🧠 艾宾浩斯抗遗忘记忆曲线已启动！该题已进入净化记忆队列，攻克后可获丰厚净化经验。
+                                    @AppModeService.Format("🧠 艾宾浩斯抗遗忘记忆曲线已启动！该题已进入净化记忆队列，攻克后可获丰厚净化经验。")
                                 </MudText>
                             }
                         </div>
@@ -1334,12 +1398,12 @@
             <div class="d-flex align-center gap-2">
                 <MudIcon Icon="@Icons.Material.Filled.Psychology" Color="Color.Secondary" />
                 <MudText Typo="Typo.h6" Class="font-weight-bold">
-                    @(_useSocraticMode ? "🧠 AI 导师 - 苏格拉底式启发引导" : "🤖 AI 导师 - 标准深度剖析")
+                    @(_useSocraticMode ? AppModeService.T("🧠 AI 导师 - 苏格拉底式启发引导", "🧠 AI 导师 - 启发式循循善诱引导") : "🤖 AI 导师 - 标准深度剖析")
                 </MudText>
             </div>
             <div class="d-flex align-center gap-2">
                 <MudButton Variant="Variant.Outlined" Color="@(_useSocraticMode ? Color.Secondary : Color.Default)" Size="Size.Small" OnClick="ToggleModalSocraticModeAsync" Style="font-size: 0.8rem; font-weight: 700;">
-                    @(_useSocraticMode ? "切换为标准直击解析" : "切换为苏格拉底引导")
+                    @(_useSocraticMode ? "切换为标准直击解析" : AppModeService.T("切换为苏格拉底引导", "切换为启发式引导"))
                 </MudButton>
                 <MudTooltip Text="🔊 语音朗读 AI 回复">
                     <MudIconButton Icon="@Icons.Material.Filled.VolumeUp" Color="Color.Primary" Size="Size.Small" OnClick="SpeakCurrentAiContentAsync" />
@@ -1368,7 +1432,7 @@
                         <div class="d-flex align-center gap-2 mb-2">
                             <MudIcon Icon="@Icons.Material.Filled.AccountTree" Color="Color.Warning" />
                             <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Warning">
-                                🔗 前置知识图谱溯源警报 (前置概念薄弱)
+                                @AppModeService.T("🔗 前置知识图谱溯源警报 (前置概念薄弱)", "🔗 基础知识溯源提醒 (前置概念薄弱)")
                             </MudText>
                         </div>
                         @foreach (var warn in _prerequisiteWarnings)
@@ -1560,37 +1624,37 @@
                 <div class="pa-3 rounded-lg glass-card" style="background: rgba(var(--mud-palette-surface-rgb), 0.4); border: 1px solid rgba(var(--mud-palette-primary-rgb), 0.2);">
                     <div class="d-flex align-center justify-space-between mb-2">
                         <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Primary">
-                            🧠 认知负荷与作答节奏归因 (四象限分布)
+                            @AppModeService.T("🧠 认知负荷与作答节奏归因 (四象限分布)", "🧠 作答节奏与解题状态分析 (四象限分布)")
                         </MudText>
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">
-                            科学诊断
+                            @AppModeService.T("科学诊断", "学情诊断")
                         </MudChip>
                     </div>
                     <MudGrid Spacing="2">
                         <MudItem xs="6" sm="3">
                             <div class="pa-2 text-center rounded" style="background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e;">
-                                <MudText Typo="Typo.caption" Style="color: #22c55e; font-weight: 700;">⚡ 敏捷秒杀</MudText>
+                                <MudText Typo="Typo.caption" Style="color: #22c55e; font-weight: 700;">@AppModeService.T("⚡ 敏捷秒杀", "⚡ 快速答对")</MudText>
                                 <MudText Typo="Typo.h6" Style="color: #22c55e; font-weight: 800;">@_sessionAgileCount 题</MudText>
                                 <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-size: 0.7rem;">耗时短且全对</MudText>
                             </div>
                         </MudItem>
                         <MudItem xs="6" sm="3">
                             <div class="pa-2 text-center rounded" style="background: rgba(59, 130, 246, 0.1); border: 1px solid #3b82f6;">
-                                <MudText Typo="Typo.caption" Style="color: #3b82f6; font-weight: 700;">🧘 稳健深思</MudText>
+                                <MudText Typo="Typo.caption" Style="color: #3b82f6; font-weight: 700;">@AppModeService.T("🧘 稳健深思", "🧘 稳健答对")</MudText>
                                 <MudText Typo="Typo.h6" Style="color: #3b82f6; font-weight: 800;">@_sessionSteadyCount 题</MudText>
                                 <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-size: 0.7rem;">从容思考答对</MudText>
                             </div>
                         </MudItem>
                         <MudItem xs="6" sm="3">
                             <div class="pa-2 text-center rounded" style="background: rgba(245, 158, 11, 0.1); border: 1px solid #f59e0b;">
-                                <MudText Typo="Typo.caption" Style="color: #f59e0b; font-weight: 700;">⚠️ 急躁粗心</MudText>
+                                <MudText Typo="Typo.caption" Style="color: #f59e0b; font-weight: 700;">@AppModeService.T("⚠️ 急躁粗心", "⚠️ 粗心失误")</MudText>
                                 <MudText Typo="Typo.h6" Style="color: #f59e0b; font-weight: 800;">@_sessionCarelessCount 题</MudText>
                                 <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-size: 0.7rem;">快速失误陷阱</MudText>
                             </div>
                         </MudItem>
                         <MudItem xs="6" sm="3">
                             <div class="pa-2 text-center rounded" style="background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444;">
-                                <MudText Typo="Typo.caption" Style="color: #ef4444; font-weight: 700;">🧩 攻坚盲区</MudText>
+                                <MudText Typo="Typo.caption" Style="color: #ef4444; font-weight: 700;">@AppModeService.T("🧩 攻坚盲区", "🧩 攻坚难点")</MudText>
                                 <MudText Typo="Typo.h6" Style="color: #ef4444; font-weight: 800;">@_sessionStrugglingCount 题</MudText>
                                 <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-size: 0.7rem;">耗时长未攻克</MudText>
                             </div>
@@ -2169,6 +2233,7 @@
     private User? _currentUser;
     private List<string> _subjects = new List<string>();
     private string _selectedSubject = "通用学科";
+    private int _selectedDifficulty = 0; // 0 为不限制难度
     private bool _generatingAiQuestion = false;
     private bool _advancedSettingsOpen = false;
 
@@ -2177,7 +2242,7 @@
         _advancedSettingsOpen = !_advancedSettingsOpen;
     }
 
-    private bool _zenMode = false;
+    private bool _zenMode = true; // 默认沉浸专注模式
 
     private void ToggleZenMode()
     {
@@ -2204,7 +2269,7 @@
                 _evalMode = "即时判定 (做一题审一题)";
                 _perQuestionTimeLimit = 0;
                 _totalPaperTimeLimitMinutes = 0;
-                Snackbar.Add("🎯 已应用【智能自适应推题】：根据学情动态匹配最近发展区题型", Severity.Info);
+                Snackbar.Add(AppModeService.Format("🎯 已应用【智能自适应推题】：根据学情动态匹配最近发展区题型"), Severity.Info);
                 break;
             case "ebbinghaus":
                 _questionSourceMode = "⏰ 艾宾浩斯抗遗忘强化";
@@ -2212,7 +2277,7 @@
                 _evalMode = "即时判定 (做一题审一题)";
                 _perQuestionTimeLimit = 0;
                 _totalPaperTimeLimitMinutes = 0;
-                Snackbar.Add("⏰ 已应用【艾宾浩斯抗遗忘】：优先抽取已达记忆临界点的待复习错题", Severity.Info);
+                Snackbar.Add(AppModeService.Format("⏰ 已应用【艾宾浩斯抗遗忘】：优先抽取已达记忆临界点的待复习错题"), Severity.Info);
                 break;
             case "quick":
                 _questionCount = 5;
@@ -2233,13 +2298,13 @@
                 _questionCount = 5;
                 _evalMode = "即时判定 (做一题审一题)";
                 _useSocraticMode = true;
-                Snackbar.Add("🧠 已应用【苏格拉底启发】模式：开启AI互动追问", Severity.Info);
+                Snackbar.Add(AppModeService.Format("🧠 已应用【苏格拉底启发】模式：开启AI互动追问"), Severity.Info);
                 break;
             case "error":
                 _questionSourceMode = "我的错题专练突破";
                 _questionCount = 5;
                 _evalMode = "即时判定 (做一题审一题)";
-                Snackbar.Add("🎯 已应用【错题专练】模式：靶向歼灭历史薄弱考点", Severity.Info);
+                Snackbar.Add(AppModeService.Format("🎯 已应用【错题专练】模式：靶向歼灭历史薄弱考点"), Severity.Info);
                 break;
         }
     }
@@ -2316,6 +2381,11 @@
             _questionCount = Count.Value;
         }
 
+        if (Difficulty.HasValue && Difficulty.Value > 0)
+        {
+            _selectedDifficulty = Difficulty.Value;
+        }
+
         // 先结束整页全局骨架 Loading，瞬间呈现渲染 UI 框架
         _loading = false;
 
@@ -2380,7 +2450,7 @@
             if (Mode.Equals("spaced_review", StringComparison.OrdinalIgnoreCase))
             {
                 _questionSourceMode = "AI 智能组卷生成";
-                Snackbar.Add($"🧠 已开启艾宾浩斯记忆唤醒专练：【{_selectedSubject} - {_selectedCategory}】", Severity.Info);
+                Snackbar.Add(AppModeService.Format($"🧠 已开启艾宾浩斯记忆唤醒专练：【{_selectedSubject} - {_selectedCategory}】"), Severity.Info);
             }
             else
             {
@@ -2493,17 +2563,35 @@
         
         try
         {
+            int? diffFilter = _selectedDifficulty > 0 ? _selectedDifficulty : null;
+
             if (_questionSourceMode.Contains("自适应"))
             {
-                var adaptiveQuestions = await PracticeService.GetAdaptiveQuestionsAsync(_currentUser.Id, _currentUser.Grade, _selectedSubject, _selectedCategory, _questionCount);
-                if (adaptiveQuestions.Count > 0)
+                var adaptiveQuestions = await PracticeService.GetAdaptiveQuestionsAsync(_currentUser.Id, _currentUser.Grade, _selectedSubject, _selectedCategory, _questionCount, diffFilter);
+                if (adaptiveQuestions.Count >= _questionCount)
                 {
                     _questions.Clear();
                     _questions.AddRange(adaptiveQuestions);
                     _currentIndex = 1;
+                    _zenMode = true;
                     await ResetCurrentQuestionStateAsync();
                     StartTimers();
-                    Snackbar.Add($"🎯 智能自适应组卷成功！已根据您在【{_selectedSubject}】的学情动态匹配 {adaptiveQuestions.Count} 道最近发展区梯级试题！", Severity.Success);
+                    Snackbar.Add(AppModeService.Format($"🎯 智能自适应组卷成功！已根据您在【{_selectedSubject}】的学情动态匹配 {adaptiveQuestions.Count} 道梯级试题！"), Severity.Success);
+                    return;
+                }
+                else if (adaptiveQuestions.Count > 0)
+                {
+                    // 若题库满足条件的题量少于目标题量，由 AI 严格基于当前学科补齐剩余题目，绝不跨学科混淆！
+                    int needMore = _questionCount - adaptiveQuestions.Count;
+                    var aiMore = await AiQuestionGeneratorService.GenerateBatchQuestionsAsync(_currentUser.Grade, _selectedSubject, _selectedCategory, needMore, diffFilter);
+                    _questions.Clear();
+                    _questions.AddRange(adaptiveQuestions);
+                    _questions.AddRange(aiMore);
+                    _currentIndex = 1;
+                    _zenMode = true;
+                    await ResetCurrentQuestionStateAsync();
+                    StartTimers();
+                    Snackbar.Add(AppModeService.Format($"🎯 智能自适应组卷成功！题库精选 {adaptiveQuestions.Count} 题，AI 针对【{_selectedSubject}】拓展了 {aiMore.Count} 道针对性试题！"), Severity.Success);
                     return;
                 }
             }
@@ -2516,14 +2604,15 @@
                     _questions.Clear();
                     _questions.AddRange(dueQuestions);
                     _currentIndex = 1;
+                    _zenMode = true;
                     await ResetCurrentQuestionStateAsync();
                     StartTimers();
-                    Snackbar.Add($"⏰ 艾宾浩斯抗遗忘强化卷已生成！载入 {dueQuestions.Count} 道已达临界遗忘点的核心错题！", Severity.Success);
+                    Snackbar.Add(AppModeService.Format($"⏰ 艾宾浩斯抗遗忘强化卷已生成！载入 {dueQuestions.Count} 道已达临界遗忘点的核心错题！"), Severity.Success);
                     return;
                 }
                 else
                 {
-                    Snackbar.Add($"👏 记忆健康！当前【{_selectedSubject}】暂无到达遗忘临界期的待复习错题，已为您自动切换为智能出题！", Severity.Info);
+                    Snackbar.Add(AppModeService.Format($"👏 记忆健康！当前【{_selectedSubject}】暂无到达遗忘临界期的待复习错题，已为您自动切换为智能出题！"), Severity.Info);
                 }
             }
             else if (_questionSourceMode.Contains("收藏"))
@@ -2534,6 +2623,7 @@
                     _questions.Clear();
                     _questions.AddRange(favQuestions.Take(_questionCount));
                     _currentIndex = 1;
+                    _zenMode = true;
                     await ResetCurrentQuestionStateAsync();
                     StartTimers();
                     Snackbar.Add($"⭐ 成功从重点收藏夹载入 {_questions.Count} 道重点试题，开启温故知新！", Severity.Success);
@@ -2552,6 +2642,7 @@
                     _questions.Clear();
                     _questions.AddRange(errorQuestions);
                     _currentIndex = 1;
+                    _zenMode = true;
                     await ResetCurrentQuestionStateAsync();
                     StartTimers();
                     Snackbar.Add($"🎯 成功载入 {errorQuestions.Count} 道【{_selectedSubject}】高频历史错题，开启专项攻坚！", Severity.Success);
@@ -2564,12 +2655,13 @@
             }
             else if (_questionSourceMode.Contains("题库随机") || _questionSourceMode.Contains("混合"))
             {
-                var dbQuestions = await PracticeService.GetRandomQuestionsAsync(_currentUser.Id, _currentUser.Grade, _selectedSubject, _selectedCategory, _questionCount);
+                var dbQuestions = await PracticeService.GetRandomQuestionsAsync(_currentUser.Id, _currentUser.Grade, _selectedSubject, _selectedCategory, _questionCount, diffFilter);
                 if (dbQuestions.Count >= _questionCount)
                 {
                     _questions.Clear();
                     _questions.AddRange(dbQuestions);
                     _currentIndex = 1;
+                    _zenMode = true;
                     await ResetCurrentQuestionStateAsync();
                     StartTimers();
                     Snackbar.Add($"📚 成功从题库抽取 {dbQuestions.Count} 道【{_selectedSubject} - {_selectedCategory}】试题！(未消耗 Token)", Severity.Success);
@@ -2578,26 +2670,28 @@
                 else if (_questionSourceMode.Contains("混合") && dbQuestions.Count > 0)
                 {
                     int needMore = _questionCount - dbQuestions.Count;
-                    var aiMore = await AiQuestionGeneratorService.GenerateBatchQuestionsAsync(_currentUser.Grade, _selectedSubject, _selectedCategory, needMore);
+                    var aiMore = await AiQuestionGeneratorService.GenerateBatchQuestionsAsync(_currentUser.Grade, _selectedSubject, _selectedCategory, needMore, diffFilter);
                     _questions.Clear();
                     _questions.AddRange(dbQuestions);
                     _questions.AddRange(aiMore);
                     _currentIndex = 1;
+                    _zenMode = true;
                     await ResetCurrentQuestionStateAsync();
                     StartTimers();
-                    Snackbar.Add($"🔀 已从本地库拉取 {dbQuestions.Count} 道题，并由 AI 智能补齐了 {aiMore.Count} 道题！", Severity.Success);
+                    Snackbar.Add($"🔀 已从本地库拉取 {dbQuestions.Count} 道题，并由 AI 智能补齐了 {aiMore.Count} 道【{_selectedSubject}】试题！", Severity.Success);
                     return;
                 }
                 else if (_questionSourceMode.Contains("题库随机") && dbQuestions.Count == 0)
                 {
-                    Snackbar.Add($"提示：当前【{_selectedSubject} - {_selectedCategory}】题库中暂无本地存题，正在为您智能生成...", Severity.Info);
+                    Snackbar.Add($"提示：当前【{_selectedSubject} - {_selectedCategory}】题库中暂无匹配难度的本地存题，正在为您智能生成...", Severity.Info);
                 }
             }
 
-            var questions = await AiQuestionGeneratorService.GenerateBatchQuestionsAsync(_currentUser.Grade, _selectedSubject, _selectedCategory, _questionCount);
+            var questions = await AiQuestionGeneratorService.GenerateBatchQuestionsAsync(_currentUser.Grade, _selectedSubject, _selectedCategory, _questionCount, diffFilter);
             _questions.Clear();
             _questions.AddRange(questions);
             _currentIndex = 1;
+            _zenMode = true;
             await ResetCurrentQuestionStateAsync();
             StartTimers();
             Snackbar.Add($"🤖 成功为您生成 {_questions.Count} 道【{_currentUser.Grade} - {_selectedSubject}】涵盖单选/不定项/填空/简答的试卷！", Severity.Success);
@@ -3164,6 +3258,15 @@
                 }
                 string paidNote = _lastResult.Reward.IsPaidQuestion ? $" (已扣除入场费 {_lastResult.Reward.PaidEntryFee} 金币)" : "";
                 Snackbar.Add($"🎉 答对啦！获得 +{_lastResult.Reward.EarnedExp} EXP，+{_lastResult.Reward.EarnedCoins} 金币{paidNote}", Severity.Success);
+
+                if (_lastResult.Reward.IsZeroRewardDueToLowDifficultyThreshold)
+                {
+                    Snackbar.Add("⚠️ 连续练习低难度题目超过 10 分钟，当前收益已降为 0！请挑战中等或更高难度试题以恢复正常奖励。", Severity.Warning);
+                }
+                else if (_lastResult.Reward.IsLowDifficultyDiminished)
+                {
+                    Snackbar.Add($"💡 低难度试题收益递减中（当前收益率 {(int)(_lastResult.Reward.LowDifficultyMultiplier * 100)}%）。连续刷低难度超10分钟收益将归零。", Severity.Info);
+                }
             }
             else
             {
@@ -4029,7 +4132,7 @@
     private void ToggleSocraticMode()
     {
         _useSocraticMode = !_useSocraticMode;
-        Snackbar.Add(_useSocraticMode ? "已开启【苏格拉底式启发引导】模式！AI 将通过递进提问引导思考。" : "已切换为【标准直击解析】模式。", Severity.Info);
+        Snackbar.Add(AppModeService.Format(_useSocraticMode ? "已开启【苏格拉底式启发引导】模式！AI 将通过递进提问引导思考。" : "已切换为【标准直击解析】模式。"), Severity.Info);
         StateHasChanged();
     }
 
